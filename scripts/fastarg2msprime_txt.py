@@ -11,6 +11,7 @@ import sys
 import re
 import numpy as np
 import csv
+from warnings import warn
 
 if __name__ == "__main__":
     import argparse
@@ -36,13 +37,13 @@ if __name__ == "__main__":
             #format is curr_node, child_node, seq_start_inclusive, seq_end_noninclusive, num_mutations, mut_loc1, mut_loc2, ....
             curr_node, child_node, left, right, muts = [int(i) for i in fields[1:6]]
             if curr_node<child_node:
-                print("WARNING: line {} has a ancestor node_id less than the id of its children, so node ID cannot be used as a proxy for age".format(line_num))
+                warn("Line {} has a ancestor node_id less than the id of its children, so node ID cannot be used as a proxy for age".format(line_num))
                 sys.exit()
             #one record for each node
             if curr_node not in coalescence_points:
                 coalescence_points[curr_node] = {}
             if child_node in coalescence_points[curr_node]:
-                print("WARNING: child node {} already exists for node {} (line {})".format(child_node, curr_node, line_num))
+                warn("Child node {} already exists for node {} (line {})".format(child_node, curr_node, line_num))
             coalescence_points[curr_node][child_node]=[left, right]
 
         elif fields[0]=='S':
@@ -51,7 +52,7 @@ if __name__ == "__main__":
             base_sequence = fields[2]
             
         else:
-            print("WARNING: bad line format - the fastARG file has a line that does not begin with E, N, C, R, or S:\n{}".format("\t".join(fields)))
+            warn("Bad line format - the fastARG file has a line that does not begin with E, N, C, R, or S:\n{}".format("\t".join(fields)))
     
     
     for node,children in sorted(coalescence_points.items()): #sort by node number == time
