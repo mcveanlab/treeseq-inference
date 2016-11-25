@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import sys
-sys.path[0:0] = '../msprime/' # puts the /foo directory at the start of your path
+sys.path.insert(0, '../msprime/') # look 
 import tempfile
 import msprime
 
