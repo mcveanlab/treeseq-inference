@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Take an msprime simulation file in hdf5 format, save to fastARG input format (haplotype sequences), run fastARG on it, convery fastARG output to msprime input (2 files), read these into msprime and output the haplotype sequences again
+"""Various functions to convert msprime simulation file to run in Heng Li's fastARG program.
+
+When run as a script, takes an msprime simulation in hdf5 format, saves to fastARG input format (haplotype sequences), runs fastARG on it, converts fastARG output to msprime input (2 files), reads these into msprime outputs the haplotype sequences again, and checks that the 
+
+E.g. ./msprime_fastARG.py ../test_files/4000.hdf5 -x ../fastARG/fastARG
+
 """
 import sys
 import os.path
@@ -10,12 +15,24 @@ from warnings import warn
 def msprime_hdf5_to_fastARG_in(msprime_hdf5, fastARG_filehandle):
     print("== Saving to fastARG input format ==")
     ts = msprime.load(msprime_hdf5.name)
-    simple_ts = ts.subset(list(range(ts.get_sample_size())))
+    msprime_to_fastARG_in(ts, fastARG_filehandle)
+    
+def msprime_to_fastARG_in(ts, fastARG_filehandle):
+    #simple_ts = ts.subset(list(range(ts.get_sample_size())))
     simple_ts=ts
     for j, v in enumerate(simple_ts.variants(as_bytes=True)):
         print(j, v.genotypes.decode(), sep="\t", file=fastARG_filehandle)
     fastARG_filehandle.flush()
     fastARG_filehandle.seek(0)
+
+def run_fastARG(executable, fastARG_in_filehandle, fastARG_out_filehandle):
+    print("== Running fastARG ==")
+    from subprocess import call
+    exe = str(executable)
+    call([exe,'build', fastARG_in_filehandle.name], stdout=fastARG_out_filehandle)
+    fastARG_out_filehandle.flush()
+    fastARG_out_filehandle.seek(0)
+
     
 def run_fastARG(executable, fastARG_in_filehandle, fastARG_out_filehandle):
     print("== Running fastARG ==")
@@ -126,9 +143,13 @@ def msprime_txts_to_fastARG_in_revised(tree_filehandle, mutations_filehandle, ro
         print("== Saving new msprime ARG as input format for fastARG ==")
     
     ts = msprime.load_txt(tree_filehandle.name, mutations_filehandle.name)
-    simple_ts = ts.subset(list(range(ts.get_sample_size())))
+    try:
+        simple_ts = ts.subset(list(range(ts.get_sample_size())))
+    except:
+        ts.dump("bad.hdf5")
+        raise
     if hdf5_outname:
-        ts.dump(hdf5_outname)
+        simple_ts.dump(hdf5_outname)
     for j, v in enumerate(simple_ts.variants(as_bytes=True)):
         if root_seq[j]:
             print(j, v.genotypes.decode().translate(str.maketrans('01','10')), sep="\t", file=fastARG_filehandle)
@@ -136,6 +157,7 @@ def msprime_txts_to_fastARG_in_revised(tree_filehandle, mutations_filehandle, ro
             print(j, v.genotypes.decode(), sep="\t", file=fastARG_filehandle)
     fastARG_filehandle.flush()
     fastARG_filehandle.seek(0)
+    return(simple_ts)
 
 if __name__ == "__main__":
     import argparse
@@ -163,10 +185,11 @@ if __name__ == "__main__":
             fastARG_out_to_msprime_txts(fa_out, tree, muts)
             msprime_txts_to_fastARG_in_revised(tree, muts, root_seq, fa_revised)
             if os.stat(fa_in.name).st_size == 0:
-                warn("Initial fastARG input file is empty   ")            
-            if filecmp.cmp(fa_in.name, fa_revised.name, shallow=False) == False:
+                warn("Initial fastARG input file is empty")            
+            elif filecmp.cmp(fa_in.name, fa_revised.name, shallow=False) == False:
                 warn("Initial fastARG input file differs from processed fastARG file")
-
+            else:
+                print("Conversion via fastARG has worked! Input and output files are identical")
     else:
         prefix = os.path.splitext(os.path.basename(args.hdf5file.name))[0]
         full_prefix = os.path.join(args.outputdir, prefix)
@@ -181,6 +204,8 @@ if __name__ == "__main__":
             fastARG_out_to_msprime_txts(fa_out, tree, muts)
             msprime_txts_to_fastARG_in_revised(tree, muts, root_seq, fa_revised, full_prefix + ".hdf5_revised")
             if os.stat(fa_in.name).st_size == 0:
-                warn("Initial fastARG input file is empty   ")            
-            if filecmp.cmp(fa_in.name, fa_revised.name, shallow=False) == False:
+                warn("Initial fastARG input file is empty")            
+            elif filecmp.cmp(fa_in.name, fa_revised.name, shallow=False) == False:
                 warn("Initial fastARG input file differs from processed fastARG file")
+            else:
+                print("Conversion via fastARG has worked! Input and output files are identical")
