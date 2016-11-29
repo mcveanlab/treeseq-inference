@@ -4,3 +4,6 @@
 [submodule "msprime"]
 	path = msprime
 	url = https://github.com/jeromekelleher/msprime
+[submodule "argweaver"]
+	path = argweaver
+	url = https://github.com/mdrasmus/argweaver
