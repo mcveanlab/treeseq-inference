@@ -25,20 +25,13 @@ def msprime_to_fastARG_in(ts, fastARG_filehandle):
     fastARG_filehandle.flush()
     fastARG_filehandle.seek(0)
 
-def run_fastARG(executable, fastARG_in_filehandle, fastARG_out_filehandle):
+def run_fastARG(executable, fastARG_in_filehandle, fastARG_out_filehandle, seed=None):
     print("== Running fastARG ==")
     from subprocess import call
-    exe = str(executable)
-    call([exe,'build', fastARG_in_filehandle.name], stdout=fastARG_out_filehandle)
-    fastARG_out_filehandle.flush()
-    fastARG_out_filehandle.seek(0)
-
-    
-def run_fastARG(executable, fastARG_in_filehandle, fastARG_out_filehandle):
-    print("== Running fastARG ==")
-    from subprocess import call
-    exe = str(executable)
-    call([exe,'build', fastARG_in_filehandle.name], stdout=fastARG_out_filehandle)
+    exe = [str(executable), 'build']
+    if seed:
+        exe += ['-s', str(int(seed))]
+    call(exe + [fastARG_in_filehandle.name], stdout=fastARG_out_filehandle)
     fastARG_out_filehandle.flush()
     fastARG_out_filehandle.seek(0)
     
