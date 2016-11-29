@@ -61,3 +61,4 @@ if __name__ == "__main__":
                 if filecmp.cmp(fa_in.name, fa_revised.name, shallow=False) == False:
                     warn("Initial fastARG input file differs from processed fastARG file")
                 writer.writerow({'sample_size': n, 'seq_length': l, 'fastARG_time': end_time-start_time, 'N_c_records_orig': len(list(ts.records())),'N_c_records_fastARG': len(list(ts_new.records())), 'simulation_seed': seed})
+            csvfile.flush()
