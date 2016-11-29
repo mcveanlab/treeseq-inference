@@ -23,6 +23,7 @@ if __name__ == "__main__":
     import csv
     import time
     import random
+    import filecmp
     seed_generator = random.Random()
     seed_generator.seed(123)
     sample_size_sims = [{'sample_size':ss,'length':1e6} for ss in map(int, np.linspace(500, 5000, 10))]
