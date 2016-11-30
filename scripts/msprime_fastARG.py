@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Various functions to convert msprime simulation file to run in Heng Li's fastARG program.
+"""Various functions to convert msprime simulation file to run in Heng Li's fastARG program and back again.
 
 When run as a script, takes an msprime simulation in hdf5 format, saves to fastARG input format (haplotype sequences), runs fastARG on it, converts fastARG output to msprime input (2 files), reads these into msprime outputs the haplotype sequences again, and checks that the 
 
@@ -18,8 +18,7 @@ def msprime_hdf5_to_fastARG_in(msprime_hdf5, fastARG_filehandle):
     msprime_to_fastARG_in(ts, fastARG_filehandle)
     
 def msprime_to_fastARG_in(ts, fastARG_filehandle):
-    #simple_ts = ts.subset(list(range(ts.get_sample_size())))
-    simple_ts=ts
+    simple_ts = ts.simplify() #check this is the 
     for j, v in enumerate(simple_ts.variants(as_bytes=True)):
         print(j, v.genotypes.decode(), sep="\t", file=fastARG_filehandle)
     fastARG_filehandle.flush()
@@ -137,7 +136,7 @@ def msprime_txts_to_fastARG_in_revised(tree_filehandle, mutations_filehandle, ro
     
     ts = msprime.load_txt(tree_filehandle.name, mutations_filehandle.name)
     try:
-        simple_ts = ts.subset(list(range(ts.get_sample_size())))
+        simple_ts = ts.simplify()
     except:
         ts.dump("bad.hdf5")
         raise
