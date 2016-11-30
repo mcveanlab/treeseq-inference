@@ -9,7 +9,7 @@ An example of such a format is the .arg format introduced by ARGweaver, document
 
 ```
 start=0	end=10000
-nd	event	age (gens)			pos		parent	children
+nd	event	age (gens)			pos		parents	children
 1	coal	122.586947411		0		2		n2,n1
 2	coal	1545.31450861		0		4		n3,1
 3	coal	12061.8085146		0		7		5,4
