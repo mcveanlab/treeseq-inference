@@ -43,7 +43,7 @@ def fastARG_out_to_msprime_txts(fastARG_out_filehandle, tree_filehandle, mutatio
     import csv
     print("== Converting fastARG output to msprime ==")
     fastARG_out_filehandle.seek(0) #make sure we reset to the start of the infile
-    coalescence_points={} #cr[X] = child1:[left,right], child2:[left,right],... : serves as intermediate ARG storage 
+    ARG_nodes={} #An[X] = child1:[left,right], child2:[left,right],... : serves as intermediate ARG storage 
     mutations={}
     mutation_nodes=set() #to check there aren't duplicate nodes with the same mutations - a fastARG restriction    
     
@@ -63,11 +63,11 @@ def fastARG_out_to_msprime_txts(fastARG_out_filehandle, tree_filehandle, mutatio
                 warn("Line {} has a ancestor node_id less than the id of its children, so node ID cannot be used as a proxy for age".format(line_num))
                 sys.exit()
             #one record for each node
-            if curr_node not in coalescence_points:
-                coalescence_points[curr_node] = {}
-            if child_node in coalescence_points[curr_node]:
+            if curr_node not in ARG_nodes:
+                ARG_nodes[curr_node] = {}
+            if child_node in ARG_nodes[curr_node]:
                 warn("Child node {} already exists for node {} (line {})".format(child_node, curr_node, line_num))
-            coalescence_points[curr_node][child_node]=[left, right]
+            ARG_nodes[curr_node][child_node]=[left, right]
             #mutations in msprime are placed as ancestral to a target node, rather than descending from a child node (as in fastARG)
             #we should check that (a) mutation at the same locus does not occur twice 
             # (b) the same child node is not used more than once (NB this should be a fastARG restriction)
@@ -91,10 +91,10 @@ def fastARG_out_to_msprime_txts(fastARG_out_filehandle, tree_filehandle, mutatio
     
     #Done reading in
     
-    if min(coalescence_points.keys()) != haplotypes:
-            warn("The smallest internal node id is expected to be the same as the number of haplotypes, but it is not ({} vs {})".format(min(coalescence_points.keys()), haplotypes))
+    if min(ARG_nodes.keys()) != haplotypes:
+            warn("The smallest internal node id is expected to be the same as the number of haplotypes, but it is not ({} vs {})".format(min(ARG_nodes.keys()), haplotypes))
     
-    for node,children in sorted(coalescence_points.items()): #sort by node number == time
+    for node,children in sorted(ARG_nodes.items()): #sort by node number == time
         #look at the break points for all the child sequences, and break up into that number of records
         breaks = set()
         for leftright in children.values():
