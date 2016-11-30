@@ -22,17 +22,16 @@ def msprime_to_fastARG_in(ts, fastARG_filehandle):
     for j, v in enumerate(simple_ts.variants(as_bytes=True)):
         print(j, v.genotypes.decode(), sep="\t", file=fastARG_filehandle)
     fastARG_filehandle.flush()
-    fastARG_filehandle.seek(0)
 
 def run_fastARG(executable, fastARG_in_filehandle, fastARG_out_filehandle, seed=None):
     print("== Running fastARG ==")
+    fastARG_in_filehandle.seek(0) #make sure we reset to the start of the infile
     from subprocess import call
     exe = [str(executable), 'build']
     if seed:
         exe += ['-s', str(int(seed))]
     call(exe + [fastARG_in_filehandle.name], stdout=fastARG_out_filehandle)
     fastARG_out_filehandle.flush()
-    fastARG_out_filehandle.seek(0)
     
     
 def fastARG_out_to_msprime_txts(fastARG_out_filehandle, tree_filehandle, mutations_filehandle):
@@ -43,6 +42,7 @@ def fastARG_out_to_msprime_txts(fastARG_out_filehandle, tree_filehandle, mutatio
     """
     import csv
     print("== Converting fastARG output to msprime ==")
+    fastARG_out_filehandle.seek(0) #make sure we reset to the start of the infile
     coalescence_points={} #cr[X] = child1:[left,right], child2:[left,right],... : serves as intermediate ARG storage 
     mutations={}
     mutation_nodes=set() #to check there aren't duplicate nodes with the same mutations - a fastARG restriction    
@@ -113,11 +113,10 @@ def fastARG_out_to_msprime_txts(fastARG_out_filehandle, tree_filehandle, mutatio
         mutations_filehandle.write("{}\t{}\n".format(pos, node))
     
     tree_filehandle.flush()
-    tree_filehandle.seek(0)
     mutations_filehandle.flush()
-    mutations_filehandle.seek(0)
    
 def fastARG_root_seq(fastARG_out_filehandle):
+    fastARG_out_filehandle.seek(0)
     for line in fastARG_out_filehandle:
         spl = line.split(None,3)
         if spl[0]=="S":
@@ -125,7 +124,6 @@ def fastARG_root_seq(fastARG_out_filehandle):
             fastARG_out_filehandle.seek(0)
             return([seq!="0" for seq in root_seq])
     warn("No root sequence found in '{}'".format(fastARG_out_filehandle.name))
-    fastARG_out_filehandle.seek(0)
     return([])
 
 def msprime_txts_to_fastARG_in_revised(tree_filehandle, mutations_filehandle, root_seq, fastARG_filehandle, hdf5_outname=None):
@@ -133,6 +131,8 @@ def msprime_txts_to_fastARG_in_revised(tree_filehandle, mutations_filehandle, ro
         print("== Saving new msprime ARG as hdf5 and also as input format for fastARG ==")
     else:
         print("== Saving new msprime ARG as input format for fastARG ==")
+    tree_filehandle.seek(0)
+    mutations_filehandle.seek(0)
     
     ts = msprime.load_txt(tree_filehandle.name, mutations_filehandle.name)
     try:
@@ -148,7 +148,6 @@ def msprime_txts_to_fastARG_in_revised(tree_filehandle, mutations_filehandle, ro
         else:
             print(j, v.genotypes.decode(), sep="\t", file=fastARG_filehandle)
     fastARG_filehandle.flush()
-    fastARG_filehandle.seek(0)
     return(simple_ts)
 
 if __name__ == "__main__":
