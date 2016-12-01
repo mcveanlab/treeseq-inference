@@ -29,6 +29,48 @@ Also note in this case that node 7 has no parent, which marks it as the root nod
 
 Such an ARG can be represented in a graph format, for instance as follows
 
+```
+library(visNetwork)
 
+con <- file('/Users/yan/Documents/Research/Wellcome/treeseq-inference/test_files/ARGweaver_test.arg')
+open(con)
 
-But an alternative representation is to 
+line1 <- strsplit(readLines(con,1),'\t')
+seq.lims <- data.frame(row.names=1,do.call(rbind,strsplit(line1[[1]],'=')), stringsAsFactors=FALSE)
+seq.lims[,1] <- as.numeric(seq.lims[,1])
+
+arg <- read.delim(con, colClasses=c(name='character', age='numeric', parents='character', pos='numeric', children='character'), fill=T)
+
+rownames(arg) <- arg[['name']]
+
+edge_output <- function(x) {
+ #take a list with 'name'='1','parents='2,3', etc
+ if(x[['parents']]!="") {
+   parents<-strsplit(x[['parents']],",")[[1]]
+   if (x[['event']]=='recomb') {
+     split.indexes <- cbind(seq_along(parents), seq_along(parents)+1)
+     splits=c(seq.lims['start',], x[['pos']], seq.lims['end',])
+     lower <- splits[split.indexes[1,]]
+     upper <- splits[split.indexes[2,]]
+   } else {
+     lower <- upper <- NA
+   }
+   label <- ifelse(is.na(lower) |is.na(upper), NA, paste(lower,upper,sep="-"))
+   data.frame(from=parents, to=x[['name']], lower, upper, label)
+  }
+}
+
+edges <- data.frame(do.call('rbind',by(arg, arg$name, edge_output)))
+
+height = 100 #max height, pre-logging
+
+nodes <- data.frame(id=arg$name, label=arg$name, level=log(arg$age/max(arg$age)*height+1), shape=ifelse(arg$event=='recomb','box','circle'), physics=ifelse(arg$parent=='',FALSE,TRUE), x=NA, stringsAsFactors = FALSE) 
+
+visNetwork(nodes, edges, main="ARG representation") %>% 
+  visEdges(arrows = "to", ) %>% 
+  visNodes(shapeProperties=list(borderRadius=2)) %>% 
+  visHierarchicalLayout(direction="DU") %>%
+  visInteraction(zoomView=FALSE, dragView=FALSE)
+```
+
+But an alternative representation is to place lines
