@@ -53,6 +53,8 @@ def fastARG_out_to_msprime_txts(fastARG_out_filehandle, tree_filehandle, mutatio
             
         elif fields[0]=='N':
             haplotypes, loci = int(fields[1]), int(fields[2])
+            csv.field_size_limit(max(csv.field_size_limit(), loci)) #needed because the last line has a field as long as loci
+
             
         elif fields[0]=='C' or fields[0]=='R':
             #coalescence or recombination events - 
