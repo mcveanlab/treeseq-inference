@@ -19,7 +19,7 @@ def msprime_hdf5_to_fastARG_in(msprime_hdf5, fastARG_filehandle):
     
 def msprime_to_fastARG_in(ts, fastARG_filehandle):
     simple_ts = ts.simplify()
-    for v in enumerate(simple_ts.variants(as_bytes=True)):
+    for v in simple_ts.variants(as_bytes=True):
         print(v.position, v.genotypes.decode(), sep="\t", file=fastARG_filehandle)
     fastARG_filehandle.flush()
 
@@ -34,6 +34,7 @@ def run_fastARG(executable, fastARG_in_filehandle, fastARG_out_filehandle, seed=
     fastARG_out_filehandle.flush()
 
 def variant_positions_from_fastARGin(fastARG_in_filehandle):
+    import numpy as np
     fastARG_in_filehandle.seek(0) #make sure we reset to the start of the infile
     vp=[]
     for line in fastARG_in_filehandle:
@@ -42,21 +43,23 @@ def variant_positions_from_fastARGin(fastARG_in_filehandle):
             vp.append(float(pos))
         except:
             warn("Could not convert the title on the following line to a floating point value:\n {}".format(line))
-    return(vp)
+    return(np.array(vp))
     
-def fastARG_out_to_msprime_txts(fastARG_out_filehandle, variant_positions, tree_filehandle, mutations_filehandle):
+def fastARG_out_to_msprime_txts(fastARG_out_filehandle, variant_positions, tree_filehandle, mutations_filehandle, seq_len=None):
     """
     convert the fastARG output format (plus a list of positions) to 2 text files (tree and mutations) which can be read in to msprime
     we need to split fastARG records that extend over the whole genome into sections that cover just that 
     coalescence point.
     """
     import csv
+    import numpy as np
     print("== Converting fastARG output to msprime ==")
     fastARG_out_filehandle.seek(0) #make sure we reset to the start of the infile
     ARG_nodes={} #An[X] = child1:[left,right], child2:[left,right],... : serves as intermediate ARG storage 
     mutations={}
-    mutation_nodes=set() #to check there aren't duplicate nodes with the same mutations - a fastARG restriction    
-    
+    mutation_nodes=set() #to check there aren't duplicate nodes with the same mutations - a fastARG restriction
+    seq_len = seq_len if seq_len is not None else  variant_positions[-1]+1 #if not given, hack seq length to max variant pos +1
+    breakpoints = np.insert(np.diff(variant_positions)/2 + variant_positions[:-1], [0, len(variant_positions)-1], [0, seq_len])
     for line_num, fields in enumerate(csv.reader(fastARG_out_filehandle, delimiter='\t')):
         if   fields[0]=='E':
             srand48seed = int(fields[1])
@@ -79,7 +82,7 @@ def fastARG_out_to_msprime_txts(fastARG_out_filehandle, variant_positions, tree_
                 ARG_nodes[curr_node] = {}
             if child_node in ARG_nodes[curr_node]:
                 warn("Child node {} already exists for node {} (line {})".format(child_node, curr_node, line_num))
-            ARG_nodes[curr_node][child_node]=[left, right]
+            ARG_nodes[curr_node][child_node]=[breakpoints[left], breakpoints[right]]
             #mutations in msprime are placed as ancestral to a target node, rather than descending from a child node (as in fastARG)
             #we should check that (a) mutation at the same locus does not occur twice 
             # (b) the same child node is not used more than once (NB this should be a fastARG restriction)
@@ -87,9 +90,10 @@ def fastARG_out_to_msprime_txts(fastARG_out_filehandle, variant_positions, tree_
                 if child_node in mutation_nodes:
                     warn("Node {} already has some mutations: some more are being added from line {}.".format(child_node, line_num))
                 mutation_nodes.add(child_node)
-                for m in [variant_positions[pos] for pos in fields[6:(6+n_mutations)]]:
+                for pos in fields[6:(6+n_mutations)]:
+                    m = variant_positions[int(pos)]
                     if m in mutations:
-                        warn("Duplicate mutations at a single locus: {}. One is from node {}.".format(pos, child_node))
+                        warn("Duplicate mutations at a single locus: {}. One is from node {}.".format(m, child_node))
                     else:
                         mutations[m]=child_node
                 
@@ -154,7 +158,7 @@ def msprime_txts_to_fastARG_in_revised(tree_filehandle, mutations_filehandle, ro
         raise
     if hdf5_outname:
         simple_ts.dump(hdf5_outname)
-    for j, v in simple_ts.variants(as_bytes=True):
+    for j, v in enumerate(simple_ts.variants(as_bytes=True)):
         if root_seq[j]:
             print(v.position, v.genotypes.decode().translate(str.maketrans('01','10')), sep="\t", file=fastARG_filehandle)
         else:
