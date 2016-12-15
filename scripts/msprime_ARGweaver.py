@@ -95,21 +95,24 @@ def ARGweaver_arg_to_msprime_txt(ARGweaver_arg_filehandle, tree_filehandle):
         node_names[key]=int(key)+n_tips
     
     
-    #recursive hack to make times strictly decreasing
-    ARG_node_time_epsilon= {name:0 for name in ARG_node_times}
-    def set_child_times(node_name, epsilon=1):
-        ARG_node_time_epsilon[node_name] += epsilon
-        for child_name in ARG_nodes[node_name]:
-            try:
-                set_child_times(child_name, epsilon+1)
-            except:
-                print(child_name)
-                pass    
-    set_child_times(root_node)
-    max_epsilon = max(ARG_node_time_epsilon.values())
-    print(max_epsilon, ARG_node_time_epsilon)
-    for nm in ARG_node_times:
-        ARG_node_times[nm] += (max_epsilon - ARG_node_time_epsilon[nm])/10000
+    #recursive hack to make times strictly decreasing, using depth-first topological sorting algorithm
+    def set_child_times(node_name, node_order, temporary_marks=set()):
+        if node_name in ARG_nodes:
+            if node_name in temporary_marks:
+                raise LookupError('ARG is not acyclic!')
+            if node_name not in node_order:
+                temporary_marks.add(node_name)
+                for child_name in ARG_nodes[node_name]:
+                    set_child_times(child_name, node_order, temporary_marks)
+                node_order.append(node_name)
+                temporary_marks.remove(node_name)
+                
+    node_order = [] #contains the internal nodes, such that parent is always after child
+    set_child_times(root_node, node_order)
+
+    max_epsilon = len(node_order)
+    for epsilon, nm in enumerate(node_order):
+        ARG_node_times[nm] += 0.001 * epsilon / max_epsilon
     
     
     for node_name in sorted(ARG_node_times, key=ARG_node_times.get): #sort by time
