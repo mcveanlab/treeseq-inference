@@ -15,26 +15,27 @@ fastarg_trees <- read.nexus(paste(base,".fa.nex", sep=""))
 tree.measure <- function(a, b, acceptable_length_diff_pct = 0.1) { #a and b should be multiPhylo objects containing multiple trees
     brk.a <- as.numeric(names(a))
     if (is.unsorted(brk.a))
-        stop("Tree names should correspond to numerical breakpoints, sorted from low to high, but trees names in the first trees object are not sorted.")
+        stop("Tree names should correspond to numerical breakpoints, sorted from low to high, but tree names in the first trees object are not sorted.")
     brk.b <- as.numeric(names(b))
     if (is.unsorted(brk.b))
-        stop("Tree names should correspond to numerical breakpoints, sorted from low to high, but trees names in the second trees object are not sorted.")
+        stop("Tree names should correspond to numerical breakpoints, sorted from low to high, but tree names in the second trees object are not sorted.")
     if ((max(brk.a) * (100+ acceptable_length_diff_pct)/100 < max(brk.b)) || 
         (max(brk.b) * (100+ acceptable_length_diff_pct)/100 < max(brk.a)))
         warning("The sequence lengths of the two trees files differ markedly: ", max(brk.a), " vs. ", max(brk.b), immediate. = TRUE)
     breaks.table <- stack(list('a'=brk.a,'b'=brk.b))
+    breaks.table <- by(breaks.table, breaks.table$values, function(x) x) #put identical breakpoints together
     tree.index=c(a=1, b=1) 
     lft <- 0
     results=data.frame(lft=numeric(), rgt=numeric(), RF=numeric(), wRF=numeric())
-    for (o in order(breaks.table$values)) {
-        brk = breaks.table[o,]
-        rgt <- brk$values
+    for (o in order(as.numeric(names(breaks.table)))) {
+        brk = breaks.table[[o]]
+        rgt <- brk$values[0]
         RF <- RF.dist(a[[tree.index['a']]], b[[tree.index['b']]], rooted=TRUE)
         wRF <- wRF.dist(a[[tree.index['a']]], b[[tree.index['b']]], rooted=TRUE)
         results[nrow(results)+1,] <- c(lft,rgt,RF,wRF)
         lft <- rgt
         tree.index[brk$ind] <- tree.index[brk$ind] + 1 #NB, brk$ind is a factor with levels (m1,m2), so we hope that m1==1 and m2==2
-        if (tree.index[brk$ind] > c(length(a),length(b))[brk$ind]) {
+        if (any(tree.index[brk$ind] > c(length(a),length(b))[brk$ind])) {
             warning("Reached the end of the trees with ", max(brk.a, brk.b)-lft, " left to go")
             break
         }
