@@ -21,16 +21,27 @@ msprime input (http://msprime.readthedocs.io/en/stable/api.html#msprime.load_txt
 [start  end  node, child1,child2  time population]
 
 
+Larger simulations can be run e.g. by 
+
+bin/arg-sim -k 8 -L 100000 -N 10000 -r 1.6e-8 -m 1.8e-8 -o ARGweaver_medtest.arg
+
 """
 import sys
 sys.path.insert(0,'../msprime/') # use the local copy of msprime in preference to the global one
 from tempfile import NamedTemporaryFile
 import msprime
+msprime_filename="MStest_med.msprime"
+ARGweaver_filename="AWtest_med.msprime"
+
+
 from msprime_ARGweaver import ARGweaver_arg_to_msprime_txt
-with open("../test_files/ARGweaver_test.arg", 'r+') as arg, \
+with open("../test_files/ARGweaver_medtest.arg", 'r+') as arg, \
      NamedTemporaryFile("w+") as msprime_in:
-    ARGweaver_arg_to_msprime_txt(arg, msprime_in)
+    conversion_table = ARGweaver_arg_to_msprime_txt(arg, msprime_in)
+        
     ts = msprime.load_txt(msprime_in.name)
+
+'''
 print("ORIGINAL")
 print(" Tree:")
 for t in ts.trees():
@@ -45,6 +56,13 @@ subset = ts.simplify()
 print(" Tree:")
 for t in subset.trees():
     print(t.interval, t)
-print(" Coalescense records:")
-for r in subset.records():
-    print("{}".format(r))
+'''
+print(" ARGweaver coalescence records output to {}".format(ARGweaver_filename))
+sim = ts.simplify()
+with open(ARGweaver_filename, 'w+') as f:
+    sim.write_records(f, precision=12)
+
+print(" msprime coalescence records output to {}".format(msprime_filename))
+ts = msprime.simulate(sample_size=8, Ne=10000, mutation_rate=1.8e-8, recombination_rate=1.6e-8,length=100000)
+with open(msprime_filename, 'w+') as f:
+    ts.write_records(f, precision=12)
