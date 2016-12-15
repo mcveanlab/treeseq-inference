@@ -29,7 +29,7 @@ tree.measure <- function(a, b, acceptable_length_diff_pct = 0.1) { #a and b shou
     results=data.frame(lft=numeric(), rgt=numeric(), RF=numeric(), wRF=numeric())
     for (o in order(as.numeric(names(breaks.table)))) {
         brk = breaks.table[[o]]
-        rgt <- brk$values[0]
+        rgt <- brk$values[0:1]
         RF <- RF.dist(a[[tree.index['a']]], b[[tree.index['b']]], rooted=TRUE)
         wRF <- wRF.dist(a[[tree.index['a']]], b[[tree.index['b']]], rooted=TRUE)
         results[nrow(results)+1,] <- c(lft,rgt,RF,wRF)
