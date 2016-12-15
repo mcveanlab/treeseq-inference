@@ -39,7 +39,7 @@ if __name__ == "__main__":
                 sim_seed = seed_generator.randint(1,2**32-1)
                 n = int(params['sample_size'])
                 l = int(params['length'])
-                print("Simulating n_haps={} seq_len={}".format(n, l))
+                print("Simulating n_haps={} seq_len={} (seed is {})".format(n, l, sim_seed))
                 
                 ts = msprime.simulate(
                     sample_size=n, Ne=1e4, mutation_rate=2e-8, recombination_rate=2e-8,
