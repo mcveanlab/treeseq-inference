@@ -18,9 +18,9 @@ def msprime_hdf5_to_fastARG_in(msprime_hdf5, fastARG_filehandle):
     msprime_to_fastARG_in(ts, fastARG_filehandle)
     
 def msprime_to_fastARG_in(ts, fastARG_filehandle):
-    simple_ts = ts.simplify() #check this is the 
-    for j, v in enumerate(simple_ts.variants(as_bytes=True)):
-        print(j, v.genotypes.decode(), sep="\t", file=fastARG_filehandle)
+    simple_ts = ts.simplify()
+    for v in enumerate(simple_ts.variants(as_bytes=True)):
+        print(v.position, v.genotypes.decode(), sep="\t", file=fastARG_filehandle)
     fastARG_filehandle.flush()
 
 def run_fastARG(executable, fastARG_in_filehandle, fastARG_out_filehandle, seed=None):
@@ -32,11 +32,21 @@ def run_fastARG(executable, fastARG_in_filehandle, fastARG_out_filehandle, seed=
         exe += ['-s', str(int(seed))]
     call(exe + [fastARG_in_filehandle.name], stdout=fastARG_out_filehandle)
     fastARG_out_filehandle.flush()
+
+def variant_positions_from_fastARGin(fastARG_in_filehandle):
+    fastARG_in_filehandle.seek(0) #make sure we reset to the start of the infile
+    vp=[]
+    for line in fastARG_in_filehandle:
+        try:
+            pos = line.split()[0]
+            vp.append(float(pos))
+        except:
+            warn("Could not convert the title on the following line to a floating point value:\n {}".format(line))
+    return(vp)
     
-    
-def fastARG_out_to_msprime_txts(fastARG_out_filehandle, tree_filehandle, mutations_filehandle):
+def fastARG_out_to_msprime_txts(fastARG_out_filehandle, variant_positions, tree_filehandle, mutations_filehandle):
     """
-    convert the fastARG output format to 2 text files (tree and mutations) which can be read in to msprime
+    convert the fastARG output format (plus a list of positions) to 2 text files (tree and mutations) which can be read in to msprime
     we need to split fastARG records that extend over the whole genome into sections that cover just that 
     coalescence point.
     """
@@ -62,7 +72,7 @@ def fastARG_out_to_msprime_txts(fastARG_out_filehandle, tree_filehandle, mutatio
             #format is curr_node, child_node, seq_start_inclusive, seq_end_noninclusive, num_mutations, mut_loc1, mut_loc2, ....
             curr_node, child_node, left, right, n_mutations = [int(i) for i in fields[1:6]]
             if curr_node<child_node:
-                warn("Line {} has a ancestor node_id less than the id of its children, so node ID cannot be used as a proxy for age".format(line_num))
+                warn("Line {} has an ancestor node_id less than the id of its children, so node ID cannot be used as a proxy for age".format(line_num))
                 sys.exit()
             #one record for each node
             if curr_node not in ARG_nodes:
@@ -77,7 +87,7 @@ def fastARG_out_to_msprime_txts(fastARG_out_filehandle, tree_filehandle, mutatio
                 if child_node in mutation_nodes:
                     warn("Node {} already has some mutations: some more are being added from line {}.".format(child_node, line_num))
                 mutation_nodes.add(child_node)
-                for m in [float(pos) for pos in fields[6:(6+n_mutations)]]:
+                for m in [variant_positions[pos] for pos in fields[6:(6+n_mutations)]]:
                     if m in mutations:
                         warn("Duplicate mutations at a single locus: {}. One is from node {}.".format(pos, child_node))
                     else:
@@ -106,7 +116,7 @@ def fastARG_out_to_msprime_txts(fastARG_out_filehandle, tree_filehandle, mutatio
             leftbreak = breaks[i-1]    
             rightbreak = breaks[i]
             #NB - here we could try to input the values straight into an msprime python structure,
-            #but until this feature is implemented in msprime, we simply output to a correctly formatted text file
+            #but until this feature is implemented in msprime, we simply output to a correctly formatted msprime text input file
             tree_filehandle.write("{}\t{}\t{}\t".format(leftbreak, rightbreak,node))
             tree_filehandle.write(",".join([str(cnode) for cnode, cspan in sorted(children.items()) if cspan[0]<rightbreak and cspan[1]>leftbreak]))
             tree_filehandle.write("\t{}\t{}\n".format(node, 0))
@@ -144,11 +154,11 @@ def msprime_txts_to_fastARG_in_revised(tree_filehandle, mutations_filehandle, ro
         raise
     if hdf5_outname:
         simple_ts.dump(hdf5_outname)
-    for j, v in enumerate(simple_ts.variants(as_bytes=True)):
+    for j, v in simple_ts.variants(as_bytes=True):
         if root_seq[j]:
-            print(j, v.genotypes.decode().translate(str.maketrans('01','10')), sep="\t", file=fastARG_filehandle)
+            print(v.position, v.genotypes.decode().translate(str.maketrans('01','10')), sep="\t", file=fastARG_filehandle)
         else:
-            print(j, v.genotypes.decode(), sep="\t", file=fastARG_filehandle)
+            print(v.position, v.genotypes.decode(), sep="\t", file=fastARG_filehandle)
     fastARG_filehandle.flush()
     return(simple_ts)
 
@@ -175,7 +185,7 @@ if __name__ == "__main__":
             msprime_hdf5_to_fastARG_in(args.hdf5file, fa_in)
             run_fastARG(args.fastARG_executable, fa_in, fa_out)
             root_seq = fastARG_root_seq(fa_out)
-            fastARG_out_to_msprime_txts(fa_out, tree, muts)
+            fastARG_out_to_msprime_txts(fa_out, variant_positions_from_fastARGin(fa_in), tree, muts)
             msprime_txts_to_fastARG_in_revised(tree, muts, root_seq, fa_revised)
             if os.stat(fa_in.name).st_size == 0:
                 warn("Initial fastARG input file is empty")            
@@ -194,7 +204,7 @@ if __name__ == "__main__":
             msprime_hdf5_to_fastARG_in(args.hdf5file, fa_in)
             run_fastARG(args.fastARG_executable, fa_in, fa_out)
             root_seq = fastARG_root_seq(fa_out)
-            fastARG_out_to_msprime_txts(fa_out, tree, muts)
+            fastARG_out_to_msprime_txts(fa_out, variant_positions_from_fastARGin(fa_in), tree, muts)
             msprime_txts_to_fastARG_in_revised(tree, muts, root_seq, fa_revised, full_prefix + ".hdf5_revised")
             if os.stat(fa_in.name).st_size == 0:
                 warn("Initial fastARG input file is empty")            
