@@ -19,8 +19,8 @@ tree.measure <- function(a, b, acceptable_length_diff_pct = 0.1) { #a and b shou
     brk.b <- as.numeric(names(b))
     if (is.unsorted(brk.b))
         stop("Tree names should correspond to numerical breakpoints, sorted from low to high, but trees names in the second trees object are not sorted.")
-    if ((max(brk.a) * (100+ acceptable_length_diff_pct)/100 > max(brk.b)) || 
-        (max(brk.b) * (100+ acceptable_length_diff_pct)/100 > max(brk.a)))
+    if ((max(brk.a) * (100+ acceptable_length_diff_pct)/100 < max(brk.b)) || 
+        (max(brk.b) * (100+ acceptable_length_diff_pct)/100 < max(brk.a)))
         warning("The sequence lengths of the two trees files differ markedly: ", max(brk.a), " vs. ", max(brk.b), immediate. = TRUE)
     breaks.table <- stack(list('a'=brk.a,'b'=brk.b))
     tree.index=c(a=1, b=1) 
