@@ -15,16 +15,20 @@ from tempfile import NamedTemporaryFile
 from msprime_fastARG import *
 
 def print_nexus(ts, treefile):
+    import sys
+    
     print("#NEXUS\nBEGIN TREES;", file = treefile)
     print("TRANSLATE\n{};".format(",\n".join(["{} {}".format(i,i) for i in range(ts.get_sample_size())])), file = treefile)
-    endpoint = 0
+    breakpoint = 0
     trees = 0
+    epsilon = 1e-8
     for l,t in ts.newick_trees():
         trees += 1
-        endpoint = endpoint+l
-        print("TREE " + str(endpoint) + " = " + t, file=treefile) 
+        breakpoint = breakpoint +l
+        print("TREE " + str(breakpoint) + " = " + t, file=treefile)         
     print("END;", file = treefile)
-    print("output {} trees".format(trees))
+    if treefile.name != "<stdout>":
+        print("output {} trees".format(trees))
 
 if __name__ == "__main__":
     import argparse
@@ -68,7 +72,7 @@ if __name__ == "__main__":
                     run_fastARG("../fastARG/fastARG", fa_in, fa_out, seed=inf_seed)
                     end_time = time.time()
                     root_seq = fastARG_root_seq(fa_out)
-                    fastARG_out_to_msprime_txts(fa_out, tree, muts)
+                    fastARG_out_to_msprime_txts(fa_out, variant_positions_from_fastARGin(fa_in), tree, muts, l)
                     ts_new = msprime_txts_to_fastARG_in_revised(tree, muts, root_seq, fa_revised)
                     #quick check
                     if filecmp.cmp(fa_in.name, fa_revised.name, shallow=False) == False:
