@@ -47,6 +47,22 @@ import sys
 sys.path.insert(0,'../msprime/') # use the local copy of msprime in preference to the global one
 import tempfile
 import msprime
+from msprime_fastARG import fastARG_out_to_msprime_txts
+
+fa_out = """\
+E	11
+N	4	3
+R	4	2	0	3	0
+C	5	4	0	2	0
+C	5	3	0	3	0
+C	6	0	0	3	1	0
+C	6	4	2	3	0
+C	7	1	0	3	0
+C	7	5	0	3	1	1
+C	8	6	0	3	0
+C	8	7	0	3	1	2
+S	8	000
+"""
 
 records = """\
 0 3 4 2    4 0
@@ -62,6 +78,9 @@ with tempfile.NamedTemporaryFile("w+") as f:
     f.write(records)
     f.flush()
     ts = msprime.load_txt(f.name)
+    ts.dump("ex1.hdf5")
+    simp = ts.simplify()
+    simp.dump("ex1_simplified.hdf5")
 print("ORIGINAL")
 print(" Tree:")
 for t in ts.trees():
@@ -72,10 +91,9 @@ for r in ts.records():
 
 
 print("MINIMAL")
-subset = ts.subset([0,1,2,3])
 print(" Tree:")
-for t in subset.trees():
+for t in simp.trees():
     print(t.interval, t)
 print(" Coalescense records:")
-for r in subset.records():
+for r in simp.records():
     print("{}".format(r))
