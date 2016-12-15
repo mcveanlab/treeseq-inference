@@ -14,18 +14,31 @@ from warnings import warn
 from tempfile import NamedTemporaryFile
 from msprime_fastARG import *
 
-def print_nexus(ts, treefile):
+def print_nexus(ts, treefile, index_trees_by_variant_number=True):
+    """
+    if one_tree_per_mutation, then don't index trees in the nexus file by their breakpoint position, but instead
+    output a single tree for each variant (mutation) in the file. This allows a fair comparison to be made between
+    original simulations (where recombination breakpoints are on a continuum) and inferred trees, where by neccessity,
+    recombination breakpoints are inferred at specific places between variant positions
+    """
     import sys
     
     print("#NEXUS\nBEGIN TREES;", file = treefile)
     print("TRANSLATE\n{};".format(",\n".join(["{} {}".format(i,i) for i in range(ts.get_sample_size())])), file = treefile)
-    breakpoint = 0
     trees = 0
+    variant_index = 0
     epsilon = 1e-8
-    for l,t in ts.newick_trees():
+    for t, (_, newick) in zip(ts.trees(), ts.newick_trees()):
         trees += 1
-        breakpoint = breakpoint +l
-        print("TREE " + str(breakpoint) + " = " + t, file=treefile)         
+        if index_trees_by_variant_number:
+            #index by rightmost variant number
+            n = t.get_num_mutations()
+            if n:
+                variant_index += n
+                print("TREE " + str(variant_index) + " = " + newick, file=treefile)
+        else:
+            #index by rightmost genome position
+            print("TREE " + str(t.get_interval()[1]) + " = " + newick, file=treefile)
     print("END;", file = treefile)
     if treefile.name != "<stdout>":
         print("output {} trees".format(trees))
