@@ -12,7 +12,7 @@ fastarg_trees <- read.nexus(paste(base,".fa.nex", sep=""))
 #msprime_trees <- read.nexus(paste(base,".mp.nwk", sep=""))
 
 
-tree.measure <- function(a, b, acceptable_length_diff_pct = 0.1) { #a and b should be multiPhylo objects containing multiple trees
+measure.genome.trees <- function(a, b, acceptable_length_diff_pct = 0.1) { #a and b should be multiPhylo objects containing multiple trees
     brk.a <- as.numeric(names(a))
     if (is.unsorted(brk.a))
         stop("Tree names should correspond to numerical breakpoints, sorted from low to high, but tree names in the first trees object are not sorted.")
@@ -43,5 +43,9 @@ tree.measure <- function(a, b, acceptable_length_diff_pct = 0.1) { #a and b shou
     return(results)
 }
 
-fa.res <- tree.measure(orig_trees, fastarg_trees)
-aw.res <- tree.measure(orig_trees, argweaver_trees)
+test <- function() {
+    #here we should take some trees of know topology distance and place them in the measure.genome.trees format, to check we are calculating correctly.
+}
+
+system.time(fa.res <- measure.genome.trees(orig_trees, fastarg_trees))
+aw.res <- measure.genome.trees(orig_trees, argweaver_trees)

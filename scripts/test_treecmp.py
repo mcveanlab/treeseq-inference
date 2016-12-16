@@ -14,12 +14,13 @@ from warnings import warn
 from tempfile import NamedTemporaryFile
 from msprime_fastARG import *
 
-def print_nexus(ts, treefile, index_trees_by_variant_number=True):
+def write_nexus_trees(ts, treefile, index_trees_by_variant_number=False):
     """
-    if one_tree_per_mutation, then don't index trees in the nexus file by their breakpoint position, but instead
-    output a single tree for each variant (mutation) in the file. This allows a fair comparison to be made between
-    original simulations (where recombination breakpoints are on a continuum) and inferred trees, where by neccessity,
-    recombination breakpoints are inferred at specific places between variant positions
+    if index_trees_by_variant_number == False (the default), then the names of the trees in the file correspond to the
+    upper breakpoint position along the genome. If index_trees_by_variant_number == True then each tree name is instead
+    the number of variants observed along the sequence so far (i.e. the uppermost variant index + 1). Using the variant
+    number allows trees to be compared for batches of variants rather than chromosome position, allowing fair comparison 
+    between inferred trees.
     """
     import sys
     
@@ -40,8 +41,6 @@ def print_nexus(ts, treefile, index_trees_by_variant_number=True):
             #index by rightmost genome position
             print("TREE " + str(t.get_interval()[1]) + " = " + newick, file=treefile)
     print("END;", file = treefile)
-    if treefile.name != "<stdout>":
-        print("output {} trees".format(trees))
 
 if __name__ == "__main__":
     import argparse
@@ -91,4 +90,4 @@ if __name__ == "__main__":
                     if filecmp.cmp(fa_in.name, fa_revised.name, shallow=False) == False:
                         warn("Initial fastARG input file differs from processed fastARG file")
                     with open("{}-{}.fa.nex".format(n,l), "w+") as nex:
-                        print_nexus(ts_new, nex)
+                        write_nexus_trees(ts_new, nex)
