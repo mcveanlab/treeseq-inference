@@ -25,9 +25,9 @@ n3	gene	0.0	0	2
 
 Where the 'pos' column is only relevant for recombination nodes, and marks a recombination breakpoint such that the first listed parent inherits the sequence to the left of that point (non-inclusive), and the second listed parent inherits sequence to the right (inclusive).  By ARGweaver convention the node numbers are usually allocated so that the node contributing the left hand side of the sequence is given a lower id number than that which contributes the right hand portion.
 
-Also note in this case that node 7 has no parent, which marks it as the root node.
+Note that having *both* parent and child nodes listed is redundant. Only one or the other is sufficient to reconstruct the ARG. Also that the node with no parent is the root node (node 7 in the example above). The general principle is that a coalescence node requires a time, an ID, and two children, whereas a recombination node requires an ID, a single child, and a recombination breakpoint. 
 
-Such an ARG can be represented in a graph format, for instance as follows
+An ARG such as the above can be represented in a graph format, for instance using the following R code
 
 ```
 library(visNetwork)
@@ -64,13 +64,16 @@ edges <- data.frame(do.call('rbind',by(arg, arg$name, edge_output)))
 
 height = 100 #max height, pre-logging
 
-nodes <- data.frame(id=arg$name, label=arg$name, level=log(arg$age/max(arg$age)*height+1), shape=ifelse(arg$event=='recomb','box','circle'), physics=ifelse(arg$parent=='',FALSE,TRUE), x=NA, stringsAsFactors = FALSE) 
+nodes <- data.frame(id=arg$name, label=arg$name, level=log(arg$age/max(arg$age)*height+1), shape=ifelse(arg$event=='recomb','box','circle'), physics=ifelse(arg$parent=='',FALSE,FALSE), x=NA, stringsAsFactors = FALSE) 
 
-visNetwork(nodes, edges, main="ARG representation") %>% 
-  visEdges(arrows = "to", ) %>% 
+nw <- visNetwork(nodes, edges, main="ARG representation") %>% 
+  visEdges(arrows = "to", font=list(align='middle')) %>% 
   visNodes(shapeProperties=list(borderRadius=2)) %>% 
+  visIgraphLayout(layout="layout_as_tree", flip.y=FALSE) %>%
   visHierarchicalLayout(direction="DU") %>%
-  visInteraction(zoomView=FALSE, dragView=FALSE)
+  visInteraction(zoomView=TRUE, dragView=FALSE)
+
+visSave(nw, ARG.html, FALSE)
 ```
 
 But an alternative representation is to place lines
