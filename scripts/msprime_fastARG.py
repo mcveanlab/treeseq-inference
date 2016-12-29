@@ -12,8 +12,9 @@ sys.path.insert(1,os.path.join(sys.path[0],'..','msprime')) # use the local copy
 import msprime
 from warnings import warn
 
-def msprime_hdf5_to_fastARG_in(msprime_hdf5, fastARG_filehandle):
-    print("== Saving to fastARG input format ==")
+def msprime_hdf5_to_fastARG_in(msprime_hdf5, fastARG_filehandle, status_to=sys.stdout):
+    if status_to:
+        print("== Saving to fastARG input format ==", file=status_to)
     ts = msprime.load(msprime_hdf5.name)
     msprime_to_fastARG_in(ts, fastARG_filehandle)
     
@@ -23,8 +24,9 @@ def msprime_to_fastARG_in(ts, fastARG_filehandle):
         print(v.position, v.genotypes.decode(), sep="\t", file=fastARG_filehandle)
     fastARG_filehandle.flush()
 
-def run_fastARG(executable, fastARG_in_filehandle, fastARG_out_filehandle, seed=None):
-    print("== Running fastARG ==")
+def run_fastARG(executable, fastARG_in_filehandle, fastARG_out_filehandle, seed=None, status_to=sys.stdout):
+    if status_to:
+        print("== Running fastARG ==", file=status_to)
     fastARG_in_filehandle.seek(0) #make sure we reset to the start of the infile
     from subprocess import call
     exe = [str(executable), 'build']
@@ -45,7 +47,7 @@ def variant_positions_from_fastARGin(fastARG_in_filehandle):
             warn("Could not convert the title on the following line to a floating point value:\n {}".format(line))
     return(np.array(vp))
     
-def fastARG_out_to_msprime_txts(fastARG_out_filehandle, variant_positions, tree_filehandle, mutations_filehandle, seq_len=None):
+def fastARG_out_to_msprime_txts(fastARG_out_filehandle, variant_positions, tree_filehandle, mutations_filehandle, seq_len=None, status_to=sys.stdout):
     """
     convert the fastARG output format (plus a list of positions) to 2 text files (tree and mutations) which can be read in to msprime
     we need to split fastARG records that extend over the whole genome into sections that cover just that 
@@ -53,13 +55,17 @@ def fastARG_out_to_msprime_txts(fastARG_out_filehandle, variant_positions, tree_
     """
     import csv
     import numpy as np
-    print("== Converting fastARG output to msprime ==")
+    if status_to:
+        print("== Converting fastARG output to msprime ==", file=status_to)
     fastARG_out_filehandle.seek(0) #make sure we reset to the start of the infile
     ARG_nodes={} #An[X] = child1:[left,right], child2:[left,right],... : serves as intermediate ARG storage 
     mutations={}
     mutation_nodes=set() #to check there aren't duplicate nodes with the same mutations - a fastARG restriction
     seq_len = seq_len if seq_len is not None else  variant_positions[-1]+1 #if not given, hack seq length to max variant pos +1
-    breakpoints = np.insert(np.diff(variant_positions)/2 + variant_positions[:-1], [0, len(variant_positions)-1], [0, seq_len])
+    try:
+        breakpoints = np.insert(np.diff(variant_positions)/2 + variant_positions[:-1], [0, len(variant_positions)-1], [0, seq_len])
+    except:
+        print(variant_positions, seq_len)
     for line_num, fields in enumerate(csv.reader(fastARG_out_filehandle, delimiter='\t')):
         if   fields[0]=='E':
             srand48seed = int(fields[1])
@@ -142,11 +148,12 @@ def fastARG_root_seq(fastARG_out_filehandle):
     warn("No root sequence found in '{}'".format(fastARG_out_filehandle.name))
     return([])
 
-def msprime_txts_to_fastARG_in_revised(tree_filehandle, mutations_filehandle, root_seq, fastARG_filehandle, hdf5_outname=None):
-    if hdf5_outname:
-        print("== Saving new msprime ARG as hdf5 and also as input format for fastARG ==")
-    else:
-        print("== Saving new msprime ARG as input format for fastARG ==")
+def msprime_txts_to_fastARG_in_revised(tree_filehandle, mutations_filehandle, root_seq, fastARG_filehandle, hdf5_outname=None, status_to=sys.stdout):
+    if status_to:
+        if hdf5_outname:
+            print("== Saving new msprime ARG as hdf5 and also as input format for fastARG ==", file=status_to)
+        else:
+            print("== Saving new msprime ARG as input format for fastARG ==", file=status_to)
     tree_filehandle.seek(0)
     mutations_filehandle.seek(0)
     
