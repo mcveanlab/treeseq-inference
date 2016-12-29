@@ -12,30 +12,39 @@ sys.path.insert(1,os.path.join(sys.path[0],'..','msprime')) # use the local copy
 import msprime
 from warnings import warn
 
-def msprime_hdf5_to_ARGweaver_in(msprime_hdf5, ARGweaver_filehandle):
-    print("== Saving to ARGweaver input format ==")
+def msprime_hdf5_to_ARGweaver_in(msprime_hdf5, ARGweaver_filehandle, status_to=sys.stdout):
+    if status_to:
+        print("== Saving to ARGweaver input format ==", file=status_to)
     ts = msprime.load(msprime_hdf5.name)
     msprime_to_ARGweaver_in(ts, ARGweaver_filehandle)
     
 def msprime_to_ARGweaver_in(ts, ARGweaver_filehandle):
+    """
+    Takes an msprime TreeSequence object, and outputs a file in .sites format, suitable for input into ARGweaver
+    (see http://mdrasmus.github.io/argweaver/doc/#sec-file-sites)
+    Note that the documentation (http://mdrasmus.github.io/argweaver/doc/#sec-prog-arg-sample) states that the only mutation
+    model is Jukes-Cantor (i.e. equal mutation between all bases). Assuming adjacent sites are treated independently, we
+    convert variant format (0,1) to sequence format (A, T, G, C) by simply converting 0->A and 1->T
+    """
     simple_ts = ts.simplify()
+    print("\t".join(["NAMES"]+[str(x) for x in range(simple_ts.get_sample_size())]), file=ARGweaver_filehandle)
+    print("\t".join(["REGION", "chr", "1", str(simple_ts.get_sequence_length())]), file=ARGweaver_filehandle)
     for j, v in enumerate(simple_ts.variants(as_bytes=True)):
-        print(j, v.genotypes.decode(), sep="\t", file=ARGweaver_filehandle)
+        print(v.position+1, v.genotypes.decode().translate(str.maketrans('01','AT')), sep="\t", file=ARGweaver_filehandle)
     ARGweaver_filehandle.flush()
     ARGweaver_filehandle.seek(0)
 
-def run_ARGweaver(executable, ARGweaver_in_filehandle, ARGweaver_out_filehandle, seed=None):
-    print("== Running ARGweaver ==")
+def run_ARGweaver(ts, executable, ARGweaver_in_filehandle, ARGweaver_out_filehandle, seed=None, status_to=sys.stdout):
+    if status_to:
+        print("== Running ARGweaver ==", file=status_to)
     from subprocess import call
-    exe = [str(executable), 'build']
-    if seed:
-        exe += ['-s', str(int(seed))]
+    exe = [str(executable), '--output', 'argweaver_files/', '--popsize', ts. '--sites']
     call(exe + [fastARG_in_filehandle.name], stdout=fastARG_out_filehandle)
     fastARG_out_filehandle.flush()
     fastARG_out_filehandle.seek(0)
     
     
-def ARGweaver_arg_to_msprime_txt(ARGweaver_arg_filehandle, tree_filehandle):
+def ARGweaver_arg_to_msprime_txt(ARGweaver_arg_filehandle, tree_filehandle, =sys.stdout):
     """
     convert the ARGweaver arg representation to coalescence records format
     
@@ -46,7 +55,8 @@ def ARGweaver_arg_to_msprime_txt(ARGweaver_arg_filehandle, tree_filehandle):
     """
     import re
     import csv
-    print("== Converting .arg output to msprime ==")
+    if status_to:
+        print("== Converting .arg output to msprime ==", file=status_to)
     ARG_nodes={} #cr[X] = child1:[left,right], child2:[left,right],... : serves as intermediate ARG storage 
     ARG_node_times={} #node_name => time
     node_names={} #map of ARGweaver names -> numbers
@@ -151,11 +161,12 @@ def fastARG_root_seq(fastARG_out_filehandle):
     fastARG_out_filehandle.seek(0)
     return([])
 
-def msprime_txts_to_fastARG_in_revised(tree_filehandle, mutations_filehandle, root_seq, fastARG_filehandle, hdf5_outname=None):
-    if hdf5_outname:
-        print("== Saving new msprime ARG as hdf5 and also as input format for fastARG ==")
-    else:
-        print("== Saving new msprime ARG as input format for fastARG ==")
+def msprime_txts_to_fastARG_in_revised(tree_filehandle, mutations_filehandle, root_seq, fastARG_filehandle, hdf5_outname=None, status_to=sys.stdin):
+    if status_to:
+        if hdf5_outname:
+            print("== Saving new msprime ARG as hdf5 and also as input format for fastARG ==", file=status_to)
+        else:
+            print("== Saving new msprime ARG as input format for fastARG ==", file=status_to)
     
     ts = msprime.load_txt(tree_filehandle.name, mutations_filehandle.name)
     try:
@@ -178,9 +189,9 @@ if __name__ == "__main__":
     import argparse
     import filecmp
     import os
-    parser = argparse.ArgumentParser(description='Check fastARG imports by running msprime simulation through it and back out')
+    parser = argparse.ArgumentParser(description='Check ARGweaver imports by running msprime simulation through it and back out')
     parser.add_argument('hdf5file', type=argparse.FileType('r', encoding='UTF-8'), help='an msprime hdf5 file')
-    parser.add_argument('--fastARG_executable', '-x', default="fastARG", help='the path & name of the fastARG executable')
+    parser.add_argument('--ARGweaver_executable', '-x', default="bin/arg-sample", help='the path & name of the fastARG executable')
     parser.add_argument('outputdir', nargs="?", default=None, help='the directory in which to store the intermediate files. If None, files are saved under temporary names')
     args = parser.parse_args()
     
