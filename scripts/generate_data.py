@@ -13,11 +13,12 @@ import msprime
 def main(treefile_format = "nex"):
     sample_sizes = list(map(int, np.linspace(500, 5000, 10)))
     sample_sizes = [500] #just to test with a small sample size
+    sample_sizes = [8] #just to test with a small sample size
     tmpdir = "../test_files"
     for n in sample_sizes:
         ts = msprime.simulate(
             sample_size=n, Ne=1e4, mutation_rate=2e-8, recombination_rate=2e-8,
-            length=1e6)
+            length=1e5)
         assert ts.get_sample_size() ==  n
         print("Finished simulating for {}; mutations = {}; trees = {}".format(
             n, ts.get_num_mutations(), ts.get_num_trees()))
