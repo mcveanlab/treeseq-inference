@@ -3,7 +3,9 @@
 
 When run as a script, takes an msprime simulation in hdf5 format, saves to ARGweaver input format (haplotype sequences), runs ARGweaver inference on it, converts the ARGweaver output file (arg and mutations) to msprime input files, reads these into msprime outputs the haplotype sequences again, and checks that the haplotype sequences are the same.
 
-E.g. ./msprime_ARGweaver.py ../test_files/4000.hdf5 -x ../argweaver/bin/****
+E.g. for 8.hdf files produced by generate_data.py
+
+./msprime_ARGweaver.py ../test_files/8.hdf5 -d ../argweaver/bin/
 
 """
 import sys
@@ -13,10 +15,18 @@ import msprime
 from warnings import warn
 
 def msprime_hdf5_to_ARGweaver_in(msprime_hdf5, ARGweaver_filehandle, status_to=sys.stdout):
+    """
+    take an hdf5 file, and convert it into an input file suitable for ARGweaver
+    Returns the simulation parameters (Ne, mu, r) used to create the hdf5 file
+    """
     if status_to:
         print("== Saving to ARGweaver input format ==", file=status_to)
     ts = msprime.load(msprime_hdf5.name)
     msprime_to_ARGweaver_in(ts, ARGweaver_filehandle)
+    #here we should extract the /provenance information from the hdf5 file and return {'Ne':XXX, 'mutation_rate':XXX, 'recombination_rate':XXX}
+    #but this information is currently not encoded in the hdf5 file (listed as TODO)
+    #so here we just hack round it for the time being (use the params in 
+    return {'Ne':1e4, 'mutation_rate':2e-8, 'recombination_rate':2e-8}
     
 def msprime_to_ARGweaver_in(ts, ARGweaver_filehandle):
     """
@@ -25,26 +35,57 @@ def msprime_to_ARGweaver_in(ts, ARGweaver_filehandle):
     Note that the documentation (http://mdrasmus.github.io/argweaver/doc/#sec-prog-arg-sample) states that the only mutation
     model is Jukes-Cantor (i.e. equal mutation between all bases). Assuming adjacent sites are treated independently, we
     convert variant format (0,1) to sequence format (A, T, G, C) by simply converting 0->A and 1->T
+    
+    Also note that the msprime simulations assume infinite sites by allowing mutations to occur at floating-point
+    positions long a sequence. These need to be converted to integer positions along the genome for use in ARGweaver
+    
     """
+    from math import ceil
+    import numpy as np
     simple_ts = ts.simplify()
     print("\t".join(["NAMES"]+[str(x) for x in range(simple_ts.get_sample_size())]), file=ARGweaver_filehandle)
-    print("\t".join(["REGION", "chr", "1", str(simple_ts.get_sequence_length())]), file=ARGweaver_filehandle)
-    for j, v in enumerate(simple_ts.variants(as_bytes=True)):
-        print(v.position+1, v.genotypes.decode().translate(str.maketrans('01','AT')), sep="\t", file=ARGweaver_filehandle)
+    print("\t".join(["REGION", "chr", "1", str(int(simple_ts.get_sequence_length()))]), file=ARGweaver_filehandle)
+    genotypes = None
+    pos = 0
+    for j, v in enumerate(simple_ts.variants()):
+        if int(ceil(v.position)) != pos:
+            #this is a new position. Print the genotype at the old position, and then reset everything
+            if pos:
+                print(pos, "".join(np.where(genotypes==0,"A","T")), sep="\t", file=ARGweaver_filehandle)
+            genotypes = v.genotypes
+            pos = int(ceil(v.position))
+        else:
+            genotypes =  np.logical_and(genotypes, v.genotypes)
+    if pos:
+        print(pos, "".join(np.where(genotypes==0,"A","T")), sep="\t", file=ARGweaver_filehandle)
+
     ARGweaver_filehandle.flush()
     ARGweaver_filehandle.seek(0)
 
-def run_ARGweaver(ts, executable, ARGweaver_in_filehandle, ARGweaver_out_filehandle, seed=None, status_to=sys.stdout):
+def run_ARGweaver(Ne, mut_rate, recomb_rate, executable, ARGweaver_in_filehandle, ARGweaver_out_dir, out_prefix="aw", seed=None, iterations=100, status_to=sys.stdout, quiet=False):
+    import os
+    from subprocess import call
+    ARGweaver_out_dir = os.path.join(ARGweaver_out_dir,out_prefix)
     if status_to:
         print("== Running ARGweaver ==", file=status_to)
+    exe = [str(executable), '--output', ARGweaver_out_dir, '--popsize', str(Ne), '--mutrate', str(mut_rate), '--recombrate', str(recomb_rate), '--iters', str(iterations), '--sites']
+    if quiet:
+        exe.insert(1,'--quiet')
+    call(exe + [ARGweaver_in_filehandle.name])
+    
+    
+def ARGweaver_smc_to_msprime_txts(smc2bin_executable, prefix, tree_filehandle, status_to=sys.stdout):
+    """
+    convert the ARGweaver smc representation to coalescence records format
+    """
     from subprocess import call
-    exe = [str(executable), '--output', 'argweaver_files/', '--popsize', ts. '--sites']
-    call(exe + [fastARG_in_filehandle.name], stdout=fastARG_out_filehandle)
-    fastARG_out_filehandle.flush()
-    fastARG_out_filehandle.seek(0)
-    
-    
-def ARGweaver_arg_to_msprime_txt(ARGweaver_arg_filehandle, tree_filehandle, =sys.stdout):
+    if status_to:
+        print("Converting the ARGweaver smc output file '{}' to .arg format using '{}'".format(prefix + ".smc.gz", smc2bin_executable), file=status_to)
+    call([smc2bin_executable, prefix + ".smc.gz", prefix + ".arg"])
+    with open(prefix + ".arg", "r+") as arg_fh:
+        return(ARGweaver_arg_to_msprime_txts(arg_fh, tree_filehandle, status_to))
+
+def ARGweaver_arg_to_msprime_txts(ARGweaver_arg_filehandle, tree_filehandle, status_to=sys.stdout):
     """
     convert the ARGweaver arg representation to coalescence records format
     
@@ -60,6 +101,7 @@ def ARGweaver_arg_to_msprime_txt(ARGweaver_arg_filehandle, tree_filehandle, =sys
     ARG_nodes={} #cr[X] = child1:[left,right], child2:[left,right],... : serves as intermediate ARG storage 
     ARG_node_times={} #node_name => time
     node_names={} #map of ARGweaver names -> numbers
+    tips = set()
     root_node = None
 
     #first row gives start and end
@@ -98,11 +140,10 @@ def ARGweaver_arg_to_msprime_txt(ARGweaver_arg_filehandle, tree_filehandle, =sys
                 
                 if fields['event']=='gene':
                     node_names[fields['name']] = len(node_names)
-    
-    #now relabel the nodes
-    n_tips = len(node_names)
+                    tips.add(fields['name'])
+    #now relabel the internal nodes
     for key in ARG_nodes:
-        node_names[key]=int(key)+n_tips
+        node_names[key]=len(node_names)
     
     
     #recursive hack to make times strictly decreasing, using depth-first topological sorting algorithm
@@ -122,13 +163,14 @@ def ARGweaver_arg_to_msprime_txt(ARGweaver_arg_filehandle, tree_filehandle, =sys
 
     max_epsilon = len(node_order)
     for epsilon, nm in enumerate(node_order):
-        ARG_node_times[nm] += 0.001 * epsilon / max_epsilon
+        ARG_node_times[nm] += 0.001 * (epsilon+1) / max_epsilon
     
     
     for node_name in sorted(ARG_node_times, key=ARG_node_times.get): #sort by time
         #look at the break points for all the child sequences, and break up into that number of records
         try:
             children = ARG_nodes[node_name]
+            assert all([ARG_node_times[child]<ARG_node_times[node_name] for child in children]), "ARGweaver node {} has an adjusted time of {} but its children ({}) are not strictly younger (times @ {}).".format(node_name, str(ARG_node_times[node_name]), ", ".join(children), ", ".join([str(ARG_node_times[c]) for c in children]))
             breaks = set()
             for leftright in children.values():
                 breaks.update(leftright)
@@ -143,95 +185,94 @@ def ARGweaver_arg_to_msprime_txt(ARGweaver_arg_filehandle, tree_filehandle, =sys
                 tree_filehandle.write("\t{}\t{}\n".format(ARG_node_times[node_name], 0))
         except KeyError:
             #these should all be the tips
-            assert node_name.startswith('n'), "The node {} is not a parent of any other node".format(node_name)
-            
+            assert node_name in tips, "The node {} is not a parent of any other node, but is not a tip either".format(node_name)
+        except AssertionError as e:
+            import sys
+            import shutil
+            shutil.copyfile(ARGweaver_arg_filehandle.name, "bad.arg")
+            raise type(e)(str(e) + "\n" +
+                      "A copy of the file '{}' is being saved to 'bad.arg' for debugging".format(ARGweaver_arg_filehandle.name)).with_traceback(sys.exc_info()[2])
     tree_filehandle.flush()
     
     return(node_names)
     
    
-def fastARG_root_seq(fastARG_out_filehandle):
-    for line in fastARG_out_filehandle:
-        spl = line.split(None,3)
-        if spl[0]=="S":
-            root_seq = spl[2]
-            fastARG_out_filehandle.seek(0)
-            return([seq!="0" for seq in root_seq])
-    warn("No root sequence found in '{}'".format(fastARG_out_filehandle.name))
-    fastARG_out_filehandle.seek(0)
-    return([])
-
-def msprime_txts_to_fastARG_in_revised(tree_filehandle, mutations_filehandle, root_seq, fastARG_filehandle, hdf5_outname=None, status_to=sys.stdin):
+def msprime_txts_to_hdf5(tree_filehandle, hdf5_outname=None, status_to=sys.stdout):
+    from warnings import warn
+    import shutil
+    import msprime
     if status_to:
-        if hdf5_outname:
-            print("== Saving new msprime ARG as hdf5 and also as input format for fastARG ==", file=status_to)
-        else:
-            print("== Saving new msprime ARG as input format for fastARG ==", file=status_to)
-    
-    ts = msprime.load_txt(tree_filehandle.name, mutations_filehandle.name)
+        print("== Converting new msprime ARG as hdf5 ===", file = status_to)
+    try:
+        ts = msprime.load_txt(tree_filehandle.name)
+    except:
+        warn("Can't load the txt file properly. Saved a copy to 'bad.msprime' for inspection")
+        shutil.copyfile(tree_filehandle.name, "bad.msprime")
+        raise
+    if status_to:
+        print("== loaded {} ===".format(tree_filehandle.name), file=status_to)
     try:
         simple_ts = ts.simplify()
     except:
         ts.dump("bad.hdf5")
+        warn("Can't simplify. HDF5 file dumped to 'bad.hdf5'")
         raise
     if hdf5_outname:
         simple_ts.dump(hdf5_outname)
-    for j, v in enumerate(simple_ts.variants(as_bytes=True)):
-        if root_seq[j]:
-            print(j, v.genotypes.decode().translate(str.maketrans('01','10')), sep="\t", file=fastARG_filehandle)
-        else:
-            print(j, v.genotypes.decode(), sep="\t", file=fastARG_filehandle)
-    fastARG_filehandle.flush()
-    fastARG_filehandle.seek(0)
     return(simple_ts)
+
+
+def main(directory, hdf5_filehandle):
+    import os
+    full_prefix = os.path.join(directory, os.path.splitext(os.path.basename(hdf5_filehandle.name))[0])
+    with open(full_prefix+".sites", "w+") as aw_in:
+        params = msprime_hdf5_to_ARGweaver_in(hdf5_filehandle, aw_in)
+        run_ARGweaver(Ne=params['Ne'], 
+                      mut_rate=params['mutation_rate'],
+                      recomb_rate=params['recombination_rate'],
+                      executable= os.path.join(args.ARGweaver_executable_dir, args.ARGweaver_sample_executable),
+                      ARGweaver_in_filehandle=aw_in,
+                      ARGweaver_out_dir=directory)
+        if os.stat(aw_in.name).st_size == 0:
+            warn("Initial .sites file is empty")            
+        for smc_file in os.listdir(directory):
+            if smc_file.endswith(".smc.gz"):
+                prefix = os.path.join(directory,smc_file.replace(".smc.gz", ""))
+                print(prefix)
+                with open(prefix + ".msprime", "w+") as tree, \
+                     open(prefix + ".msmuts", "w+") as muts:
+                    ARGweaver_smc_to_msprime_txts(os.path.join(args.ARGweaver_executable_dir, args.ARGweaver_smc2arg_executable), prefix, tree)
+                    msprime_txts_to_hdf5(tree, prefix + ".hdf5")
+                    #NB, the ARGweaver output does not specify where mutations occur on the ARG, so we cannot
+                    #reconstruct the sequences implied by this ARG for testing purposes, and thus cannot compare
+                    #the original sequences with the reconstructed ones
+        
 
 if __name__ == "__main__":
     import argparse
     import filecmp
     import os
+    from warnings import warn
     parser = argparse.ArgumentParser(description='Check ARGweaver imports by running msprime simulation through it and back out')
     parser.add_argument('hdf5file', type=argparse.FileType('r', encoding='UTF-8'), help='an msprime hdf5 file')
-    parser.add_argument('--ARGweaver_executable', '-x', default="bin/arg-sample", help='the path & name of the fastARG executable')
+    parser.add_argument('--ARGweaver_executable_dir', '-d', default="../argweaver/bin/", help='the path to the directory containing the ARGweaver executables')
+    parser.add_argument('--ARGweaver_sample_executable', '-x', default="arg-sample", help='the name of the ARGweaver executable')
+    parser.add_argument('--ARGweaver_smc2arg_executable', '-s', default="smc2arg", help='the name of the ARGweaver executable')
     parser.add_argument('outputdir', nargs="?", default=None, help='the directory in which to store the intermediate files. If None, files are saved under temporary names')
     args = parser.parse_args()
     
-    
     if args.outputdir == None:
-        print("Saving everything to temporary files")
-        from tempfile import NamedTemporaryFile
-        with NamedTemporaryFile("w+") as fa_in, \
-             NamedTemporaryFile("w+") as fa_out, \
-             NamedTemporaryFile("w+") as tree, \
-             NamedTemporaryFile("w+") as muts, \
-             NamedTemporaryFile("w+") as fa_revised: 
-    
-            msprime_hdf5_to_fastARG_in(args.hdf5file, fa_in)
-            run_fastARG(args.fastARG_executable, fa_in, fa_out)
-            root_seq = fastARG_root_seq(fa_out)
-            fastARG_out_to_msprime_txts(fa_out, tree, muts)
-            msprime_txts_to_fastARG_in_revised(tree, muts, root_seq, fa_revised)
-            if os.stat(fa_in.name).st_size == 0:
-                warn("Initial fastARG input file is empty")            
-            elif filecmp.cmp(fa_in.name, fa_revised.name, shallow=False) == False:
-                warn("Initial fastARG input file differs from processed fastARG file")
-            else:
-                print("Conversion via fastARG has worked! Input and output files are identical")
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as aw_out_dir:
+            print("Saving everything to temporary files (temporarily stored in {})".format(aw_out_dir))
+            main(aw_out_dir, args.hdf5file)
     else:
-        prefix = os.path.splitext(os.path.basename(args.hdf5file.name))[0]
-        full_prefix = os.path.join(args.outputdir, prefix)
-        with open(full_prefix + ".haps", "w+") as fa_in, \
-             open(full_prefix + ".fastarg", "w+") as fa_out, \
-             open(full_prefix + ".msprime", "w+") as tree, \
-             open(full_prefix + ".msmuts", "w+") as muts, \
-             open(full_prefix + ".haps_revised", "w+") as fa_revised:
-            msprime_hdf5_to_fastARG_in(args.hdf5file, fa_in)
-            run_fastARG(args.fastARG_executable, fa_in, fa_out)
-            root_seq = fastARG_root_seq(fa_out)
-            fastARG_out_to_msprime_txts(fa_out, tree, muts)
-            msprime_txts_to_fastARG_in_revised(tree, muts, root_seq, fa_revised, full_prefix + ".hdf5_revised")
-            if os.stat(fa_in.name).st_size == 0:
-                warn("Initial fastARG input file is empty")            
-            elif filecmp.cmp(fa_in.name, fa_revised.name, shallow=False) == False:
-                warn("Initial fastARG input file differs from processed fastARG file")
-            else:
-                print("Conversion via fastARG has worked! Input and output files are identical")
+        if not os.path.isdir(args.outputdir):
+            warn("Output dir {} does not exist: creating it".format(args.outputdir))
+            os.mkdir(args.outputdir)
+        if len(os.listdir(args.outputdir)) > 0:
+            warn("Output dir {} already contains files: deleting them".format(args.outputdir))
+            import shutil
+            shutil.rmtree(args.outputdir) 
+            os.mkdir(args.outputdir)
+        main(args.outputdir, args.hdf5file)
