@@ -7,14 +7,14 @@ import os
 import sys
 import numpy as np
 import os.path
-sys.path.insert(1,os.path.join(sys.path[0],'..','fastARG')) # use the local copy of msprime in preference to the global one
+sys.path.insert(1,os.path.join(sys.path[0],'..','fastARG')) # use the local copy of fastARG
 sys.path.insert(1,os.path.join(sys.path[0],'..','msprime')) # use the local copy of msprime in preference to the global one
-sys.path.insert(1,os.path.join(sys.path[0],'..','scripts')) # use the local copy of msprime in preference to the global one
+sys.path.insert(1,os.path.join(sys.path[0],'..','scripts'))
 import msprime
 from warnings import warn
-from tempfile import NamedTemporaryFile
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 from msprime_fastARG import *
-#from msprime_ARGweaver import *
+from msprime_ARGweaver import *
 
 
 def write_nexus_trees(ts, treefile, index_trees_by_variant_number=False):
@@ -45,14 +45,13 @@ def write_nexus_trees(ts, treefile, index_trees_by_variant_number=False):
             print("TREE " + str(t.get_interval()[1]) + " = " + newick, file=treefile)
     print("END;", file = treefile)
 
-def test_fixed(coalescence_records, n_mutations, n_sim_replicates=1):
+def test_fixed(nexus_dir, coalescence_records, n_mutations, n_sim_replicates=1):
     import random
     import filecmp
     import os
     from subprocess import call
     from itertools import cycle
     from warnings import warn
-    nexus_dir = "nex_files"
     orig_filenames = {"gpos":"original_trees_by_genome_pos.nex", "mpos":"original_trees_%d_muts_by_mut_idx.nex"}
     new_filenames = {"gpos":"fastarg_trees_%d_muts_by_genome_pos_rep%d.nex", "mpos":"fastarg_trees_%d_muts_by_mut_idx_rep%d.nex"}
     orig_filenames = {k:os.path.join(nexus_dir,v) for k,v in orig_filenames.items()}
@@ -126,22 +125,26 @@ def test_fixed(coalescence_records, n_mutations, n_sim_replicates=1):
     r_cmds.append("mpos_rooted_metrics <- as.data.frame(t(mapply(function(m, r) genome.trees.dist(read.nexus(sprintf('{full_orig_filename}',m), force.multi=TRUE), read.nexus(sprintf('{full_new_filename}',m,r), force.multi=TRUE), rooted=TRUE), muts, reps)))".format(full_orig_filename=os.path.abspath(orig_filenames["mpos"]), full_new_filename=os.path.abspath(new_filenames["mpos"])))
     print("\n".join(r_cmds))
 
-def test_sim(recipr_mut_rates=[50000000], n_sim_replicates=1, sample_size=8, length=1e4, Ne=1e4, recombination_rate=2e-8):
+def test_sim(nexus_dir, recipr_mut_rates=[50000000], n_sim_replicates=1, sample_size=8, length=1e4, Ne=1e4, recombination_rate=2e-8):
     import random
     import filecmp
     import os
     from subprocess import call
     from itertools import cycle
     from warnings import warn
-    nexus_dir = "nex_files"
+    
     orig_filenames = {"gpos":"original_trees_%d_muts_by_genome_pos_rep%d.nex", "mpos":"original_trees_%d_muts_by_mut_idx_rep%d.nex"}
-    new_filenames = {"gpos":"fastarg_trees_%d_muts_by_genome_pos_rep%d.nex", "mpos":"fastarg_trees_%d_muts_by_mut_idx_rep%d.nex"}
+    fa_filenames = {"gpos":"fastarg_trees_%d_muts_by_genome_pos_rep%d.nex", "mpos":"fastarg_trees_%d_muts_by_mut_idx_rep%d.nex"}
+    aw_filenames = {"gpos":"argweaver_trees_%d_muts_by_genome_pos_rep%d_samp%s.nex", "mpos":"argweaver_trees_%d_muts_by_mut_idx_rep%d_samp%s.nex"}
     orig_filenames = {k:os.path.join(nexus_dir,v) for k,v in orig_filenames.items()}
-    new_filenames = {k:os.path.join(nexus_dir,v) for k,v in new_filenames.items()}
+    fa_filenames = {k:os.path.join(nexus_dir,v) for k,v in fa_filenames.items()}
+    aw_filenames = {k:os.path.join(nexus_dir,v) for k,v in aw_filenames.items()}
     rng = msprime.RandomGenerator(1234)
     n_fastARG_replicates = 1 #should be the same each time
-    mut_params = []
-    rep_params = []
+    fa_mut_params = []
+    fa_rep_params = []
+    aw_mut_params = []
+    aw_rep_params = []
     for sim_replicate in range(n_sim_replicates):
         print("Simulating an ARG for replicate %d" % sim_replicate, file=sys.stderr)
         ts = msprime.simulate(sample_size=sample_size, Ne=Ne, mutation_rate=None, recombination_rate=recombination_rate, length=length)
@@ -153,32 +156,56 @@ def test_sim(recipr_mut_rates=[50000000], n_sim_replicates=1, sample_size=8, len
             with open(orig_filenames["mpos"] % (r_mut, sim_replicate), "w+") as nex:
                 write_nexus_trees(ts, nex, index_trees_by_variant_number=True)
             for inference_replicates in range(n_fastARG_replicates):
-                    with NamedTemporaryFile("w+") as fa_in, \
-                         NamedTemporaryFile("w+") as fa_out, \
-                         NamedTemporaryFile("w+") as tree, \
-                         NamedTemporaryFile("w+") as fa_revised, \
-                         NamedTemporaryFile("w+") as mutation_file:
-                        #create the fastarg input file
-                        msprime_to_fastARG_in(ts, fa_in)
-                        #run fastarg
-                        run_fastARG("../fastARG/fastARG", fa_in, fa_out, seed=1234*(inference_replicates+2), status_to=None)
-                        #turn the fastARG output into msprime input format
-                        fastARG_out_to_msprime_txts(fa_out, variant_positions_from_fastARGin(fa_in), tree, mutation_file, seq_len=ts.get_sequence_length(), status_to=None)
-                        #read in the msprime input
-                        ts_new = msprime_txts_to_fastARG_in_revised(tree, mutation_file, fastARG_root_seq(fa_out), fa_revised, status_to=None)
-                        #quick check that the generated haplotypes are the same
-                        if filecmp.cmp(fa_in.name, fa_revised.name, shallow=False) == False:
-                            warn("Initial fastARG input file differs from processed fastARG file")
-                        with open(new_filenames["gpos"] % (r_mut, sim_replicate), "w+") as nex:
-                            write_nexus_trees(ts_new, nex, index_trees_by_variant_number=False)
-                        with open(new_filenames["mpos"] % (r_mut, sim_replicate), "w+") as nex:
-                            write_nexus_trees(ts_new, nex, index_trees_by_variant_number=True)
-                        mut_params.append(r_mut)
-                        rep_params.append(sim_replicate)
+                with NamedTemporaryFile("w+") as fa_in, \
+                     NamedTemporaryFile("w+") as fa_out, \
+                     NamedTemporaryFile("w+") as tree, \
+                     NamedTemporaryFile("w+") as fa_revised, \
+                     NamedTemporaryFile("w+") as mutation_file, \
+                     open(fa_filenames["gpos"] % (r_mut, sim_replicate), "w+") as nex_g, \
+                     open(fa_filenames["mpos"] % (r_mut, sim_replicate), "w+") as nex_m:
+                    #create the fastarg input file
+                    msprime_to_fastARG_in(ts, fa_in)
+                    #run fastarg
+                    run_fastARG("../fastARG/fastARG", fa_in, fa_out, seed=1234*(inference_replicates+2), status_to=None)
+                    #turn the fastARG output into msprime input format
+                    fastARG_out_to_msprime_txts(fa_out, variant_positions_from_fastARGin(fa_in), tree, mutation_file, seq_len=ts.get_sequence_length(), status_to=None)
+                    #read in the msprime input
+                    ts_fa = msprime_txts_to_fastARG_in_revised(tree, mutation_file, fastARG_root_seq(fa_out), fa_revised, status_to=None)
+                    #quick check that the generated haplotypes are the same
+                    if filecmp.cmp(fa_in.name, fa_revised.name, shallow=False) == False:
+                        warn("Initial fastARG input file differs from processed fastARG file")
+                    write_nexus_trees(ts_fa, nex_g, index_trees_by_variant_number=False)
+                    write_nexus_trees(ts_fa, nex_m, index_trees_by_variant_number=True)
+                    fa_mut_params.append(r_mut)
+                    fa_rep_params.append(sim_replicate)
+                with NamedTemporaryFile("w+") as aw_in, TemporaryDirectory() as directory:
+                    print("Running ARGweaver at rate {} ".format(1.0/r_mut), file=sys.stderr)
+                    msprime_to_ARGweaver_in(ts, aw_in)
+                    run_ARGweaver(Ne=Ne, mut_rate=1.0/r_mut, recomb_rate=recombination_rate, \
+                                  executable="../argweaver/bin/arg-sample", quiet=True, out_prefix="", \
+                                  ARGweaver_in_filehandle=aw_in, ARGweaver_out_dir=directory)
+                    for smc_file in os.listdir(directory):
+                        if smc_file.endswith(".smc.gz"):
+                            prefix = smc_file.replace(".smc.gz", "")
+                            full_prefix = os.path.join(directory,prefix)
+                            with open(full_prefix + ".msprime", "w+") as tree, \
+                                 open(full_prefix + ".msmuts", "w+") as muts, \
+                                 open(aw_filenames["gpos"] % (r_mut, sim_replicate, prefix), "w+") as nex_g, \
+                                 open(aw_filenames["mpos"] % (r_mut, sim_replicate, prefix), "w+") as nex_m:
+                                ARGweaver_smc_to_msprime_txts("../argweaver/bin/smc2arg", full_prefix, tree)
+                                ts_aw = msprime_txts_to_hdf5(tree)
+                                write_nexus_trees(ts_aw, nex_g, index_trees_by_variant_number=False)
+                                write_nexus_trees(ts_aw, nex_m, index_trees_by_variant_number=True)
+                                aw_mut_params.append(r_mut)
+                                aw_rep_params.append(sim_replicate)
+            
+
+
     print("output R commands to stdout:\n\n", file=sys.stderr)
+    tree_stat = "RF" #which tree statistic to measure
     r_cmds = []
-    r_cmds.append("muts <- c({})".format(",".join([str(m) for m in mut_params])))
-    r_cmds.append("reps <- c({})".format(",".join([str(r) for r in rep_params])))
+    r_cmds.append("muts <- c({})".format(",".join([str(m) for m in fa_mut_params])))
+    r_cmds.append("reps <- c({})".format(",".join([str(r) for r in fa_rep_params])))
     r_cmds.append("names(muts) <- sprintf('%dmuts%d', muts, reps)")
     r_cmds.append("layout(matrix(1:4,2,2))")    
     r_cmds.append("for (rooted in c(FALSE, TRUE)) {")
@@ -189,8 +216,9 @@ def test_sim(recipr_mut_rates=[50000000], n_sim_replicates=1, sample_size=8, len
         os.path.abspath(new_filenames["mpos"])))
     r_cmds.append("  metrics <- as.data.frame(t(mapply(function(m, r) genome.trees.dist(read.nexus(sprintf(filenames[1],m,r), force.multi=TRUE), read.nexus(sprintf(filenames[2],m,r), force.multi=TRUE), rooted=rooted), muts, reps)))")
     r_cmds.append(r"  mut.unstack <- unstack(metrics, 1/as.numeric(sub('muts\\d+','',rownames(metrics)))~as.numeric(sub('\\d+muts','',rownames(metrics))))")
-    r_cmds.append(r"  met.unstack <- unstack(metrics, RF~as.numeric(sub('\\d+muts','',rownames(metrics))))")
-    r_cmds.append("  matplot(mut.unstack, met.unstack, type='l', lty=1, log='x', main=ifelse(rooted,'Rooted metric', 'Unrooted metric'))")
+    r_cmds.append(r"  met.unstack <- unstack(metrics, %s~as.numeric(sub('\\d+muts','',rownames(metrics))))" % tree_stat)
+    r_cmds.append("  matplot(mut.unstack, met.unstack, xlab='mutation_rate', ylab='%s metric', type='l', lty=1, log='x', main=ifelse(rooted,'Rooted metric', 'Unrooted metric'))" % tree_stat)
+    r_cmds.append("  abline(h=0,lty=3)")
     r_cmds.append("  mtext(filenames[3], line=0.5, cex=0.9)")
     r_cmds.append("}}")
     
@@ -201,13 +229,14 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description='Generate treefiles to test treecmp.r')
     parser.add_argument('--sim', "-s", action='store_true', help='run a set of simulations, rather than use a fixed coalescence record structure')
+    parser.add_argument('--save_nexus_dir', "-d", default='nexus_dir', help='where to save all the nexus files')
     args = parser.parse_args()
     if args.sim:
-        mut_rates = [1e-8, 2e-8, 5e-8, 1e-7, 5e-7, 1e-6, 3e-6, 5e-6]
-        test_sim(recipr_mut_rates=[int(1.0/x) for x in mut_rates], n_sim_replicates=10)
+        mut_rates = [2e-8, 5e-8, 1e-7, 5e-7, 1e-6, 3e-6, 5e-6]
+        test_sim(args.save_nexus_dir, recipr_mut_rates=[int(1.0/x) for x in mut_rates], n_sim_replicates=10)
     else:
         #test using the example in Fig 4 of the original 2015 msprime paper, which
-        test_fixed("""\
+        test_fixed(args.save_nexus_dir, """\
         2       10      4       2,3         0.071    0
         0       2       5       1,3         0.090    0
         2       10      5       1,4         0.090    0
