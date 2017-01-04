@@ -62,16 +62,18 @@ def msprime_to_ARGweaver_in(ts, ARGweaver_filehandle):
     ARGweaver_filehandle.flush()
     ARGweaver_filehandle.seek(0)
 
-def run_ARGweaver(Ne, mut_rate, recomb_rate, executable, ARGweaver_in_filehandle, ARGweaver_out_dir, out_prefix="aw", seed=None, iterations=100, status_to=sys.stdout, quiet=False):
+def run_ARGweaver(Ne, mut_rate, recomb_rate, executable, ARGweaver_in_filehandle, ARGweaver_out_dir, out_prefix="aw", seed=None, iterations=100, status_to=sys.stdout, quiet=False, rand_seed=None):
     import os
     from subprocess import call
     ARGweaver_out_dir = os.path.join(ARGweaver_out_dir,out_prefix)
-    if status_to:
-        print("== Running ARGweaver ==", file=status_to)
-    exe = [str(executable), '--output', ARGweaver_out_dir, '--popsize', str(Ne), '--mutrate', str(mut_rate), '--recombrate', str(recomb_rate), '--iters', str(iterations), '--sites']
+    exe = [str(executable), '--output', ARGweaver_out_dir, '--popsize', str(Ne), '--mutrate', str(mut_rate), '--recombrate', str(recomb_rate), '--iters', str(iterations), '--sites', ARGweaver_in_filehandle.name, '--overwrite']
     if quiet:
-        exe.insert(1,'--quiet')
-    call(exe + [ARGweaver_in_filehandle.name])
+        exe.extend(['--quiet'])
+    if rand_seed is not None:
+        exe.extend(['--randseed', str(rand_seed)])
+    if status_to:
+        print("== Running ARGweaver as `{}` ==".format(" ".join(exe)), file=status_to)
+    call(exe)
     
     
 def ARGweaver_smc_to_msprime_txts(smc2bin_executable, prefix, tree_filehandle, status_to=sys.stdout):
@@ -80,7 +82,7 @@ def ARGweaver_smc_to_msprime_txts(smc2bin_executable, prefix, tree_filehandle, s
     """
     from subprocess import call
     if status_to:
-        print("Converting the ARGweaver smc output file '{}' to .arg format using '{}'".format(prefix + ".smc.gz", smc2bin_executable), file=status_to)
+        print("== Converting the ARGweaver smc output file '{}' to .arg format using '{}' ==".format(prefix + ".smc.gz", smc2bin_executable), file=status_to)
     call([smc2bin_executable, prefix + ".smc.gz", prefix + ".arg"])
     with open(prefix + ".arg", "r+") as arg_fh:
         return(ARGweaver_arg_to_msprime_txts(arg_fh, tree_filehandle, status_to))
@@ -114,86 +116,89 @@ def ARGweaver_arg_to_msprime_txts(ARGweaver_arg_filehandle, tree_filehandle, sta
     else:
         raise ValueError("Could not find start and end positions in .arg file")
 
-    for line_num, fields in enumerate(csv.DictReader(ARGweaver_arg_filehandle, delimiter='\t')):
-        assert (fields['name'] not in ARG_node_times), "duplicate node names identified: line {}".format(line_num)
-        #HACK: make sure that parent nodes are strictly older than children. 
-        #This assumes that parents always have a higher node number
-        ARG_node_times[fields['name']] = float(fields['age'])
-        #we save info about nodes when looking at their children, so we should save info into parent nodes
-        if fields['parents'] == '':
-            assert(root_node == None)
-            root_node = fields['name']
-            #don't need to record anything here, as we will grab details of the root when looking at children
-        else:
-            if fields['event']=='recomb':
-                #each recombination event has multiple parents
-                
-                for second_parent, parent in enumerate(fields['parents'].split(",")):
-                    if parent not in ARG_nodes:
-                        ARG_nodes[parent]={}
-                    ARG_nodes[parent][fields['name']]=[(float(fields['pos']) if second_parent else start), (end if second_parent else float(fields['pos']))]
+    try:
+        for line_num, fields in enumerate(csv.DictReader(ARGweaver_arg_filehandle, delimiter='\t')):
+            assert (fields['name'] not in ARG_node_times), "duplicate node names identified: line {}".format(line_num)
+            #HACK: make sure that parent nodes are strictly older than children. 
+            #This assumes that parents always have a higher node number
+            ARG_node_times[fields['name']] = float(fields['age'])
+            #we save info about nodes when looking at their children, so we should save info into parent nodes
+            if fields['parents'] == '':
+                assert(root_node == None)
+                root_node = fields['name']
+                #don't need to record anything here, as we will grab details of the root when looking at children
             else:
-                #these should all have one parent
-                if fields['parents'] not in ARG_nodes:
-                    ARG_nodes[fields['parents']]={}
-                ARG_nodes[fields['parents']][fields['name']]=[start,end]
-                
-                if fields['event']=='gene':
-                    node_names[fields['name']] = len(node_names)
-                    tips.add(fields['name'])
-    #now relabel the internal nodes
-    for key in ARG_nodes:
-        node_names[key]=len(node_names)
+                if fields['event']=='recomb':
+                    #each recombination event has multiple parents
+                    
+                    for second_parent, parent in enumerate(fields['parents'].split(",")):
+                        if parent not in ARG_nodes:
+                            ARG_nodes[parent]={}
+                        ARG_nodes[parent][fields['name']]=[(float(fields['pos']) if second_parent else start), (end if second_parent else float(fields['pos']))]
+                else:
+                    #these should all have one parent
+                    if fields['parents'] not in ARG_nodes:
+                        ARG_nodes[fields['parents']]={}
+                    ARG_nodes[fields['parents']][fields['name']]=[start,end]
+                    
+                    if fields['event']=='gene':
+                        node_names[fields['name']] = len(node_names)
+                        tips.add(fields['name'])
+        #now relabel the internal nodes
+        for key in ARG_nodes:
+            node_names[key]=len(node_names)
+        
+        
+        #recursive hack to make times strictly decreasing, using depth-first topological sorting algorithm
+        def set_child_times(node_name, node_order, temporary_marks=set()):
+            if node_name in ARG_nodes:
+                assert node_name not in temporary_marks, 'ARG is not acyclic!'
+                if node_name not in node_order:
+                    temporary_marks.add(node_name)
+                    for child_name in ARG_nodes[node_name]:
+                        set_child_times(child_name, node_order, temporary_marks)
+                    node_order.append(node_name)
+                    temporary_marks.remove(node_name)
+                    
+        node_order = [] #contains the internal nodes, such that parent is always after child
+        set_child_times(root_node, node_order)
     
+        max_epsilon = len(node_order)
+        for epsilon, nm in enumerate(node_order):
+            ARG_node_times[nm] += 0.001 * (epsilon+1) / max_epsilon
+        
+        
+        for node_name in sorted(ARG_node_times, key=ARG_node_times.get): #sort by time
+            #look at the break points for all the child sequences, and break up into that number of records
+            try:
+                children = ARG_nodes[node_name]
+                assert all([ARG_node_times[child]<ARG_node_times[node_name] for child in children]), "ARGweaver node {} has an adjusted time of {} but its children ({}) are not strictly younger (times @ {}).".format(node_name, str(ARG_node_times[node_name]), ", ".join(children), ", ".join([str(ARG_node_times[c]) for c in children]))
+                breaks = set()
+                for leftright in children.values():
+                    breaks.update(leftright)
+                breaks = sorted(breaks)
+                for i in range(1,len(breaks)):
+                    leftbreak = breaks[i-1]    
+                    rightbreak = breaks[i]
+                    #NB - here we could try to input the values straight into an msprime python structure,
+                    #but until this feature is implemented in msprime, we simply output to a correctly formatted text file
+                    tree_filehandle.write("{}\t{}\t{}\t".format(leftbreak, rightbreak, node_names[node_name]))
+                    tree_filehandle.write(",".join([str(x) for x in sorted([node_names[cnode] for cnode, cspan in children.items() if cspan[0]<rightbreak and cspan[1]>leftbreak])]))
+                    tree_filehandle.write("\t{}\t{}\n".format(ARG_node_times[node_name], 0))
+            except KeyError:
+                #these should all be the tips
+                assert node_name in tips, "The node {} is not a parent of any other node, but is not a tip either".format(node_name)
+    except AssertionError as e:
+        import sys
+        import shutil
+        import os
+        working_dir = os.path.dirname(os.path.realpath(ARGweaver_arg_filehandle.name))
+        shutil.make_archive('bad', 'zip', working_dir)
+        raise type(e)(str(e) + "\n" +
+                  "A copy of the directory '{}' has been compressed to 'bad.zip' for debugging purposes\n".format(ARGweaver_arg_filehandle.name) +
+                  "You should inspect the file '{}' within that archive".format(os.path.basename(ARGweaver_arg_filehandle.name))).with_traceback(sys.exc_info()[2])
     
-    #recursive hack to make times strictly decreasing, using depth-first topological sorting algorithm
-    def set_child_times(node_name, node_order, temporary_marks=set()):
-        if node_name in ARG_nodes:
-            if node_name in temporary_marks:
-                raise LookupError('ARG is not acyclic!')
-            if node_name not in node_order:
-                temporary_marks.add(node_name)
-                for child_name in ARG_nodes[node_name]:
-                    set_child_times(child_name, node_order, temporary_marks)
-                node_order.append(node_name)
-                temporary_marks.remove(node_name)
-                
-    node_order = [] #contains the internal nodes, such that parent is always after child
-    set_child_times(root_node, node_order)
-
-    max_epsilon = len(node_order)
-    for epsilon, nm in enumerate(node_order):
-        ARG_node_times[nm] += 0.001 * (epsilon+1) / max_epsilon
-    
-    
-    for node_name in sorted(ARG_node_times, key=ARG_node_times.get): #sort by time
-        #look at the break points for all the child sequences, and break up into that number of records
-        try:
-            children = ARG_nodes[node_name]
-            assert all([ARG_node_times[child]<ARG_node_times[node_name] for child in children]), "ARGweaver node {} has an adjusted time of {} but its children ({}) are not strictly younger (times @ {}).".format(node_name, str(ARG_node_times[node_name]), ", ".join(children), ", ".join([str(ARG_node_times[c]) for c in children]))
-            breaks = set()
-            for leftright in children.values():
-                breaks.update(leftright)
-            breaks = sorted(breaks)
-            for i in range(1,len(breaks)):
-                leftbreak = breaks[i-1]    
-                rightbreak = breaks[i]
-                #NB - here we could try to input the values straight into an msprime python structure,
-                #but until this feature is implemented in msprime, we simply output to a correctly formatted text file
-                tree_filehandle.write("{}\t{}\t{}\t".format(leftbreak, rightbreak, node_names[node_name]))
-                tree_filehandle.write(",".join([str(x) for x in sorted([node_names[cnode] for cnode, cspan in children.items() if cspan[0]<rightbreak and cspan[1]>leftbreak])]))
-                tree_filehandle.write("\t{}\t{}\n".format(ARG_node_times[node_name], 0))
-        except KeyError:
-            #these should all be the tips
-            assert node_name in tips, "The node {} is not a parent of any other node, but is not a tip either".format(node_name)
-        except AssertionError as e:
-            import sys
-            import shutil
-            shutil.copyfile(ARGweaver_arg_filehandle.name, "bad.arg")
-            raise type(e)(str(e) + "\n" +
-                      "A copy of the file '{}' is being saved to 'bad.arg' for debugging".format(ARGweaver_arg_filehandle.name)).with_traceback(sys.exc_info()[2])
     tree_filehandle.flush()
-    
     return(node_names)
     
    
