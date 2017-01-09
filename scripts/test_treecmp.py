@@ -17,7 +17,7 @@ from msprime_fastARG import *
 from msprime_ARGweaver import *
 
 
-def write_nexus_trees(ts, treefile, index_trees_by_variants=False):
+def write_nexus_trees(ts, treefile, index_trees_by_variants=False, zero_based_tip_numbers=True):
     """
     if index_trees_by_variants == False (the default), then the names of the trees in the file correspond to the
     upper breakpoint position along the genome. If index_trees_by_variants == True then each tree name is instead
@@ -33,7 +33,8 @@ def write_nexus_trees(ts, treefile, index_trees_by_variants=False):
     import numpy as np
     
     print("#NEXUS\nBEGIN TREES;", file = treefile)
-    print("TRANSLATE\n{};".format(",\n".join(["{} {}".format(i,i) for i in range(ts.get_sample_size())])), file = treefile)
+    increment = 0 if zero_based_tip_numbers else 1
+    print("TRANSLATE\n{};".format(",\n".join(["{} {}".format(i+increment,i+increment) for i in range(ts.get_sample_size())])), file = treefile)
     variant_index = 0
     epsilon = 1e-8
     if hasattr(index_trees_by_variants, "__len__"):
@@ -44,7 +45,7 @@ def write_nexus_trees(ts, treefile, index_trees_by_variants=False):
     else:
         positions = None
         
-    for t, (_, newick) in zip(ts.trees(), ts.newick_trees()):
+    for t, (_, newick) in zip(ts.trees(), ts.newick_trees()): #TO DO: should do ts.newick_trees(zero_based_tip_numbers)
         if index_trees_by_variants == False:
             #index by rightmost genome position
             print("TREE " + str(t.get_interval()[1]) + " = " + newick, file=treefile)
@@ -81,7 +82,7 @@ def test_fixed(nexus_dir, coalescence_records, n_mutations, n_sim_replicates=1):
         tree_in.flush()
         ts = msprime.load_txt(tree_in.name)
         with open(orig_filenames["gpos"], "w+") as nex:
-            write_nexus_trees(ts, nex, index_trees_by_variants=False)
+            write_nexus_trees(ts, nex, index_trees_by_variants=False, zero_based_tip_numbers=False) #ape in R requires 1-based numbers in .nex files
         for n_muts in n_mutations:
             for sim_replicate in range(n_sim_replicates):
                 muts = [None] * n_muts
@@ -102,7 +103,7 @@ def test_fixed(nexus_dir, coalescence_records, n_mutations, n_sim_replicates=1):
                     
                 ts.set_mutations(muts)
                 with open(orig_filenames["mpos"]% len(muts), "w+") as nex:
-                    write_nexus_trees(ts, nex, index_trees_by_variants=True)
+                    write_nexus_trees(ts, nex, index_trees_by_variants=True, zero_based_tip_numbers=False)
                 for inference_replicates in range(n_fastARG_replicates):
                         with NamedTemporaryFile("w+") as fa_in, \
                              NamedTemporaryFile("w+") as fa_out, \
@@ -124,9 +125,9 @@ def test_fixed(nexus_dir, coalescence_records, n_mutations, n_sim_replicates=1):
                                 #output them for inspection
                                 call(["cp", fa_in.name, "%d_muts.haps" % len(muts)])
                             with open(fa_filenames["gpos"] % (len(muts), sim_replicate), "w+") as nex:
-                                write_nexus_trees(ts_new, nex, index_trees_by_variants=False)
+                                write_nexus_trees(ts_new, nex, index_trees_by_variants=False, zero_based_tip_numbers=False)
                             with open(fa_filenames["mpos"] % (len(muts), sim_replicate), "w+") as nex:
-                                write_nexus_trees(ts_new, nex, index_trees_by_variants=True)
+                                write_nexus_trees(ts_new, nex, index_trees_by_variants=True, zero_based_tip_numbers=False)
                             mut_params.append(len(muts))
                             rep_params.append(sim_replicate)
     print("output R commands to stdout:\n\n", file=sys.stderr)
@@ -149,6 +150,8 @@ def test_sim(nexus_dir, recipr_mut_rates=[50000000], n_sim_replicates=1, sample_
     from itertools import cycle
     from warnings import warn
     import shutil
+    import re
+    import csv
     if rand_seed is not None:
         random.seed(rand_seed)
     orig_filenames = {"gpos":"original_trees_%d_muts_by_genome_pos_rep%d.nex", "mpos":"original_trees_%d_muts_by_mut_idx_rep%d.nex"}
@@ -172,9 +175,9 @@ def test_sim(nexus_dir, recipr_mut_rates=[50000000], n_sim_replicates=1, sample_
             print("Throwing mutations onto the ARG at rate {} ".format(1.0/r_mut), file=sys.stderr)
             ts.generate_mutations(1.0/r_mut, rng)
             with open(orig_filenames["gpos"] % (r_mut, sim_replicate), "w+") as nex:
-                write_nexus_trees(ts, nex, index_trees_by_variants=False)
+                write_nexus_trees(ts, nex, index_trees_by_variants=False, zero_based_tip_numbers=False)
             with open(orig_filenames["mpos"] % (r_mut, sim_replicate), "w+") as nex:
-                write_nexus_trees(ts, nex, index_trees_by_variants=True)
+                write_nexus_trees(ts, nex, index_trees_by_variants=True, zero_based_tip_numbers=False)
             for inference_replicates in range(n_fastARG_replicates):
                 with NamedTemporaryFile("w+") as fa_in, \
                      NamedTemporaryFile("w+") as fa_out, \
@@ -194,8 +197,8 @@ def test_sim(nexus_dir, recipr_mut_rates=[50000000], n_sim_replicates=1, sample_
                     #quick check that the generated haplotypes are the same
                     if filecmp.cmp(fa_in.name, fa_revised.name, shallow=False) == False:
                         warn("Initial fastARG input file differs from processed fastARG file")
-                    write_nexus_trees(ts_fa, nex_g, index_trees_by_variants=False)
-                    write_nexus_trees(ts_fa, nex_m, index_trees_by_variants=True)
+                    write_nexus_trees(ts_fa, nex_g, index_trees_by_variants=False, zero_based_tip_numbers=False)
+                    write_nexus_trees(ts_fa, nex_m, index_trees_by_variants=True, zero_based_tip_numbers=False)
                     fa_mut_params.append(r_mut)
                     fa_rep_params.append(sim_replicate)
                 with TemporaryDirectory() as directory:
@@ -206,10 +209,15 @@ def test_sim(nexus_dir, recipr_mut_rates=[50000000], n_sim_replicates=1, sample_
                         while(trials):
                             try: #we need repeated trials to work around an ARGweaver bug
                                 run_ARGweaver(Ne=Ne, mut_rate=1.0/r_mut, recomb_rate=recombination_rate, executable="../argweaver/bin/arg-sample", \
-                                              rand_seed=random.randint(1,2147483647), quiet=True, out_prefix=aw_prefix, iterations=100, \
+                                              rand_seed=random.randint(1,2147483647), quiet=True, out_prefix=aw_prefix, iterations=1000, sample_step=100, \
                                               ARGweaver_in_filehandle=aw_in, ARGweaver_out_dir=directory)
                                 #copy the stats file so we can get at the likelihood etc.
                                 shutil.copyfile(os.path.join(directory, aw_prefix + ".stats"), os.path.join(nexus_dir,"%dmuts%d.stats" % (r_mut, sim_replicate)))
+                                lik = {}
+                                with open(os.path.join(directory, aw_prefix + ".stats"), "r+") as stats:
+                                    for line in csv.DictReader(stats, delimiter='\t'):
+                                        if line['stage'] == 'resample':
+                                            lik[line['iter']] = float(line['joint']) #TO DO - check with Gil if we should be using 'joint' or 'likelihood' or what
                                 for smc_file in os.listdir(directory):
                                     if smc_file.endswith(".smc.gz"):
                                         prefix = smc_file.replace(".smc.gz", "")
@@ -220,13 +228,12 @@ def test_sim(nexus_dir, recipr_mut_rates=[50000000], n_sim_replicates=1, sample_
                                              open(aw_filenames["mpos"] % (r_mut, sim_replicate, prefix), "w+") as nex_m:
                                             ARGweaver_smc_to_msprime_txts("../argweaver/bin/smc2arg", full_prefix, tree)
                                             ts_aw = msprime_txts_to_hdf5(tree)
-                                            write_nexus_trees(ts_aw, nex_g, index_trees_by_variants=False)
-                                            write_nexus_trees(ts_aw, nex_m, index_trees_by_variants=[m.position for m in ts.mutations()])
+                                            ARGweaver_smc_to_nexus(os.path.join(directory,smc_file), nex_g, zero_based_tip_numbers=False)
+                                            write_nexus_trees(ts_aw, nex_m, index_trees_by_variants=[m.position for m in ts.mutations()], zero_based_tip_numbers=False)
                                             aw_mut_params.append(r_mut)
                                             aw_rep_params.append(sim_replicate)
                                             aw_samp_params.append(prefix)
-                                            #TO DO: should also append proper likelihood from the .stats file here
-                                            aw_likelihood.append(1)
+                                            aw_likelihood.append(lik[re.search("\d+$", prefix).group()])
                                 trials=0
                             except AssertionError as e:
                                 warn(str(e) + "Trying to run ARGweaver another time ({}) with a different random seed".format(trials))
@@ -242,6 +249,7 @@ def test_sim(nexus_dir, recipr_mut_rates=[50000000], n_sim_replicates=1, sample_
     r_cmds.append(r"aw.muts <- c({})".format(",".join([str(m) for m in aw_mut_params])))
     r_cmds.append(r"aw.reps <- c({})".format(",".join([str(r) for r in aw_rep_params])))
     r_cmds.append(r"aw.samp <- c({})".format(",".join(["'{}'".format(r) for r in aw_samp_params])))
+    r_cmds.append(r"aw.loglik <- c({})".format(",".join(["{}".format(r) for r in aw_likelihood])))
     r_cmds.append(r"names(aw.muts) <- sprintf('%dmuts%d%s', aw.muts, aw.reps, aw.samp)")
     r_cmds.append(r"re.match <- '(\\d+)muts(\\d+)(.*)'")
     r_cmds.append(r"layout(matrix(1:8,4,2, byrow=TRUE))")    
