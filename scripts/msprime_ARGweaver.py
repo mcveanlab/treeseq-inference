@@ -62,15 +62,19 @@ def msprime_to_ARGweaver_in(ts, ARGweaver_filehandle):
     ARGweaver_filehandle.flush()
     ARGweaver_filehandle.seek(0)
 
-def run_ARGweaver(Ne, mut_rate, recomb_rate, executable, ARGweaver_in_filehandle, ARGweaver_out_dir, out_prefix="aw", seed=None, iterations=100, status_to=sys.stdout, quiet=False, rand_seed=None):
+def run_ARGweaver(Ne, mut_rate, recomb_rate, executable, ARGweaver_in_filehandle, ARGweaver_out_dir, out_prefix="aw", seed=None, iterations=None, sample_step=None, status_to=sys.stdout, quiet=False, rand_seed=None):
     import os
     from subprocess import call
     ARGweaver_out_dir = os.path.join(ARGweaver_out_dir,out_prefix)
-    exe = [str(executable), '--output', ARGweaver_out_dir, '--popsize', str(Ne), '--mutrate', str(mut_rate), '--recombrate', str(recomb_rate), '--iters', str(iterations), '--sites', ARGweaver_in_filehandle.name, '--overwrite']
+    exe = [str(executable), '--output', ARGweaver_out_dir, '--popsize', str(Ne), '--mutrate', str(mut_rate), '--recombrate', str(recomb_rate), '--sites', ARGweaver_in_filehandle.name, '--overwrite']
     if quiet:
         exe.extend(['--quiet'])
     if rand_seed is not None:
         exe.extend(['--randseed', str(rand_seed)])
+    if iterations is not None:
+        exe.extend(['--iters', str(iterations)])
+    if sample_step is not None:
+        exe.extend(['--sample-step', str(sample_step)])
     if status_to:
         print("== Running ARGweaver as `{}` ==".format(" ".join(exe)), file=status_to)
     call(exe)
@@ -80,6 +84,7 @@ def ARGweaver_smc_to_msprime_txts(smc2bin_executable, prefix, tree_filehandle, s
     """
     convert the ARGweaver smc representation to coalescence records format
     """
+    assert False, "smc2arg is currently broken and should not be used. See https://github.com/mdrasmus/argweaver/issues/20"
     from subprocess import call
     if status_to:
         print("== Converting the ARGweaver smc output file '{}' to .arg format using '{}' ==".format(prefix + ".smc.gz", smc2bin_executable), file=status_to)
@@ -152,7 +157,7 @@ def ARGweaver_arg_to_msprime_txts(ARGweaver_arg_filehandle, tree_filehandle, sta
         #recursive hack to make times strictly decreasing, using depth-first topological sorting algorithm
         def set_child_times(node_name, node_order, temporary_marks=set()):
             if node_name in ARG_nodes:
-                assert node_name not in temporary_marks, 'ARG is not acyclic!'
+                assert node_name not in temporary_marks, "ARG has a cycle in it, around node {}. This should not be possible. Aborting this conversion!".format(node_name)
                 if node_name not in node_order:
                     temporary_marks.add(node_name)
                     for child_name in ARG_nodes[node_name]:
@@ -201,7 +206,26 @@ def ARGweaver_arg_to_msprime_txts(ARGweaver_arg_filehandle, tree_filehandle, sta
     tree_filehandle.flush()
     return(node_names)
     
-   
+def ARGweaver_smc_to_nexus(smc_filename, outfilehandle, zero_based_tip_numbers=True):
+    """
+    setting zero_based_tip_numbers=False changes the tip labelling to be more like the standard NEXUS format, with tips labelled from 1..N not 0..(N-1)
+    """
+    import gzip
+    import re
+    increment = 0 if zero_based_tip_numbers else 1
+    with (gzip.open(smc_filename, 'rt+') if smc_filename.endswith(".gz") else open(smc_filename, 'rt+')) as smc:
+        print("#NEXUS\nBEGIN TREES;", file = outfilehandle)
+        for line in smc:
+            if line.startswith("NAMES"):
+                print("TRANSLATE\n{};".format(",\n".join(["{} {}".format(int(i)+increment,int(i)+increment) for i in line.split() if i != "NAMES"])), file = outfilehandle)
+            elif line.startswith("TREE"):
+                if not zero_based_tip_numbers:
+                    #hack the labels in the tree, by looking for digits precceded by '(' ')' or ','
+                    line = re.sub(r'(?<=[(,)])(\d+)',lambda m: str(int(m.group(1))+1), line)
+                #rightmost sequence position (X) is correct ( < X )
+                print(re.sub(r'^TREE\s+\d+\s+(\d+)\s+',lambda m: "TREE "+ m.group(1) + " = ", line.rstrip()), file = outfilehandle)
+        print("END;", file = outfilehandle)
+
 def msprime_txts_to_hdf5(tree_filehandle, hdf5_outname=None, status_to=sys.stdout):
     from warnings import warn
     import shutil
@@ -229,36 +253,60 @@ def msprime_txts_to_hdf5(tree_filehandle, hdf5_outname=None, status_to=sys.stdou
 
 def main(directory, hdf5_filehandle):
     import os
+    from dendropy import TreeList, calculate
     full_prefix = os.path.join(directory, os.path.splitext(os.path.basename(hdf5_filehandle.name))[0])
-    with open(full_prefix+".sites", "w+") as aw_in:
+    with open(full_prefix+".sites", "w+") as aw_in, open(full_prefix+".msp_recs", "w+") as ms_rec, open(full_prefix+".msp_muts", "w+") as ms_mut:
         params = msprime_hdf5_to_ARGweaver_in(hdf5_filehandle, aw_in)
+        ts = msprime.load(hdf5_filehandle.name)
+        ts.write_records(ms_rec)
+        ts.write_mutations(ms_mut)
         run_ARGweaver(Ne=params['Ne'], 
                       mut_rate=params['mutation_rate'],
                       recomb_rate=params['recombination_rate'],
                       executable= os.path.join(args.ARGweaver_executable_dir, args.ARGweaver_sample_executable),
                       ARGweaver_in_filehandle=aw_in,
+                      iterations=20,
+                      rand_seed=1234,
                       ARGweaver_out_dir=directory)
         if os.stat(aw_in.name).st_size == 0:
             warn("Initial .sites file is empty")            
         for smc_file in os.listdir(directory):
             if smc_file.endswith(".smc.gz"):
-                prefix = os.path.join(directory,smc_file.replace(".smc.gz", ""))
-                print(prefix)
-                with open(prefix + ".msprime", "w+") as tree, \
-                     open(prefix + ".msmuts", "w+") as muts:
-                    ARGweaver_smc_to_msprime_txts(os.path.join(args.ARGweaver_executable_dir, args.ARGweaver_smc2arg_executable), prefix, tree)
-                    msprime_txts_to_hdf5(tree, prefix + ".hdf5")
+                smc = os.path.join(directory,smc_file)
+                with open(smc.replace(".smc.gz", ".msp_recs"), "w+") as tree, \
+                     open(smc.replace(".smc.gz", ".msp_muts"), "w+") as muts, \
+                     open(smc.replace(".smc.gz", ".msp_nex"), "w+") as msp_nex, \
+                     open(smc.replace(".smc.gz", ".nex"), "w+") as smc_nex:
+                    ARGweaver_smc_to_msprime_txts(os.path.join(args.ARGweaver_executable_dir, args.ARGweaver_smc2arg_executable), smc.replace(".smc.gz", ""), tree)
+                    ts = msprime_txts_to_hdf5(tree, full_prefix + ".hdf5")
+                    ARGweaver_smc_to_nexus(smc, smc_nex, zero_based_tip_numbers=False)
+                    print("#NEXUS\nBEGIN TREES;\nTRANSLATE\n{};".format(",\n".join(["{} {}".format(i+1,i+1) for i in range(ts.get_sample_size())])), file=msp_nex)
+                    variant_index = 0
+                    for (l, nwk) in ts.newick_trees():
+                        variant_index += l
+                        print("TREE "+str(variant_index)+" = "+nwk, file=msp_nex)
+                    print("END;",file=msp_nex)
+                    smc_nex.flush()
+                    smc_nex.seek(0)
+                    msp_nex.flush()
+                    msp_nex.seek(0)
+                    msp_trees = TreeList.get(file=msp_nex, schema='nexus') #zero_based_tip_numbers assumed False)
+                    smc_trees = TreeList.get(file=smc_nex, schema="nexus", taxon_namespace=msp_trees.taxon_namespace)
+                    #Check the smc trees against the msprime-imported equivalents
                     #NB, the ARGweaver output does not specify where mutations occur on the ARG, so we cannot
                     #reconstruct the sequences implied by this ARG for testing purposes, and thus cannot compare
                     #the original sequences with the reconstructed ones
-        
+                    assert len(smc_trees)==len(msp_trees), "number of trees in original and msprime-processed files is not the same"
+                    print("The following RF and wRF statistics should be zero or near zero")
+                    for (smc_tree, msp_tree) in zip(smc_trees, msp_trees):
+                        print("Tree up to smc position {}, ms prime position {}: RF={} wRF={}".format(smc_tree._label, msp_tree._label, calculate.treecompare.symmetric_difference(smc_tree, msp_tree), calculate.treecompare.weighted_robinson_foulds_distance(smc_tree, msp_tree)))
 
 if __name__ == "__main__":
     import argparse
     import filecmp
     import os
     from warnings import warn
-    parser = argparse.ArgumentParser(description='Check ARGweaver imports by running msprime simulation through it and back out')
+    parser = argparse.ArgumentParser(description='Check ARGweaver imports by running an msprime simulation to create an ARGweaver import file, inferring some args from it in smc format, converting the .smc format to .arg format, reading the .arg into msprime, and comparing the nexus output trees with the trees in the .smc file. This testing process requires the dendropy library')
     parser.add_argument('hdf5file', type=argparse.FileType('r', encoding='UTF-8'), help='an msprime hdf5 file')
     parser.add_argument('--ARGweaver_executable_dir', '-d', default="../argweaver/bin/", help='the path to the directory containing the ARGweaver executables')
     parser.add_argument('--ARGweaver_sample_executable', '-x', default="arg-sample", help='the name of the ARGweaver executable')

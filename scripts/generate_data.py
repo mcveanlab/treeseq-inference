@@ -10,15 +10,15 @@ import sys
 sys.path.insert(0, '../msprime/') # look at the local version of ms
 import msprime
 
-def main(treefile_format = "nex"):
+def main(treefile_format = "nexus"):
     sample_sizes = list(map(int, np.linspace(500, 5000, 10)))
     sample_sizes = [500] #just to test with a small sample size
-    sample_sizes = [8] #just to test with a small sample size
+    sample_sizes = [4] #just to test with a small sample size
     tmpdir = "../test_files"
     for n in sample_sizes:
         ts = msprime.simulate(
-            sample_size=n, Ne=1e4, mutation_rate=2e-8, recombination_rate=2e-8,
-            length=1e5)
+            sample_size=n, Ne=1e4, mutation_rate=2e-8, recombination_rate=2e-9,
+            length=1e4)
         assert ts.get_sample_size() ==  n
         print("Finished simulating for {}; mutations = {}; trees = {}".format(
             n, ts.get_num_mutations(), ts.get_num_trees()))
@@ -45,4 +45,9 @@ def main(treefile_format = "nex"):
                 print(j, v.genotypes.decode(), sep="\t", file=f)
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    parser = argparse.ArgumentParser(description='Generate some msprime test files (hdf5, nexus/newick, & haplotypes')
+    parser.add_argument('--sample_sizes', '-s', nargs='+', type=integer, default=[8], help='one or more sample sizes')
+    parser.add_argument('--treefile_format', '-t', choices=['nexus','newick'], default="nexus", help='the format of the tree output files')
+    args = parser.parse_args()
+    main(args.treefile_format)

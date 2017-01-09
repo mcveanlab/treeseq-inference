@@ -4,9 +4,7 @@
 
 
 setwd("/Users/yan/Documents/Research/Wellcome/treeseq-inference/test_files")
-base = "500-1000000"
-
-read.nexus <- function (file, tree.names = NULL, force.multi=FALSE) 
+new.read.nexus <- function (file, tree.names = NULL, force.multi=FALSE) 
 {
     X <- scan(file = file, what = "", sep = "\n", quiet = TRUE)
     LEFT <- grep("\\[", X)
@@ -121,6 +119,10 @@ read.nexus <- function (file, tree.names = NULL, force.multi=FALSE)
             stop(paste("The tree has apparently singleton node(s): cannot read tree file.\n  Reading NEXUS file aborted at tree no.", 
                 i, sep = ""))
         }
+        if (zero_based_tip_numbers) {
+            s <- tr$edge[, 2] <= Ntip(tr)
+            tr$edge[s, 2] <- tr$edge[s, 2] + 1L
+        }
     }
     if ((Ntree == 1) && (force.multi == FALSE)) {
         trees <- trees[[1]]
@@ -148,15 +150,13 @@ read.nexus <- function (file, tree.names = NULL, force.multi=FALSE)
     }
     trees
 }
-fixInNamespace("read.nexus", "ape")
 library(ape) #for read.nexus
+unlockBinding("read.nexus", as.environment("package:ape"))
+assignInNamespace("read.nexus", new.read.nexus, ns="ape", envir=as.environment("package:ape"))
+assign("read.nexus", new.read.nexus, envir=as.environment("package:ape"))
+lockBinding("read.nexus", as.environment("package:ape"))
 
 
-
-orig_trees <- read.nexus(paste(base,".nex", sep=""), force.multi=TRUE)
-fastarg_trees <- read.nexus(paste(base,".fa.nex", sep=""), force.multi=TRUE)
-#argweaver_trees <- read.nexus(paste(base,".aw.nwk", sep=""), force.multi=TRUE)
-#msprime_trees <- read.nexus(paste(base,".mp.nwk", sep=""), force.multi=TRUE)
 
 genome.trees.dist <- function(a, b, output_full_table = FALSE, acceptable_length_diff_pct = 0.1, rooted=FALSE) { #a and b should be multiPhylo objects containing multiple trees
     library(phangorn) #to use the various treedist metrics
@@ -173,7 +173,7 @@ genome.trees.dist <- function(a, b, output_full_table = FALSE, acceptable_length
     breaks.table <- by(breaks.table, breaks.table$values, function(x) x) #put identical breakpoints together
     tree.index.counter=c(a=1, b=1) 
     lft <- 0
-    results=data.frame(lft=numeric(), rgt=numeric(), RF=numeric(), wRF=numeric())
+    results=data.frame(lft=numeric(), rgt=numeric(), RF=numeric(), wRF=numeric(), SPR=numeric(), path=numeric())
     for (o in order(as.numeric(names(breaks.table)))) {
         brk = breaks.table[[o]]
         if (any(tree.index.counter[brk$ind] > c(length(a),length(b))[brk$ind])) {
@@ -183,14 +183,23 @@ genome.trees.dist <- function(a, b, output_full_table = FALSE, acceptable_length
         rgt <- brk$values[0:1]
         RF <- RF.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]], rooted=rooted)
         wRF <- wRF.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]], rooted=rooted)
-        results[nrow(results)+1,] <- c(lft,rgt,RF,wRF)
+        if (rooted==FALSE) {
+            SPR <- SPR.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]])
+            path <- path.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]])
+        } else {
+            SPR <- path <- NA
+        }
+        results[nrow(results)+1,] <- c(lft,rgt,RF,wRF, SPR, path)
         lft <- rgt
         tree.index.counter[brk$ind] <- tree.index.counter[brk$ind] + 1 #NB, brk$ind is a factor with levels (m1,m2), so we hope that m1==1 and m2==2
     }
     if (output_full_table) {
         return(results)
     } else {
-        return(c(RF=weighted.mean(results$RF, (results$rgt-results$lft)), wRF=weighted.mean(results$wRF, (results$rgt-results$lft))))
+        return(c(RF=weighted.mean(results$RF, (results$rgt-results$lft)),
+                 wRF=weighted.mean(results$wRF, (results$rgt-results$lft)),
+                 SPR=weighted.mean(results$SPR, (results$rgt-results$lft)),
+                 path=weighted.mean(results$path, (results$rgt-results$lft))))
     }
 }
 
@@ -198,7 +207,7 @@ test <- function() {
     #here we should take some trees of know topology distance and place them in the measure.genome.trees format, to check we are calculating correctly.
 }
 
-plot(as.numeric(sub("muts\\d+", "", rownames(gpos_metrics))), gpos_metrics$RF)
-points(as.numeric(sub("muts\\d+", "", rownames(mpos_metrics))), mpos_metrics$RF, colors="red")
+#plot(as.numeric(sub("muts\\d+", "", rownames(gpos_metrics))), gpos_metrics$RF)
+#points(as.numeric(sub("muts\\d+", "", rownames(mpos_metrics))), mpos_metrics$RF, colors="red")
 
-aw.res <- genome.trees.dist(orig_trees, argweaver_trees)
+#aw.res <- genome.trees.dist(orig_trees, argweaver_trees)
