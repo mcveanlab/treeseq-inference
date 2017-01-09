@@ -17,10 +17,10 @@ def msprime_hdf5_to_fastARG_in(msprime_hdf5, fastARG_filehandle, status_to=sys.s
         print("== Saving to fastARG input format ==", file=status_to)
     ts = msprime.load(msprime_hdf5.name)
     msprime_to_fastARG_in(ts, fastARG_filehandle)
+    return(ts)
     
 def msprime_to_fastARG_in(ts, fastARG_filehandle):
-    simple_ts = ts.simplify()
-    for v in simple_ts.variants(as_bytes=True):
+    for v in ts.variants(as_bytes=True):
         print(v.position, v.genotypes.decode(), sep="\t", file=fastARG_filehandle)
     fastARG_filehandle.flush()
 
@@ -148,7 +148,7 @@ def fastARG_root_seq(fastARG_out_filehandle):
     warn("No root sequence found in '{}'".format(fastARG_out_filehandle.name))
     return([])
 
-def msprime_txts_to_fastARG_in_revised(tree_filehandle, mutations_filehandle, root_seq, fastARG_filehandle, hdf5_outname=None, status_to=sys.stdout):
+def msprime_txts_to_fastARG_in_revised(tree_filehandle, mutations_filehandle, root_seq, fastARG_filehandle=None, hdf5_outname=None, simplify=True, status_to=sys.stdout):
     if status_to:
         if hdf5_outname:
             print("== Saving new msprime ARG as hdf5 and also as input format for fastARG ==", file=status_to)
@@ -158,27 +158,58 @@ def msprime_txts_to_fastARG_in_revised(tree_filehandle, mutations_filehandle, ro
     mutations_filehandle.seek(0)
     
     ts = msprime.load_txt(tree_filehandle.name, mutations_filehandle.name)
-    try:
-        simple_ts = ts.simplify()
-    except:
-        ts.dump("bad.hdf5")
-        raise
+    if simplify:
+        try:
+            ts = ts.simplify()
+        except:
+            ts.dump("bad.hdf5")
+            raise
     if hdf5_outname:
-        simple_ts.dump(hdf5_outname)
-    for j, v in enumerate(simple_ts.variants(as_bytes=True)):
-        if root_seq[j]:
-            print(v.position, v.genotypes.decode().translate(str.maketrans('01','10')), sep="\t", file=fastARG_filehandle)
-        else:
-            print(v.position, v.genotypes.decode(), sep="\t", file=fastARG_filehandle)
-    fastARG_filehandle.flush()
-    return(simple_ts)
+        ts.dump(hdf5_outname)
+    if fastARG_filehandle:
+        for j, v in enumerate(ts.variants(as_bytes=True)):
+            if root_seq[j]:
+                print(v.position, v.genotypes.decode().translate(str.maketrans('01','10')), sep="\t", file=fastARG_filehandle)
+            else:
+                print(v.position, v.genotypes.decode(), sep="\t", file=fastARG_filehandle)
+        fastARG_filehandle.flush()
+    return(ts)
+
+
+def main(sim, fastARG_executable, fa_in, fa_out, tree, muts, fa_revised, hdf5_outname=None):
+    """
+    pass sim as either a filehandle to an hdf5 file or a set of simulate params
+    """
+    try:
+        ts = msprime.simulate(**sim)
+        print("Creating new simulation with {}".format(sim))
+        msprime_to_fastARG_in(ts, fa_in)
+    except:
+        ts = msprime_hdf5_to_fastARG_in(sim, fa_in)
+    run_fastARG(fastARG_executable, fa_in, fa_out)
+    root_seq = fastARG_root_seq(fa_out)
+    fastARG_out_to_msprime_txts(fa_out, variant_positions_from_fastARGin(fa_in), tree, muts)
+    new_ts = msprime_txts_to_fastARG_in_revised(tree, muts, root_seq, simplify=False)
+    simple_ts = msprime_txts_to_fastARG_in_revised(tree, muts, root_seq, fa_revised, hdf5_outname)
+    print("Initial num records = {}, fastARG (simplified) = {}, fastARG (unsimplified) = {}".format(ts.get_num_records(), simple_ts.get_num_records(), new_ts.get_num_records()))
+    print("These numbers are expected to be in ascending order ")
+    if ts.get_num_records() > simple_ts.get_num_records() or simple_ts.get_num_records() > new_ts.get_num_records():
+        warn("But they are not in ascending order!")
+    if os.stat(fa_in.name).st_size == 0:
+        warn("Initial fastARG input file is empty")            
+    elif filecmp.cmp(fa_in.name, fa_revised.name, shallow=False) == False:
+        warn("Initial fastARG input file differs from processed fastARG file")
+    else:
+        print("Conversion via fastARG has worked! Input and output files are identical")
+    
 
 if __name__ == "__main__":
     import argparse
     import filecmp
     import os
+    default_sim={'sample_size':2000, 'Ne':1e4, 'length':1000000, 'mutation_rate':2e-8, 'recombination_rate':2e-8}
     parser = argparse.ArgumentParser(description='Check fastARG imports by running msprime simulation through it and back out')
-    parser.add_argument('hdf5file', type=argparse.FileType('r', encoding='UTF-8'), help='an msprime hdf5 file')
+    parser.add_argument('hdf5file', default=None, nargs="?", type=argparse.FileType('r', encoding='UTF-8'), help='an msprime hdf5 file. If none, a simulation is created with {}'.format(default_sim))
     parser.add_argument('--fastARG_executable', '-x', default="fastARG", help='the path & name of the fastARG executable')
     parser.add_argument('outputdir', nargs="?", default=None, help='the directory in which to store the intermediate files. If None, files are saved under temporary names')
     args = parser.parse_args()
@@ -192,18 +223,7 @@ if __name__ == "__main__":
              NamedTemporaryFile("w+") as tree, \
              NamedTemporaryFile("w+") as muts, \
              NamedTemporaryFile("w+") as fa_revised: 
-    
-            msprime_hdf5_to_fastARG_in(args.hdf5file, fa_in)
-            run_fastARG(args.fastARG_executable, fa_in, fa_out)
-            root_seq = fastARG_root_seq(fa_out)
-            fastARG_out_to_msprime_txts(fa_out, variant_positions_from_fastARGin(fa_in), tree, muts)
-            msprime_txts_to_fastARG_in_revised(tree, muts, root_seq, fa_revised)
-            if os.stat(fa_in.name).st_size == 0:
-                warn("Initial fastARG input file is empty")            
-            elif filecmp.cmp(fa_in.name, fa_revised.name, shallow=False) == False:
-                warn("Initial fastARG input file differs from processed fastARG file")
-            else:
-                print("Conversion via fastARG has worked! Input and output files are identical")
+            main(args.hdf5file or default_sim, args.fastARG_executable, fa_in, fa_out, tree, muts, fa_revised)
     else:
         prefix = os.path.splitext(os.path.basename(args.hdf5file.name))[0]
         full_prefix = os.path.join(args.outputdir, prefix)
@@ -212,14 +232,4 @@ if __name__ == "__main__":
              open(full_prefix + ".msprime", "w+") as tree, \
              open(full_prefix + ".msmuts", "w+") as muts, \
              open(full_prefix + ".haps_revised", "w+") as fa_revised:
-            msprime_hdf5_to_fastARG_in(args.hdf5file, fa_in)
-            run_fastARG(args.fastARG_executable, fa_in, fa_out)
-            root_seq = fastARG_root_seq(fa_out)
-            fastARG_out_to_msprime_txts(fa_out, variant_positions_from_fastARGin(fa_in), tree, muts)
-            msprime_txts_to_fastARG_in_revised(tree, muts, root_seq, fa_revised, full_prefix + ".hdf5_revised")
-            if os.stat(fa_in.name).st_size == 0:
-                warn("Initial fastARG input file is empty")            
-            elif filecmp.cmp(fa_in.name, fa_revised.name, shallow=False) == False:
-                warn("Initial fastARG input file differs from processed fastARG file")
-            else:
-                print("Conversion via fastARG has worked! Input and output files are identical")
+            main(args.hdf5file or default_sim, args.fastARG_executable, fa_in, fa_out, tree, muts, fa_revised, full_prefix + ".hdf5_revised")
