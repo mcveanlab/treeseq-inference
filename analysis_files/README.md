@@ -21,11 +21,11 @@ Within the SIMULATION_STRING:
 	* sample size (*n*)
 	* N<sub>e</sub> (*Ne*)
 	* sequence length (*l*) in base pairs
-	* recombination rate (*rc*) per base per generation
+	* recombination rate (*rho*) per base per generation
 	* mutation rate (*mu*) per base per generation. 
 
 	These are separated by underscores, e.g. the filename might contain a string such as
-`n100_Ne10000_l100000_rc0.0000001_mu0.0000001`
+`n100_Ne10000_l100000_rho0.0000001_mu0.0000001`
 
 * `<OTHER_PARAMS>` contains other parameters, again separated by underscores. These can include:
 	* a random number seed (*gs*) for the genealogical part of the simulation 
@@ -38,13 +38,13 @@ Within the SIMULATION_STRING:
 An hdf5 file from an msprime simulation might thus be saved under a filename such as
 
 ```
-msprime-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-gs123_ms234.hdf5
+msprime-n100_Ne10000_l100000_rho0.00000002_mu0.00000002-gs123_ms234.hdf5
 ```
 
 and a variant matrix created from the same simulation with error 0.001 containing only samples 1..12 might have a name such as
 
 ```
-msprime-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-gs123_ms234_err0.001_max12.hap
+msprime-n100_Ne10000_l100000_rho0.00000002_mu0.00000002-gs123_ms234_err0.001_max12.hap
 ```
 	
 	
@@ -65,7 +65,7 @@ Where `<SIMULATION_STRING>` is as defined above, a string starting with *msprime
 Files created from fastARG have the prefix *fastarg* and the suffix contains the random number seed used, denoted *fs*. For example, running fastARG on the MSprime *.hap* file mentioned previously, with the random number seed 54321 should result in an [fastARG output file](https://github.com/lh3/fastARG#output-format) named
 
 ```
-fastarg+msprime-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-gs123_ms234_err0.001_max12+54321.farg
+fastarg+msprime-n100_Ne10000_l100000_rho0.00000002_mu0.00000002-gs123_ms234_err0.001_max12+54321.farg
 ```
 The equivalent file of trees would have the same base name but a *.nex* extension.
 
@@ -80,13 +80,13 @@ By default, argweaver outputs files in the *.smc* format, giving filenames that 
 ARGweaver *.smc* files can be relatively simply converted into a set of trees in *.nex* format. An example, with an argweaver seed of 9999 would be
 
 ```
-aweaver+msprime-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-gs123_ms234_err0.001_max12+ws9999_i.10.nex
+aweaver+msprime-n100_Ne10000_l100000_rho0.00000002_mu0.00000002-gs123_ms234_err0.001_max12+ws9999_i.10.nex
 ```
 
 Note that the sample ARGs have different likelihoods - these are given by an associated `.stats` file (which does not have iteration numbers attached), the equivalent example being
 
 ```
-aweaver+msprime-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-gs123_ms234_err0.001_max12+ws9999.stats
+aweaver+msprime-n100_Ne10000_l100000_rho0.00000002_mu0.00000002-gs123_ms234_err0.001_max12+ws9999.stats
 ```
 
 
@@ -95,13 +95,13 @@ aweaver+msprime-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-gs123_ms234_err0.
 Our own inference method is given the shorthand prefix `msinfer`. As with ARGweaver, the expected recombination rate is taken to be the same as in the original simulation. It is possible that no suffix string will be needed: an example infered hdf5 file could be
 
 ```
-msinfer+msprime-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-gs123_ms234_err0.001_max12+.hdf5
+msinfer+msprime-n100_Ne10000_l100000_rho0.00000002_mu0.00000002-gs123_ms234_err0.001_max12+.hdf5
 ```
 
 For comparing with other inference methods, we may want to restrict files to output only a subset of samples. The SUFFIX in this case will contain max*N*, for samples 1..N, so that a file of the form
 
 ```
-msinfer+msprime-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-gs123_ms234_err0.001+max12.nex
+msinfer+msprime-n100_Ne10000_l100000_rho0.00000002_mu0.00000002-gs123_ms234_err0.001+max12.nex
 ```
 
 will contain inferred trees for samples 0..11 of the 100 (haploid) genomes which have been output from the msprime simulation.
