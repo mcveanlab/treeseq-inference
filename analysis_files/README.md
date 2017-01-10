@@ -3,9 +3,9 @@ This directory contains intermediate results from analysis. The output files hav
 
 ## Basic simulations
 
-`msprime-<PARAMS...>-<SEED>.EXT` contains results from an MSprime simulation. For `<PARAMS...>` see below. `<SEED>` is a 6 digit number used as the initial random number seed. The file extension `.EXT` may be e.g. `.nex` for a nexus file, `.hdf5` for an hdf5 file, etc etc. 
+`msprime-<PARAMS...>-<SEED>.EXT` contains results from an MSprime simulation. For `<PARAMS...>` see below. `<SEED>` is a number used as the initial random number seed - if it contains an `_` sign, this denotes two random seeds, the first used for the ancestry simulation and the second for the addition of mutations. The file extension `.EXT` may be e.g. `.nex` for a nexus file, `.hdf5` for an hdf5 file, etc etc. 
 
-`msNNsub-<PARAMS...>-<SEED>.EXT` Identical to the MSprime simulation above, but with results reduced to only the first `NN` samples, e.g. `ms10sub-<PARAMS...>-123456.hdf5` contains only the first 10 sequences of the whole simulation. 
+`msNNsub-<PARAMS...>-<SEED>.EXT` Identical to the MSprime simulation above, but with results reduced to only the first `NN` samples, e.g. `ms10sub-<PARAMS...>-123_456.hdf5` contains only the first 10 sequences of the whole simulation. 
 
 ### `<params...>`
 
@@ -13,7 +13,7 @@ For basic MSprime simulations, we set sample size (n), N<sub>e</sub>, sequence l
 `n100_Ne10000_l100000_rc0.0000001_mu0.0000001`. The trees created from an msprime simulation might thus be saved under a filename like
 
 ```
-msprime-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-123456.nex
+msprime-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-123_456.nex
 ```
 ## Inference methods
 
@@ -28,7 +28,7 @@ Files created from fastARG are labelled as follows:
 Where `<msprime_filename>` is an `msprime...` or `msXXsub...` string. For example, running fastARG on the MSprime simulation mentioned previously would result in an intermediate .fa file 
 
 ```
-fastarg-123123+ms10sub-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-123456.nex
+fastarg-123123+ms10sub-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-123_456.nex
 ```
 #### ARGweaver
 
@@ -39,13 +39,13 @@ Files created from ARGweaver are of the same form, but with a prefix of `aweaver
 Which can be converted into nexus format, giving a filename such as the following example
 
 ```
-aw.10-123123+ms10sub-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-123456.nex
+aw.10-123123+ms10sub-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-123_456.nex
 ```
 
 Note that the sample ARGs have different likelihoods - these are given by an equivalent `.stats` file such as
 
 ```
-aweaver-123123+ms10sub-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-12345.stats
+aweaver-123123+ms10sub-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-123_456.stats
 ```
 
 
@@ -54,6 +54,6 @@ aweaver-123123+ms10sub-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-12345.stat
 Our own inference method is given the shorthand prefix `lsinfer`. For files which infer the whole ARG but then simplify the result down to a subset of the first `NN` samples, we use the prefix `lsNNsub`, followed by the random seed used. An example might be
 
 ```
-ls10sub-654321+msprime-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-123456.nex
+ls10sub-654321+msprime-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-123_456.nex
 ```
 
