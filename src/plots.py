@@ -4,11 +4,11 @@ in the paper.
 """
 
 import argparse
-import glob
 import logging
 import os.path
 import shutil
 import sys
+import time
 
 import numpy as np
 import matplotlib
@@ -102,38 +102,25 @@ class NumRecordsBySampleSizeDataset(Dataset):
     def __init__(self):
         super(NumRecordsBySampleSizeDataset, self).__init__()
         self.simulations_dir = os.path.join(self.raw_data_dir, "simulations")
-        self.simulation_filename_pattern = os.path.join(
+        self.tree_sequence_filename_pattern = os.path.join(
             self.simulations_dir, "n={}_rep={}.hdf5")
+        self.samples_filename_pattern = os.path.join(
+            self.simulations_dir, "n={}_rep={}_error={}.npy")
         self.sample_sizes = np.linspace(10, 500, num=10).astype(int)
+        self.error_rates = [0, 0.01, 0.1]
         self.mutation_rate = 1.5
         self.recombination_rate = 2.5
         self.length = 50
         self.num_replicates = 10
 
-    def process_msprime_replicates(self, hdf5_files):
-        num_replicates = len(hdf5_files)
-        num_sites = np.zeros(num_replicates)
-        num_samples = np.zeros(num_replicates)
-        num_source_records = np.zeros(num_replicates)
-        num_raw_records = np.zeros(num_replicates)
-        num_simplified_records = np.zeros(num_replicates)
-        for k, hdf5_file in enumerate(hdf5_files):
-            ts = msprime.load(hdf5_file)
-            S = generate_samples(ts, 0)
-            panel = tsinf.ReferencePanel(S)
-            P = panel.infer_paths(self.recombination_rate, num_workers=10)
-            ts_new = panel.convert_records(P)
-            ts_simplified = ts_new.simplify()
-            # Record results
-            num_samples[k] = ts.sample_size
-            num_sites[k] = ts.num_mutations
-            num_source_records[k] = ts.num_records
-            num_raw_records[k] = ts_new.num_records
-            num_simplified_records[k] = ts_simplified.num_records
-        return (
-            np.mean(num_samples), np.mean(num_sites), num_replicates,
-            np.mean(num_source_records), np.mean(num_raw_records),
-            np.mean(num_simplified_records))
+    def run_tsinf(self, S):
+        before = time.clock()
+        panel = tsinf.ReferencePanel(S)
+        P = panel.infer_paths(self.recombination_rate, num_workers=4)
+        ts_new = panel.convert_records(P)
+        ts_simplified = ts_new.simplify()
+        cpu_time = time.clock() - before
+        return ts_simplified.get_num_records(), cpu_time, 0
 
     def generate(self):
         # clear out any old simulations to avoid confusion.
@@ -141,27 +128,44 @@ class NumRecordsBySampleSizeDataset(Dataset):
             shutil.rmtree(self.simulations_dir)
         os.makedirs(self.simulations_dir)
         for n in self.sample_sizes:
-            logging.info("running simulation for n = {}".format(n))
+            logging.info("Running simulation for n = {}".format(n))
             replicates = msprime.simulate(
-                n, Ne=0.5, mutation_rate=self.mutation_rate, length=length,
+                n, Ne=0.5, mutation_rate=self.mutation_rate, length=self.length,
                 recombination_rate=self.recombination_rate,
                 num_replicates=self.num_replicates)
             for j, ts in enumerate(replicates):
-                filename = self.simulation_filename_pattern.format(n, j)
+                filename = self.tree_sequence_filename_pattern.format(n, j)
                 logging.debug("writing {}".format(filename))
                 ts.dump(filename, zlib_compression=True)
+                for error_rate in self.error_rates:
+                    S = generate_samples(ts, error_rate)
+                    filename = self.samples_filename_pattern.format(n, j, error_rate)
+                    logging.debug("writing {}".format(filename))
+                    np.save(filename, S)
 
     def process(self):
         df = pd.DataFrame(columns=(
-            "samples", "sites", "replicates", "source_records", "raw_records",
-            "simplified_records"))
-        for j, n in enumerate(self.sample_sizes):
+            "tool", "num_samples", "error_rate", "replicate", "source_records",
+            "inferred_records", "cpu_time", "memory"))
+        row_index = 0
+        for n in self.sample_sizes:
             logging.info("processing for n = {}".format(n))
-            pattern = self.simulation_filename_pattern.format(n, "*")
-            files = list(glob.glob(pattern))
-            row = self.process_msprime_replicates(files)
-            df.loc[j] = row
-            df.to_csv(self.data_file)
+            for j in range(self.num_replicates):
+                filename = self.tree_sequence_filename_pattern.format(n, j)
+                ts = msprime.load(filename)
+                assert ts.sample_size == n
+                for error_rate in self.error_rates:
+                    filename = self.samples_filename_pattern.format(n, j, error_rate)
+                    logging.debug("reading: {}".format(filename))
+                    S = np.load(filename)
+                    assert S.shape == (ts.sample_size, ts.num_mutations)
+                    inferred_records, time, memory = self.run_tsinf(S)
+                    df.loc[row_index] = (
+                        "tsinf", n, error_rate, j, ts.get_num_records(),
+                        inferred_records, time, memory)
+                    row_index += 1
+                    # Save each row so we can use the information while it's being built
+                    df.to_csv(self.data_file)
 
 
 def run_generate(cls, args):
@@ -226,7 +230,8 @@ def main():
         log_level = logging.INFO
     if args.verbose >= 2:
         log_level = logging.DEBUG
-    logging.basicConfig(format='%(asctime)s %(message)s', level=log_level)
+    logging.basicConfig(
+        format='%(asctime)s %(message)s', level=log_level, stream=sys.stdout)
 
     k = args.name[0]
     if k == "all":
