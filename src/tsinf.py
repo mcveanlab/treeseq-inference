@@ -28,197 +28,110 @@ import _tsinf
 if sys.version_info[0] < 3:
     raise Exception("Python 3 you idiot!")
 
-def li_and_stephens_simulation(H, rho, theta):
-    """
-    Simulate new haplotypes from the Li and Stephens model with
-    the specified haplotypes, recombination and mutation rate.
-    """
-    np.random.seed(1)
-    print("rho = ", rho)
-    print("theta = ", theta)
-    print(H)
-    n, m = H.shape
-    P_mut =  0.5 * theta / (n + theta)
-    P_recomb = (1 - np.exp(-rho / n)) / n
-    while True:
-        hp = np.zeros(m, dtype="u1")
-        x = np.random.randint(0, n)
-        for j in range(m):
-            hp[j] = H[x][j]
-            if np.random.random() < P_mut:
-                hp[j] = (hp[j] + 1) % 2
-                print("mut")
-            if np.random.random() < P_recomb:
-                # TODO: is this with or without replacement?
-                x = np.random.randint(0, n)
-                print("switch")
-        print(hp)
 
-def simple_infer_ancestors(H):
+class ReferencePanel(object):
     """
-    Given a set of input haplotypes infer their ancestors using frequency
-    information. This is a simple unvectorised version suitable for implementation
-    in C.
+    Class representing the reference panel for inferring a tree sequence
+    from observed data.
     """
-    n, m = H.shape
-    sites = []
-    for l in range(m):
-        samples = []
+    def __init__(self, samples):
+        self._ll_reference_panel = _tsinf.ReferencePanel(samples)
+
+    def infer_paths(self, rho, num_workers=None):
+        N = self._ll_reference_panel.num_haplotypes
+        n = self._ll_reference_panel.num_samples
+        m = self._ll_reference_panel.num_sites
+        P = np.zeros((N, m), dtype=np.uint32)
+        P[-1,:] = -1
+
+        work = []
+        for j in range(N - 2, n - 1, -1):
+            work.append((j, N - j - 1))
         for j in range(n):
-            if H[j, l] == 1:
-                samples.append(j)
-        if len(samples) > 1:
-            sites.append((len(samples), l, samples))
-    sites.sort(key=lambda x: (-x[0], x[1]))
-    A = np.zeros((len(sites) + 1, m), dtype="uint8")
-    for j in range(len(sites)):
-        freq, site, samples = sites[j]
-        # For each older site, find the consensus among these samples.
-        for k in range(j):
-            _, other_site, _ = sites[k]
-            f = 0
-            for s in samples:
-                f += H[s, other_site]
-            if f >= len(samples) / 2:
-                A[j + 1, other_site] = 1
-        A[j + 1, site] = 1
-    return A
+            work.append((j, N - n))
+        work_index = 0
+        lock = threading.Lock()
 
-def infer_ancestors(H):
-    n, m = H.shape
-    freq = np.sum(H, axis=0)
-    non_singletons = np.sum(freq > 1)
-    sites = sorted(
-        [(freq[site], site) for site in range(m) if freq[site] > 1],
-        key=lambda x: (-x[0], x[1]))
-    mask = np.zeros(m, dtype=int)
-    A = np.zeros((non_singletons + 1, m), dtype="uint8")
-    for j, (_, site) in enumerate(sites):
-        assert freq[site] > 1
-        mask[site] = 1
-        # Find the set of haplotypes that have a 1 at this site
-        # and mask out any younger mutations.
-        Hp = H[H[:,site] == 1] & mask
-        # Find the majority allele at each locus among these haplotypes
-        A[j + 1:] = np.sum(Hp, axis=0) >= Hp.shape[0] / 2
-    return A
+        def worker():
+            nonlocal work_index
+            threader = _tsinf.Threader(self._ll_reference_panel)
+            while True:
+                with lock:
+                    if work_index >= len(work):
+                        break
+                    haplotype_index, panel_size = work[work_index]
+                    work_index += 1
+                threader.run(haplotype_index, panel_size, rho, P[haplotype_index])
 
+        threads = []
+        if num_workers is None:
+            num_workers = multiprocessing.cpu_count()
+        for _ in range(num_workers):
+            t = threading.Thread(target=worker)
+            t.start()
+            threads.append(t)
+        for t in threads:
+            t.join()
+        return P
 
-def thread(H, haplotype_index, n, rho):
-    """
-    Thread the haplotype with the specified index through the
-    reference panel of the n oldest haplotypes.
-    """
-    h = H[haplotype_index]
-    N, m = H.shape
-    r = 1 - np.exp(-rho / n)
-    recomb_proba = np.log(r / n)
-    no_recomb_proba = np.log(1 - r + r / n)
+    def convert_records(self, P):
+        N = self._ll_reference_panel.num_haplotypes
+        n = self._ll_reference_panel.num_samples
+        m = self._ll_reference_panel.num_sites
+        H = self._ll_reference_panel.get_haplotypes()
 
-    V = np.zeros(N)
-    T = np.zeros((N, m), dtype=int)
-    # The truth table for the emission probabilities. Index
-    # (0, 1) corresponds to zero in the reference haplotype
-    # and 1 in the sequence we are threading. The probablility
-    # of mutation must be less than the probability of many
-    # recombinations, or we will have multiple mutations.
-    mutation_proba = recomb_proba * m;
-    E = np.array([
-        [0, mutation_proba],
-        [-sys.float_info.max, 0]])
+        assert N, m == P.shape
+        assert H.shape == P.shape
+        C = [[[] for _ in range(m)] for _ in range(N)]
 
-    max_V_index = N - n
-    for j in range(N - n, N):
-        V[j] = np.log(1 / n) + E[H[j, 0], h[0]]
-        if V[j] > V[max_V_index]:
-            max_V_index = j
-    for l in range(1, m):
-        Vn = np.zeros(N)
-        max_Vn_index = N - n
-        for j in range(N - n, N):
-            x = V[j] + no_recomb_proba
-            y = V[max_V_index] + recomb_proba
-            if x >= y:
-                max_p = x
-                max_k = j
-            else:
-                max_k = max_V_index
-                max_p = y
-            Vn[j] = max_p + E[H[j, l], h[l]]
-            T[j, l] = max_k
-            if Vn[j] > Vn[max_Vn_index]:
-                max_Vn_index = j
-        V = Vn
-        max_V_index = max_Vn_index
-    P = np.zeros(m, dtype=int)
-    P[m - 1] = max_V_index
-    for l in range(m - 1, 0, -1):
-        P[l - 1] = T[P[l], l]
-    return P
+        for j in range(N - 1):
+            for l in range(m):
+                C[P[j][l]][l].append(j)
 
-def infer_paths_threads(reference_panel, rho, num_workers=None):
+        # print("children = ")
+        # for j in range(N):
+        #     print(j, "\t", C[j])
 
-    N = reference_panel.num_haplotypes
-    n = reference_panel.num_samples
-    m = reference_panel.num_sites
-    P = np.zeros((N, m), dtype=np.uint32)
-    P[-1,:] = -1
+        mutations = []
+        records = []
+        # Create the mutations by finding the oldest 1 in each locus.
+        # print("mutations = ")
+        for l in range(m):
+            u = np.where(H[:,l] == 1)[0][0]
+            # u is a sample with this mutations. Follow its path upwards until
+            # we find the oldest node with the mutation.
+            while H[u, l] == 1:
+                v = u
+                u = P[u][l]
+            mutations.append((l, v))
+        for u in range(n, N):
+            row = C[u]
+            last_c = row[0]
+            left = 0
+            for l in range(1, m):
+                if row[l] != last_c:
+                    if len(last_c) > 0:
+                        records.append(msprime.CoalescenceRecord(
+                            left=left, right=l, node=u, children=tuple(last_c),
+                            time=u, population=0))
+                    left = l
+                    last_c = row[l]
+            if len(last_c) > 0:
+                records.append(msprime.CoalescenceRecord(
+                    left=left, right=m, node=u, children=tuple(last_c),
+                    time=u, population=0))
+        records.sort(key=lambda r: r.time)
+        # print("records = ")
+        # for r in records:
+        #     print(r)
+        # for m in mutations:
+        #     print(m)
+        ll_ts = _msprime.TreeSequence()
+        ll_ts.load_records(records)
+        ll_ts.set_mutations(mutations)
+        ts = msprime.TreeSequence(ll_ts)
+        return ts
 
-    work = []
-    for j in range(N - 2, n - 1, -1):
-        work.append((j, N - j - 1))
-    for j in range(n):
-        work.append((j, N - n))
-    work_index = 0
-    lock = threading.Lock()
-
-    def worker():
-        nonlocal work_index
-        threader = _tsinf.Threader(reference_panel)
-        while True:
-            with lock:
-                if work_index >= len(work):
-                    break
-                haplotype_index, panel_size = work[work_index]
-                work_index += 1
-            threader.run(haplotype_index, panel_size, rho, P[haplotype_index])
-
-    threads = []
-    if num_workers is None:
-        num_workers = multiprocessing.cpu_count()
-    for _ in range(num_workers):
-        t = threading.Thread(target=worker)
-        t.start()
-        threads.append(t)
-    for t in threads:
-        t.join()
-    return P
-
-def infer_paths(reference_panel, rho):
-    N = reference_panel.num_haplotypes
-    n = reference_panel.num_samples
-    m = reference_panel.num_sites
-    threader = _tsinf.Threader(reference_panel)
-    P = np.zeros((N, m), dtype=np.uint32)
-    p = np.zeros(m, dtype=np.uint32)
-    P[-1,:] = -1
-    for j in range(N - 2, n - 1, -1):
-        # p1 = thread(H, j, num_haplotypes - j - 1, rho)
-        threader.run(j, N - j - 1, rho, p)
-        # if np.any(p1 != p):
-        #     print("ERROR", j)
-        #     print(p1)
-        #     print(p)
-        #     mismatches = np.nonzero(p1 != p)
-        #     print(mismatches)
-        #     for k in mismatches[0]:
-        #         print("\t", k, p[k], p1[k])
-        P[j] = p
-    for j in range(n):
-        threader.run(j, N - n, rho, p)
-        # p = thread(H, j, num_haplotypes - n, rho)
-        P[j] = p
-    return P
 
 def check_paths(H, P, n):
     """
@@ -238,101 +151,6 @@ def check_paths(H, P, n):
         # print(hp)
         for l in np.where(hp != h)[0]:
             assert hp[l] == 0
-
-def convert_records(H, P, n):
-    N, m = P.shape
-    assert H.shape == P.shape
-    C = [[[] for _ in range(m)] for _ in range(N)]
-
-    for j in range(N - 1):
-        for l in range(m):
-            C[P[j][l]][l].append(j)
-
-    # print("children = ")
-    # for j in range(N):
-    #     print(j, "\t", C[j])
-
-    mutations = []
-    records = []
-    # Create the mutations by finding the oldest 1 in each locus.
-    # print("mutations = ")
-    for l in range(m):
-        u = np.where(H[:,l] == 1)[0][0]
-        # u is a sample with this mutations. Follow its path upwards until
-        # we find the oldest node with the mutation.
-        while H[u, l] == 1:
-            v = u
-            u = P[u][l]
-        mutations.append((l, v))
-    for u in range(n, N):
-        row = C[u]
-        last_c = row[0]
-        left = 0
-        for l in range(1, m):
-            if row[l] != last_c:
-                if len(last_c) > 0:
-                    records.append(msprime.CoalescenceRecord(
-                        left=left, right=l, node=u, children=tuple(last_c),
-                        time=u, population=0))
-                left = l
-                last_c = row[l]
-        if len(last_c) > 0:
-            records.append(msprime.CoalescenceRecord(
-                left=left, right=m, node=u, children=tuple(last_c),
-                time=u, population=0))
-    records.sort(key=lambda r: r.time)
-    # print("records = ")
-    # for r in records:
-    #     print(r)
-    # for m in mutations:
-    #     print(m)
-    ll_ts = _msprime.TreeSequence()
-    ll_ts.load_records(records)
-    ll_ts.set_mutations(mutations)
-    ts = msprime.TreeSequence(ll_ts)
-    return ts
-
-
-def plot_paths(n, P):
-
-    P = (-1 * (P - P.shape[1] + 1)).T
-    x = 200
-    label_col = np.zeros((P.shape[0], 1))
-    label_col[:,0] = np.arange(P.shape[0])
-    # label_col[,P.shape[0] - n:] = 10**6
-    P = np.hstack((label_col[::-1], P))
-    print(P)
-    fig, ax = pyplot.subplots() #figsize=(x, x))
-    fig.tight_layout(pad=0)
-    ax.imshow(P, interpolation="none")
-    ax.axhline(P.shape[0] - n - 0.5, color="black")
-    ax.axvline(0.5, color="black")
-    pyplot.savefig("paths.png")
-
-def verify_variants(V1, ts2):
-    V2 = np.empty((ts2.num_mutations, ts2.sample_size), dtype=np.uint8)
-    for v in ts2.variants():
-        V2[v.index] = v.genotypes
-
-    # print("Comparing:")
-    # print(V1)
-    # print(V2)
-    # print("Equal", np.all(V1 == V2))
-    # print(V1 == V2)
-    # for mut in ts2.mutations():
-    #     print(mut)
-    # if not np.all(V1 == V2):
-    #     print("err")
-    #     for j in range(V1.shape[0]):
-    #         if not np.all(V1[j] == V2[j]):
-    #             mismatches = np.nonzero(V1[j] != V2[j])
-    #             print("Mismatch at ", j, mismatches)
-    #             for k in mismatches[0]:
-    #                 print("\t", k, V1[j, k], V2[j, k])
-    #                 print("\t\t", V1[j])
-    #                 print("\t\t", V2[j])
-
-    assert np.all(V1 == V2)
 
 def make_errors(v, p):
     """
@@ -357,55 +175,6 @@ def get_samples(ts, error_p):
             s = np.sum(S[:, variant.index])
             done = 0 < s < ts.sample_size
     return S
-
-def run_checks():
-    np.random.seed(10)
-    np.set_printoptions(linewidth=1000)
-    theta = 1.5
-    rho = 2.5
-    # n = 1000
-    # n = 500
-    # length = 500
-    n = 50
-    length = 100
-    error_p = 0.5
-    for seed in range(1, 100000):
-    # for seed in [1696]:
-        ts = msprime.simulate(
-            n, Ne=0.5, mutation_rate=theta, length=length,
-            recombination_rate=rho, random_seed=seed)
-        m = ts.get_num_mutations()
-        assert m > 0
-        S = get_samples(ts, error_p)
-        V = S.T
-        # np.savetxt("tmp__NOBACKUP__/samples.txt", S, fmt="%d", delimiter="")
-        before = time.clock()
-        panel = _tsinf.ReferencePanel(S)
-        duration = time.clock() - before
-        print("Inferred panel with {} haplotypes and {} sites in {}s".format(
-            panel.num_haplotypes, panel.num_sites, duration))
-        before = time.clock()
-        P = infer_paths_threads(panel, rho)
-        # P1 = infer_paths(panel, rho)
-        # assert np.all(P1 == P)
-        duration = time.clock() - before
-        print("Inferred paths in {}s".format(duration))
-        H = panel.get_haplotypes()
-        # check_paths(H, P, n)
-        before = time.clock()
-        ts_new = convert_records(H, P, n)
-        ts_subset = ts_new.simplify()
-        assert ts_new.num_mutations == m
-        assert ts_subset.num_mutations == m
-        duration = time.clock() - before
-        print("Converted records in ", duration, "seconds")
-        before = time.clock()
-        verify_variants(V, ts_new)
-        verify_variants(V, ts_subset)
-        duration = time.clock() - before
-        print("Verified records in ", duration, "seconds")
-
-
 
 def run_replicates(rho, replicates, num_replicates, error):
     num_sites = np.zeros(num_replicates)
@@ -732,19 +501,3 @@ def run_ls_tree_figures():
             t_simplified = next(ts_simplified_trees)
         make_tree(n, H, P, filename, t_source, t_simplified)
 
-def main():
-    cmd = sys.argv[1]
-    if cmd == "run-sample-size":
-        run_sample_size()
-    elif cmd == "run-length":
-        run_length()
-    elif cmd == "ls-figures":
-        run_ls_figures()
-    elif cmd == "ls-tree-figures":
-        run_ls_tree_figures()
-    else:
-        print("BAD COMMAND")
-        sys.exit(1)
-
-if __name__ == "__main__":
-    main()
