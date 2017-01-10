@@ -7,24 +7,46 @@ Simulation output files are of the general form
 ```
 <SIMULATION_STRING>.EXT
 ```
-where `<SIMULATION_STRING>` is of the form
+where for MSprime simulations, the `<SIMULATION_STRING>` is of the form
 
 ```
-<PREFIX>-<PARAMS>-<SEED>
+msprime-<SIMULATION_VARIABLES>-<OTHER_PARAMS>
 ```
 
-The file extension .EXT may be e.g. *.nex* for a nexus file, *.vpos* for a list of variant positions, *.hdf5* for an hdf5 file, etc etc. Allowable PREFIXes are 'msprime' or 'msNNsub', giving filenames as follows:
+and the file extension .EXT may be e.g. *.nex* for a nexus file of trees, *.vpos* for a list of variant positions, *.hap* for a haplotype matrix of variants (rows) by samples (columns), *.hdf5* for an hdf5 file, etc etc.
 
-* `msprime-<PARAMS...>-<SEED>.EXT` contains results from an MSprime simulation (for *PARAMS...* see below). *SEED* is a number used as the initial random number seed - if it contains an underscore, this denotes two random seeds, the first used for the ancestry simulation and the second for the addition of mutations.
+Within the SIMULATION_STRING:
 
-* `msNNsub-<PARAMS...>-<SEED>.EXT` indicates the same MSprime simulation above, but with results reduced to only the first `NN` samples, e.g. `ms10sub-<PARAMS...>-123_456.hdf5` contains only the first 10 sequences of the whole simulation. 
+* `<SIMULATION_VARIABLES>` indicates the variables used to adjust the simulation. For basic MSprime simulations, we set 
+	* sample size (*n*)
+	* N<sub>e</sub> (*Ne*)
+	* sequence length (*l*) in base pairs
+	* recombination rate (*rc*) per base per generation
+	* mutation rate (*mu*) per base per generation. 
 
-* `<PARAMS...>` indicates the parameters used for the simulation. For basic MSprime simulations, we set sample size (n), N<sub>e</sub>, sequence length (l) in base pairs, recombination rate (rc) per base per generation, and mutation rate (mu) per base per generation. These are encoded in the filename, separated by underscores. E.g.
-`n100_Ne10000_l100000_rc0.0000001_mu0.0000001`. The trees created from an msprime simulation might thus be saved under a filename like
+	These are separated by underscores, e.g. the filename might contain a string such as
+`n100_Ne10000_l100000_rc0.0000001_mu0.0000001`
 
-	```
-	ms10sub-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-123_456.nex
-	```
+* `<OTHER_PARAMS>` contains other parameters, again separated by underscores. These can include:
+	* a random number seed (*gs*) for the genealogical part of the simulation 
+	* a random number seed (*ms*) for the mutational part of the simulation
+	* (optionally for files which have been processed into sequence data, such as *.hap* files) a sequencing error rate (*err*)
+	* (optionally) the maximum or highest sample id (*max*) represented in this file, if the file contains only a subsample of the original data. For example, if the original simulation contained 100 samples, a file with *max10* will contain only samples 1 to 10 (corresponding to samples labelled 0..9 if zero-based indexing is used).
+
+   A filename might thus contain a string such as `gs123_ms234_err0.001_max10`.
+
+An hdf5 file from an msprime simulation might thus be saved under a filename such as
+
+```
+msprime-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-gs123_ms234.hdf5
+```
+
+and a variant matrix created from the same simulation with error 0.001 containing only samples 1..12 might have a name such as
+
+```
+msprime-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-gs123_ms234_err0.001_max12.hap
+```
+	
 	
 ## Inference methods
 
@@ -36,44 +58,50 @@ The files created by inference methods take the general form
 <PREFIX>+<SIMULATION_STRING>+<SUFFIX>.EXT
 ```
 
-Where `<SIMULATION_STRING>` is as defined above: a string starting with *msprime...* or *msXXsub...*, and `<SUFFIX>` is a list of inference-specific params, containing e.g. the random number seed(s) used.
+Where `<SIMULATION_STRING>` is as defined above, a string starting with *msprime...*, and `<SUFFIX>` is a list of inference-specific params containing e.g. the random number seed(s) used.
 
 #### fastARG
 
-Files created from fastARG have the prefix *fastarg* and a suffix of the random number seed used. For example, running fastARG on the MSprime simulation mentioned previously, with the random number seed 54321 should result in an [fastARG output file](https://github.com/lh3/fastARG#output-format) named
+Files created from fastARG have the prefix *fastarg* and the suffix contains the random number seed used, denoted *fs*. For example, running fastARG on the MSprime *.hap* file mentioned previously, with the random number seed 54321 should result in an [fastARG output file](https://github.com/lh3/fastARG#output-format) named
 
 ```
-fastarg+ms10sub-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-123_456+54321.farg
+fastarg+msprime-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-gs123_ms234_err0.001_max12+54321.farg
 ```
-or a set of trees with the same base name but with a *.nex* extension.
+The equivalent file of trees would have the same base name but a *.nex* extension.
 
 #### ARGweaver
 
-Files created from ARGweaver have the prefix `aweaver`. The suffix contains the (integer) random number seed, and may also contain the ARGweaver iteration number, separated from the seed by a period.The ARGweaver default setting is to output a sample ARG every 10 iterations, over a total of 1000 generations, to give 100 ARG estimates, giving iteration numbers *.0*, *.10*, *.20*, etc. The population parameters passed to argweaver (Ne, mutation rate, recombination rate) are assumed to be the same as used in the original MSprime simulation which has generated the data. 
+Files created from ARGweaver have the prefix `aweaver`. The suffix contains the random number seed (*ws*), and may also contain the ARGweaver iteration number (*i.*). The ARGweaver default setting is to output a sample ARG every 10 iterations, over a total of 1000 generations, to give 100 ARG estimates, giving iteration numbers *i.0*, *i.10*, *i.20*, etc. The population parameters passed to argweaver (Ne, mutation rate, recombination rate) are assumed to be the same as used in the original MSprime simulation which has generated the data, and are therefore omitted from the SUFFIX string. The SUFFIX string may thus look something like `ws123_i.10`.  
 
-By default, argweaver outputs files in the *.smc* format, giving filenames in the form
+By default, argweaver outputs files in the *.smc* format, giving filenames that look like
 
-`aweaver+<SIMULATION_STRING>+<SEED>.XX.smc`
+`aweaver+<SIMULATION_STRING>+ws123i.10.smc`
 
-Which can be converted into a set of trees in *.nex* format. An example, with an argweaver seed of 9999 would be
-
-```
-aweaver+ms10sub-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-123_456+9999.10.nex
-```
-
-Note that the sample ARGs have different likelihoods - these are given by an associated `.stats` file, in this case
+ARGweaver *.smc* files can be relatively simply converted into a set of trees in *.nex* format. An example, with an argweaver seed of 9999 would be
 
 ```
-aweaver+ms10sub-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-123_456+9999.stats
+aweaver+msprime-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-gs123_ms234_err0.001_max12+ws9999_i.10.nex
+```
+
+Note that the sample ARGs have different likelihoods - these are given by an associated `.stats` file (which does not have iteration numbers attached), the equivalent example being
+
+```
+aweaver+msprime-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-gs123_ms234_err0.001_max12+ws9999.stats
 ```
 
 
 #### MSprime inference using the Li & Stevens algorithm
 
-Our own inference method is given the shorthand prefix `lsinfer`. For files which infer the whole ARG but then simplify the result down to a subset of the first `NN` samples, we use the prefix `lsNNsub`, followed by the random seed used. An example, with random seed 8888 might be
+Our own inference method is given the shorthand prefix `msinfer`. As with ARGweaver, the expected recombination rate is taken to be the same as in the original simulation. It is possible that no suffix string will be needed: an example infered hdf5 file could be
 
 ```
-ls10sub+msprime-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-123_456
-+8888.nex
+msinfer+msprime-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-gs123_ms234_err0.001_max12+.hdf5
 ```
 
+For comparing with other inference methods, we may want to restrict files to output only a subset of samples. The SUFFIX in this case will contain max*N*, for samples 1..N, so that a file of the form
+
+```
+msinfer+msprime-n100_Ne10000_l100000_rc0.00000002_mu0.00000002-gs123_ms234_err0.001+max12.nex
+```
+
+will contain inferred trees for samples 0..11 of the 100 (haploid) genomes which have been output from the msprime simulation.
