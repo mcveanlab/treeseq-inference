@@ -6,6 +6,7 @@ Python 3 only.
 """
 
 import sys
+import os
 import time
 import collections
 import threading
@@ -21,6 +22,7 @@ import matplotlib.pyplot as pyplot
 import pandas as pd
 import seaborn as sns
 
+sys.path.insert(1,os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','msprime')) # import the local copy of msprime in preference to the global one
 import msprime
 import _msprime
 import _tsinf
