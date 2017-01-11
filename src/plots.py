@@ -34,6 +34,14 @@ def expand_grid(data_dict):
     from itertools import product
     rows = product(*data_dict.values())
     return pd.DataFrame.from_records(rows, columns=data_dict.keys())
+
+def add_columns(dataframe, colnames):
+    """
+    add the named columns to a data frame unless they already exist
+    """
+    for cn in colnames:
+        if cn not in dataframe.columns:
+            dataframe[cn]=np.NaN
    
 def make_errors(v, p):
     """
@@ -183,7 +191,7 @@ class Dataset(object):
         return(seeds)
 
     @staticmethod
-    def single_simulation(n, Ne, l, rho, mu, seed, mut_seed=None, error_rates=[0]):
+    def single_simulation(n, Ne, l, rho, mu, seed, mut_seed=None, subsample=None):
         """
         The standard way to run one msprime simulation for a set of parameter values.
         Saves the output to an .hdf5 file, and also saves variant files for use in 
@@ -194,9 +202,8 @@ class Dataset(object):
         mutation_seed is not yet implemented, but should allow the same ancestry to be simulated (if the same
         genealogy_seed is given) but have different mutations thrown onto the trees (even with different mutation_rates)
         
-        Returns a dictionary of pathnames (without file type extension) keyed by error rate
+        Returns a tuple of treesequence, filename (without file type extension)
         """
-        pathnames = {}
         ts = msprime.simulate(n, Ne, l, recombination_rate=rho, mutation_rate=mu, random_seed=int(seed))
         #here we might want to iterate over mutation rates for the same genealogy, setting a different mut_seed
         #but only so that we can see for ourselves the effect of mutation rate variation on a single topology
@@ -204,10 +211,17 @@ class Dataset(object):
         sim_filename = msprime_basename(n, Ne, l, rho, mu, seed, seed)
         logging.debug("writing {}.hdf5".format(sim_filename))
         ts.dump(sim_filename+".hdf5", zlib_compression=True)
+        if subsample is not None:
+            ts = ts.simplify(list(range(subsample)))
+            sim_filename = add_subsample_param_to_name(sim_filename, subsample)
+            ts.dump(sim_filename +".hdf5", zlib_compression=True)
+        return ts, sim_filename
+
+    @staticmethod
+    def save_variant_matrices(ts, basename, error_rates):
         for error_rate in error_rates:
             S = generate_samples(ts, error_rate)
-            err_filename = add_error_param_to_name(sim_filename, error_rate)
-            pathnames[error_rate]=err_filename
+            err_filename = add_error_param_to_name(basename, error_rate)
             logging.debug("writing variant matrix to {}.npy for msinfer".format(err_filename))
             np.save(err_filename+".npy", S)
             
@@ -218,7 +232,6 @@ class Dataset(object):
             logging.debug("writing variant matrix to {}.sites for ARGweaver".format(err_filename))
             with open(err_filename+".sites", "w+") as argweaver_in:
                 msprime_ARGweaver.variant_matrix_to_ARGweaver_in(S, pos, argweaver_in)
-        return(pathnames)
 
     @staticmethod 
     def run_tsinf(S, rho):
@@ -284,15 +297,15 @@ class NumRecordsBySampleSizeDataset(Dataset):
             logging.info("Running simulation for n = {}".format(pd.unique(sim.sample_size)))
             #note to Jerome - I don't use the num_replicates option in simulate(), although it is presumably more 
             # efficient, as then I can't replicate each msprime simulation independently, given a RNG seed.
-            self.single_simulation(pd.unique(sim.sample_size),
-                                   pd.unique(sim.Ne),
-                                   pd.unique(sim.length),
-                                   pd.unique(sim.recombination_rate),
-                                   pd.unique(sim.mutation_rate),
-                                   pd.unique(sim.seed),
-                                   pd.unique(sim.seed), #same mutation_seed as genealogy_seed
-                                   pd.unique(sim.error_rate))
-
+            ts, fn = self.single_simulation(pd.unique(sim.sample_size),
+                                            pd.unique(sim.Ne),
+                                            pd.unique(sim.length),
+                                            pd.unique(sim.recombination_rate),
+                                            pd.unique(sim.mutation_rate),
+                                            pd.unique(sim.seed),
+                                            pd.unique(sim.seed)) #same mutation_seed as genealogy_seed
+            self.save_variant_matrices(ts, fn, pd.unique(sim.error_rate))
+            
     def process(self, save_trees=False):
         """
         This runs the inference methods. It will be the most time consuming bit.
@@ -305,10 +318,7 @@ class NumRecordsBySampleSizeDataset(Dataset):
         """
         #add columns for new data
         os.chdir(self.simulations_dir) #so that by default, all saved files go here
-        self.data['source_records']=np.NaN
-        self.data['inferred_records']=np.NaN
-        self.data['cpu_time']=np.NaN
-        self.data['memory']=np.NaN
+        add_columns(self.data, ['source_records','inferred_records','cpu_time','memory'])
         for i in self.data.index:
             d = self.data.iloc[i]
             if d.tool == 'msinfer':
