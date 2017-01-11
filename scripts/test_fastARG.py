@@ -54,14 +54,12 @@ if __name__ == "__main__":
                          NamedTemporaryFile("w+") as muts:
                         msprime_to_fastARG_in(ts, fa_in)
                         inf_seed = seed_generator.randint(1,2**32-1)
-                        start_time = time.time()
-                        run_fastARG("../fastARG/fastARG", fa_in, fa_out, seed=inf_seed)
-                        end_time = time.time()
+                        time, mem = run_fastARG("../fastARG/fastARG", fa_in.name, fa_out, seed=inf_seed)
                         root_seq = fastARG_root_seq(fa_out)
                         fastARG_out_to_msprime_txts(fa_out, tree, muts)
                         ts_new = msprime_txts_to_fastARG_in_revised(tree, muts, root_seq, fa_revised)
                         #quick check
                         if filecmp.cmp(fa_in.name, fa_revised.name, shallow=False) == False:
                             warn("Initial fastARG input file differs from processed fastARG file")
-                        writer.writerow({'sample_size': n, 'seq_length': l, 'fastARG_time': end_time-start_time, 'N_c_records_orig': len(list(ts.records())),'N_c_records_fastARG': len(list(ts_new.records())), 'simulation_seed': sim_seed, 'inference_seed': inf_seed})
+                        writer.writerow({'sample_size': n, 'seq_length': l, 'fastARG_time': time, 'N_c_records_orig': len(list(ts.records())),'N_c_records_fastARG': len(list(ts_new.records())), 'simulation_seed': sim_seed, 'inference_seed': inf_seed})
                     csvfile.flush()

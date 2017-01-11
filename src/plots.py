@@ -321,16 +321,34 @@ class NumRecordsBySampleSizeDataset(Dataset):
         add_columns(self.data, ['source_records','inferred_records','cpu_time','memory'])
         for i in self.data.index:
             d = self.data.iloc[i]
+            basename=msprime_basename(d.sample_size, d.Ne, d.length, d.recombination_rate, d.mutation_rate, d.seed, d.seed)
+            filename=add_error_param_to_name(basename, d.error_rate)
+            ts = msprime.load(basename+".hdf5")
+            assert ts.sample_size == d.sample_size
             if d.tool == 'msinfer':
                 logging.info("processing msinfer inference for n = {}".format(d.sample_size))
-                basename=msprime_basename(d.sample_size, d.Ne, d.length, d.recombination_rate, d.mutation_rate, d.seed, d.seed)
-                filename=add_error_param_to_name(basename, d.error_rate)
-                ts = msprime.load(basename+".hdf5")
-                assert ts.sample_size == d.sample_size
-                logging.debug("reading: {} for msprime inference".format(filename))
+                logging.debug("reading: {}.npy for msprime inference".format(filename))
                 S = np.load(filename + ".npy")
                 assert S.shape == (ts.sample_size, ts.num_mutations)
                 inferred_ts, time, memory = self.run_tsinf(S, 4*d.recombination_rate*d.Ne)
+                self.data.loc[i,['source_records','inferred_records','cpu_time','memory']] = (
+                    ts.get_num_records(),
+                    inferred_ts.get_num_records(), time, memory)
+            elif d.tool == 'fastARG':
+                logging.info("processing fastARG inference for n = {}".format(d.sample_size))
+                logging.debug("reading: {}.hap for msprime inference".format(filename))
+                with NamedTemporaryFile("w+") as fa_out,
+                     NamedTemporaryFile("w+") as tree,
+                     NamedTemporaryFile("w+") as muts,
+                     NamedTemporaryFile("w+") as fa_revised:
+                time, memory = msprime_ARGweaver.run_fastARG("../fastARG/fastARG", 
+                                                             filename + ".hap", fa_out, 
+                                                             seed=d.seed, status_to=None)
+                root_seq = msprime_ARGweaver.fastARG_root_seq(fa_out)
+                msprime_ARGweaver.fastARG_out_to_msprime_txts(fa_out, tree, muts)
+                inferred_ts = msprime_txts_to_fastARG_in_revised(tree, muts, root_seq, fa_revised, simplify=True)
+                assert filecmp.cmp(filename + ".hap", fa_revised.name, shallow=False),
+                    "Initial fastARG haplotype input file differs from inferred fastARG haplotypes"
                 self.data.loc[i,['source_records','inferred_records','cpu_time','memory']] = (
                     ts.get_num_records(),
                     inferred_ts.get_num_records(), time, memory)

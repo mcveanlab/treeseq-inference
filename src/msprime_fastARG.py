@@ -30,7 +30,8 @@ def variant_matrix_to_fastARG_in(var_matrix, var_positions, fastARG_filehandle):
     fastARG_filehandle.flush()
 
 
-def run_fastARG(executable, fastARG_in_filehandle, fastARG_out_filehandle, seed=None, status_to=sys.stdout):
+
+def run_fastARG(executable, fastARG_in, fastARG_out_filehandle, seed=None, status_to=sys.stdout):
     if status_to:
         print("== Running fastARG ==", file=status_to)
     fastARG_in_filehandle.seek(0) #make sure we reset to the start of the infile
@@ -38,8 +39,12 @@ def run_fastARG(executable, fastARG_in_filehandle, fastARG_out_filehandle, seed=
     exe = [str(executable), 'build']
     if seed:
         exe += ['-s', str(int(seed))]
+    start_time = time.time()
     call(exe + [fastARG_in_filehandle.name], stdout=fastARG_out_filehandle)
+    end_time = time.time()
+    memory = 0 #TO DO
     fastARG_out_filehandle.flush()
+    return (end_time-start_time, memory)
 
 def variant_positions_from_fastARGin(fastARG_in_filehandle):
     import numpy as np
