@@ -207,7 +207,6 @@ class Dataset(object):
         for error_rate in error_rates:
             S = generate_samples(ts, error_rate)
             err_filename = add_error_param_to_name(sim_filename, error_rate)
-            print(sim_filename)
             pathnames[error_rate]=err_filename
             logging.debug("writing variant matrix to {}.npy for msinfer".format(err_filename))
             np.save(err_filename+".npy", S)
