@@ -24,6 +24,12 @@ def msprime_to_fastARG_in(ts, fastARG_filehandle):
         print(v.position, v.genotypes.decode(), sep="\t", file=fastARG_filehandle)
     fastARG_filehandle.flush()
 
+def variant_matrix_to_fastARG_in(var_matrix, var_positions, fastARG_filehandle):
+    for pos, row in zip(var_positions, var_matrix):
+        print(pos, "".join((str(v) for v in row)), sep="\t", file=fastARG_filehandle)
+    fastARG_filehandle.flush()
+
+
 def run_fastARG(executable, fastARG_in_filehandle, fastARG_out_filehandle, seed=None, status_to=sys.stdout):
     if status_to:
         print("== Running fastARG ==", file=status_to)
