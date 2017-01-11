@@ -65,7 +65,7 @@ Where `<SIMULATION_STRING>` is as defined above, a string starting with *msprime
 Files created from fastARG have the prefix *fastarg* and the suffix contains the random number seed used, denoted *fs*. For example, running fastARG on the MSprime *.hap* file mentioned previously, with the random number seed 54321 should result in an [fastARG output file](https://github.com/lh3/fastARG#output-format) named
 
 ```
-fastarg+msprime-n100_Ne10000_l100000_rho0.00000002_mu0.00000002-gs123_ms234_err0.001_max12+54321.farg
+fastarg+msprime-n100_Ne10000_l100000_rho0.00000002_mu0.00000002-gs123_ms234_err0.001_max12+fs54321.farg
 ```
 The equivalent file of trees would have the same base name but a *.nex* extension.
 
