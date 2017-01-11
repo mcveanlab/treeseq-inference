@@ -153,10 +153,9 @@ class Dataset(object):
         set of files which re-run the simulations w/ different throws of the dice.
         """
         self.instance = seed
-        random.seed(self.instance)
         self.data_file = os.path.join(self.data_dir,
             "{}_{}.csv".format(self.name, self.instance))
-        self.raw_data_dir = os.path.join(self.data_dir, "raw__NOBACKUP__", self.name, self.instance)
+        self.raw_data_dir = os.path.join(self.data_dir, "raw__NOBACKUP__", self.name, str(self.instance))
         if not os.path.exists(self.raw_data_dir):
             logging.info("Making raw data dir {}".format(self.raw_data_dir))
         os.makedirs(self.raw_data_dir, exist_ok=True)
@@ -171,9 +170,10 @@ class Dataset(object):
         """
         returns a set of n unique seeds suitable for seeding RNGs
         """
+        np.random.seed(self.instance)
         seeds = np.random.randint(upper, size=n)
         seeds = np.unique(seeds)
-        while len(a) != n:
+        while len(seeds) != n:
             seeds = np.append(np.random.randint(upper,size = n-len(seeds)))
             seeds = np.unique(seeds)
         return(seeds)
@@ -193,7 +193,7 @@ class Dataset(object):
         Returns a dictionary of pathnames (without file type extension) keyed by error rate
         """
         pathnames = {}
-        ts = msprime.simulate(n, Ne, l, rho, mu, random_seed=seed)
+        ts = msprime.simulate(n, Ne, l, recombination_rate=rho, mutation_rate=mu, random_seed=int(seed))
         #here we might want to iterate over mutation rates for the same genealogy, setting a different mut_seed
         #but only so that we can see for ourselves the effect of mutation rate variation on a single topology
         #for the moment, we don't bother, and have mut_seed==genealogy_seed
@@ -246,13 +246,13 @@ class NumRecordsBySampleSizeDataset(Dataset):
 
         #set up a pd Data Frame containing all the params
         params = OrderedDict()
-        sim_params['sample_size']       = np.linspace(10, 500, num=10).astype(int)
+        params['sample_size']       = np.linspace(10, 500, num=10).astype(int)
         params['Ne']                 = 5000,
         params['length']             = 50000,
         params['recombination_rate'] = 2.5e-8,
         params['mutation_rate']      = 1.5e-8,
         params['replicates']         = np.arange(10)
-        self.sim_param_names = list(params.keys())
+        sim_params = list(params.keys())
         #now add some other params, where multiple vals exists for one simulation
         params['error_rate']         = [0, 0.01, 0.1]
         params['tool']               = ["fastARG","msinfer"]
@@ -260,9 +260,9 @@ class NumRecordsBySampleSizeDataset(Dataset):
         #all combinations of params in a DataFrame
         self.data = expand_grid(params)
         #assign a unique index for each simulation
-        self.data.sim = pd.Categorical(df[self.sim_param_names].astype(str).apply("".join, 1)).codes
+        self.data['sim'] = pd.Categorical(self.data[sim_params].astype(str).apply("".join, 1)).codes
         #set unique seeds for each sim
-        self.data.seed = self.get_seeds(max(self.data.sim))[self.data.sim]
+        self.data['seed'] = self.get_seeds(max(self.data.sim)+1)[self.data.sim]
         
     def generate(self):
         """
@@ -275,8 +275,9 @@ class NumRecordsBySampleSizeDataset(Dataset):
             shutil.rmtree(self.simulations_dir)
         os.makedirs(self.simulations_dir)
         os.chdir(self.simulations_dir) #so that by default, all saved files go here
-        for sim in self.data.groupby(sim_param_names):
-            logging.info("Running simulation for n = {}".format(n))
+        for s in range(max(self.data.sim)+1):
+            sim = self.data[self.data.sim == s]
+            logging.info("Running simulation for n = {}".format(pd.unique(sim.sample_size)))
             #note to Jerome - I don't use the num_replicates option in simulate(), although it is presumably more 
             # efficient, as then I can't replicate each msprime simulation independently, given a RNG seed.
             self.single_simulation(pd.unique(sim.sample_size),
@@ -320,7 +321,7 @@ class NumRecordsBySampleSizeDataset(Dataset):
                     inferred_ts.get_num_records(), time, memory)
             
             # Save each row so we can use the information while it's being built
-            df.to_csv(self.data_file)
+            self.data.to_csv(self.data_file)
 
 
 def run_generate(cls, args):
