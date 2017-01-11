@@ -10,6 +10,7 @@ import os.path
 sys.path.insert(1,os.path.join(sys.path[0],'..','fastARG')) # use the local copy of fastARG
 sys.path.insert(1,os.path.join(sys.path[0],'..','msprime')) # use the local copy of msprime in preference to the global one
 sys.path.insert(1,os.path.join(sys.path[0],'..','scripts'))
+sys.path.insert(1,os.path.join(sys.path[0],'..','src'))
 import msprime
 from warnings import warn
 from tempfile import NamedTemporaryFile, TemporaryDirectory
@@ -146,47 +147,61 @@ def test_fixed(nexus_dir, coalescence_records, n_mutations, n_sim_replicates=1):
     r_cmds.append("mpos_rooted_metrics <- as.data.frame(t(mapply(function(m, r) genome.trees.dist(read.nexus(sprintf('{full_orig_filename}',m), force.multi=TRUE), read.nexus(sprintf('{full_new_filename}',m,r), force.multi=TRUE), rooted=TRUE), muts, reps)))".format(full_orig_filename=os.path.abspath(orig_filenames["mpos"]), full_new_filename=os.path.abspath(fa_filenames["mpos"])))
     print("\n".join(r_cmds))
 
-def msprime_filename(n, Ne, l, rc, mu, tree_seed, mut_seed, subset=None):
-    if subset is None:
-        prefix = "msprime"
-    else:
-        prefix="ms{0:02d}".format(subset)
-    #some jiggery pokery needed to print non-exponential notation without trailing zeroes
-    return(prefix + "-n{}_Ne{}_l{}_rc{}_mu{}-{}_{}".format(n, Ne, l, "{:.12f}".format(rc).rstrip('0'), "{:.12f}".format(mu).rstrip('0'), tree_seed, mut_seed))
+def msprime_basename(n, Ne, l, rho, mu, genealogy_seed, mut_seed):
+    """
+    Create a filename for an msprime simulation (without extension)
+    Other functions serve to add error rate and/or a subsample sizes to the name
+    """
+    #format mut rate & recomb rate to print non-exponential notation without trailing zeroes
+    #12 dp should be ample for these rates
+    rho = "{:.12f}".format(rho).rstrip('0') 
+    mu = "{:.12f}".format(mu).rstrip('0') 
+    return("msprime-n{}_Ne{}_l{}_rho{}_mu{}-gs{}_ms{}".format(n, Ne, l, rho, mu, genealogy_seed, mut_seed))
     
-def construct_fastarg_basename(seed, sim_basename, base_dir=None):
-    """returns a fastARG filename but without file extension"""
-    if base_dir is not None:
-        import os
-        return(os.path.join(base_dir, '+'.join(['fastarg', sim_basename, seed])))
-    else:
-        return('+'.join(['fastarg', sim_basename, str(seed)]))
-        
-def construct_argweaver_basename(seed, sim_basename, base_dir=None):
-    """returns an ARGweaver filename but without .iter number or file extension"""
-    if base_dir is not None:
-        import os
-        return(os.path.join(base_dir, '+'.join(['aweaver', sim_basename, seed])))
-    else:
-        return('+'.join(['aweaver', sim_basename, str(seed)]))
+def add_error_param(sim_filename, error_rate):
+    """
+    Append the error param to the simulation filename.
+    This is only relevant for files downstream of the step where sequence error is added
+    """
+    return(msprime_filename + "_err{}".format(error_rate))
 
-def construct_ls_basename(sim_basename, subset=None, base_dir=None):
-    """returns an ARGweaver filename but without .iter number or file extension"""
-    if subset is None:
-        prefix = "ls{0:02d}".format(subset)
+def add_subsample_param(sim_filename, subsample_size):
+    """
+    Mark a filename as containing only a subset of the samples of the full simulation output
+    """
+    if msprime_filename.endswith("+") or msprime_filename.endswith("-") #this is the first param
+        return(msprime_filename + "max{}".format(subsample_size))
     else:
-        prefix = "lsinfer"
-            
-    if base_dir is not None:
-        import os
-        return(os.path.join(base_dir, '+'.join([prefix, sim_basename, ""])))
-    else:
-        return('+'.join([prefix, sim_basename, ""]))
+        return(msprime_filename + "_max{}".format(subsample_size))
+    
+    
+def construct_fastarg_basename(sim_basename, seed):
+    """
+    Returns a fastARG inference filename (without file extension), 
+    based on a simulation name
+    """
+    return('+'.join(['fastarg', sim_basename, "fs"+str(seed)]))
+        
+def construct_argweaver_basename(sim_basename, seed):
+    """
+    Returns an ARGweaver inference filename (without file extension), 
+    based on a simulation name. The iteration number (used in .smc and .nex output)
+    is not added here, but by the ARGweaver `arg-sample` program, in the format .10, .20, etc.
+    """
+    return('+'.join(['aweaver', sim_basename, "ws"+str(seed)]))
+
+def construct_msinfer_basename(sim_basename):
+    """
+    Returns an MSprime Li & Stevens inference filename 
+    If the file is a subset of the original, this can
+    be added to the basename using the add_subsample_param() routine"""
+    return('+'.join(["msinfer", sim_basename, ""]))
  
-def seed_set(n, rng):
+def unique_rng_seeds(n, rng=random):
     """
     returns a set of n seeds suitable for seeding RNGs
     """
+    import random
     seeds=set()
     while len(seeds) < n:
         seeds.add(rng.randint(1,999999))
