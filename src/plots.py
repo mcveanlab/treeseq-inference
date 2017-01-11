@@ -66,9 +66,10 @@ def msprime_basename(n, Ne, l, rho, mu, genealogy_seed, mut_seed):
     """
     #format mut rate & recomb rate to print non-exponential notation without 
     # trailing zeroes 12 dp should be ample for these rates
-    rho = "{:.12f}".format(rho).rstrip('0') 
-    mu = "{:.12f}".format(mu).rstrip('0') 
-    return("msprime-n{}_Ne{}_l{}_rho{}_mu{}-gs{}_ms{}".format(n, Ne, l, rho, mu, genealogy_seed, mut_seed))
+    rho = "{:.12f}".format(float(rho)).rstrip('0') 
+    mu = "{:.12f}".format(float(mu)).rstrip('0') 
+    return("msprime-n{}_Ne{}_l{}_rho{}_mu{}-gs{}_ms{}".format(int(n), float(Ne), int(l), rho, 
+        mu, int(genealogy_seed), int(mut_seed)))
         
 def add_error_param_to_name(sim_basename, error_rate):
     """
@@ -77,7 +78,10 @@ def add_error_param_to_name(sim_basename, error_rate):
     """
     if sim_basename.endswith("+") or sim_basename.endswith("-"):
         #this is the first param
-        return(sim_basename + "_err{}".format(error_rate))
+        return(sim_basename + "_err{}".format(float(error_rate)))
+    else:
+        #this is the first param
+        return(sim_basename + "err{}".format(float(error_rate)))
 
 def add_subsample_param_to_name(sim_basename, subsample_size):
     """
@@ -86,9 +90,9 @@ def add_subsample_param_to_name(sim_basename, subsample_size):
     """
     if sim_basename.endswith("+") or sim_basename.endswith("-"):
         #this is the first param
-        return(sim_basename + "max{}".format(subsample_size))
+        return(sim_basename + "max{}".format(int(subsample_size)))
     else:
-        return(sim_basename + "_max{}".format(subsample_size))
+        return(sim_basename + "_max{}".format(int(subsample_size)))
     
     
 def construct_fastarg_basename(sim_basename, seed):
@@ -203,6 +207,7 @@ class Dataset(object):
         for error_rate in error_rates:
             S = generate_samples(ts, error_rate)
             err_filename = add_error_param_to_name(sim_filename, error_rate)
+            print(sim_filename)
             pathnames[error_rate]=err_filename
             logging.debug("writing variant matrix to {}.npy for msinfer".format(err_filename))
             np.save(err_filename+".npy", S)
