@@ -157,8 +157,8 @@ class Dataset(object):
         set of files which re-run the simulations w/ different throws of the dice.
         """
         self.instance = seed
-        self.data_file = os.path.join(self.data_dir,
-            "{}_{}.csv".format(self.name, self.instance))
+        self.data_file = os.path.abspath(os.path.join(self.data_dir,
+            "{}_{}.csv".format(self.name, self.instance)))
         self.raw_data_dir = os.path.join(self.data_dir, "raw__NOBACKUP__", self.name, str(self.instance))
         if not os.path.exists(self.raw_data_dir):
             logging.info("Making raw data dir {}".format(self.raw_data_dir))
@@ -221,7 +221,7 @@ class Dataset(object):
         return(pathnames)
 
     @staticmethod 
-    def run_tsinf(self, S, rho):
+    def run_tsinf(S, rho):
         before = time.clock()
         panel = tsinf.ReferencePanel(S)
         P = panel.infer_paths(rho, num_workers=4)
@@ -287,8 +287,8 @@ class NumRecordsBySampleSizeDataset(Dataset):
             self.single_simulation(pd.unique(sim.sample_size),
                                    pd.unique(sim.Ne),
                                    pd.unique(sim.length),
-                                   pd.unique(sim.mutation_rate),
                                    pd.unique(sim.recombination_rate),
+                                   pd.unique(sim.mutation_rate),
                                    pd.unique(sim.seed),
                                    pd.unique(sim.seed), #same mutation_seed as genealogy_seed
                                    pd.unique(sim.error_rate))
@@ -304,23 +304,24 @@ class NumRecordsBySampleSizeDataset(Dataset):
         
         """
         #add columns for new data
+        os.chdir(self.simulations_dir) #so that by default, all saved files go here
         self.data['source_records']=np.NaN
         self.data['inferred_records']=np.NaN
         self.data['cpu_time']=np.NaN
         self.data['memory']=np.NaN
         for i in self.data.index:
-            d = self.data.index[i:(i+1)]
+            d = self.data.iloc[i]
             if d.tool == 'msinfer':
                 logging.info("processing msinfer inference for n = {}".format(d.sample_size))
                 basename=msprime_basename(d.sample_size, d.Ne, d.length, d.recombination_rate, d.mutation_rate, d.seed, d.seed)
-                filename=add_error_param_to_name(filename, d.error_rate)
+                filename=add_error_param_to_name(basename, d.error_rate)
                 ts = msprime.load(basename+".hdf5")
-                assert ts.sample_size == n
+                assert ts.sample_size == d.sample_size
                 logging.debug("reading: {} for msprime inference".format(filename))
-                S = np.load(filename)
+                S = np.load(filename + ".npy")
                 assert S.shape == (ts.sample_size, ts.num_mutations)
-                inferred_ts, time, memory = self.run_tsinf(S, 4*self.recombination_rate*self.Ne)
-                d[['source_records','inferred_records','cpu_time','memory']] = (
+                inferred_ts, time, memory = self.run_tsinf(S, 4*d.recombination_rate*d.Ne)
+                self.data.loc[i,['source_records','inferred_records','cpu_time','memory']] = (
                     ts.get_num_records(),
                     inferred_ts.get_num_records(), time, memory)
             
