@@ -153,8 +153,40 @@ class Dataset(object):
     def process(self):
         raise NotImplementedError()
 
+    def single_simulation(sample_size, Ne, length, recombination_rate, mutation_rate, genealogy_seed, mutation_seed=None, error_rates=[0]):
+        """
+        The standard way to run one msprime simulation for a set of parameter values.
+        Saves the output to an .hdf5 file, and also saves variant files for use in 
+        fastARG (a .hap file, in the format specified by https://github.com/lh3/fastARG#input-format)
+        ARGweaver (a .sites file: http://mdrasmus.github.io/argweaver/doc/#sec-file-sites)
+        msinfer (currently a numpy array containing the variant matrix)
+        
+        mutation_seed is not yet implemented, but should allow the same ancestry to be simulated (if the same
+        genealogy_seed is given) but have different mutations thrown onto the trees (even with different mutation_rates)
+        """
+        ts = msprime.simulate(sample_size, Ne, length, recombination_rate, mutation_rate, random_seed=genealogy_seed)
+        #here we might want to iterate over mutation rates for the same genealogy, setting a different mut_seed
+        #but only so that we can see for ourselves the effect of mutation rate variation on a single topology
+        #for the moment, we don't bother, and have mut_seed==genealogy_seed
+        sim_filename = msprime_basename(sample_size, Ne, length, recombination_rate, mutation_rate, genealogy_seed, genealogy_seed)
+        logging.debug("writing {}.hdf5".format(sim_filename))
+        ts.dump(sim_filename+".hdf5", zlib_compression=True)
+        for error_rate in error_rates:
+            S = generate_samples(ts, error_rate)
+            err_filename = add_error_param_to_name(sim_filename, error_rate)
+            logging.debug("writing variant matrix to {}.npy for msinfer".format(err_filename))
+            np.save(err_filename+".npy", S)
+            logging.debug("writing variant matrix to {}.hap for fastARG".format(err_filename))
+            with open(err_filename+".hap", "w+") as fastarg_in:
+                msprime_fastARG.variant_matrix_to_fastARG_in(S, (v.position for v in ts.variants()), fastarg_in)
+            logging.debug("writing variant matrix to {}.sites for ARGweaver".format(err_filename))
+            with open(err_filename+".sites", "w+") as argweaver_in:
+                msprime_ARGweaver.variant_matrix_to_ARGweaver_in(S, (v.position for v in ts.variants()), argweaver_in)
+        
+
 class NumRecordsBySampleSizeDataset(Dataset):
     """
+    Dataset for Figure 1: 
     Information on the number of coalescence records inferred by tsinf
     and FastARG for various sample sizes.
     """
@@ -203,31 +235,13 @@ class NumRecordsBySampleSizeDataset(Dataset):
             rho=self.recombination_rate
             genealogy_seeds = unique_rng_seeds(self.num_replicates, random)
             for j, genealogy_seed in enumerate(genealogy_seeds):
-                ts = msprime.simulate(
-                    n, Ne=Ne, mutation_rate=mu, length=l, recombination_rate=rho, random_seed=genealogy_seed)
-                #here we might want to iterate over mutation rates for the same genealogy, setting a different mut_seed
-                #but only so that we can see for ourselves the effect of mutation rate variation on a single topology
-                #for the moment, we don't bother, and have mut_seed==genealogy_seed
-                sim_filename = msprime_basename(n, Ne, l, rho, mu, genealogy_seed, genealogy_seed)
-                logging.debug("writing {}.hdf5".format(sim_filename))
-                ts.dump(sim_filename+".hdf5", zlib_compression=True)
-                for error_rate in self.error_rates:
-                    S = generate_samples(ts, error_rate)
-                    err_filename = add_error_param_to_name(sim_filename, error_rate)
-                    logging.debug("writing variant matrix to {}.npy for msinfer".format(err_filename))
-                    np.save(err_filename+".npy", S)
-                    logging.debug("writing variant matrix to {}.hap for fastARG".format(err_filename))
-                    with open(err_filename+".hap", "w+") as fastarg_in:
-                        msprime_fastARG.variant_matrix_to_fastARG_in(S, (v.position for v in ts.variants()), fastarg_in)
-                    logging.debug("writing variant matrix to {}.sites for ARGweaver".format(err_filename))
-                    with open(err_filename+".sites", "w+") as argweaver_in:
-                        msprime_ARGweaver.variant_matrix_to_ARGweaver_in(S, (v.position for v in ts.variants()), argweaver_in)
+                self.single_simulation(n,Ne,l,rho,mu,genealogy_seed, error_rates=self.error_rates)
 
     def process(self):
         """
         This runs the inference methods. It will be the most time consuming bit.
-        The final files saved will be .nexus files containing multiple trees. In the case of
-        fastARG and msinfer methods, we could also save hdf5 files for reference
+        The final files saved will be nexus files containing multiple trees.
+        In the case of fastARG and msinfer methods, we could also save hdf5 files for reference
         """
         df = pd.DataFrame(columns=(
             "tool", "num_samples", "error_rate", "replicate", "source_records",
