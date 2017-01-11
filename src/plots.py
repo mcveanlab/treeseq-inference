@@ -186,7 +186,9 @@ class NumRecordsBySampleSizeDataset(Dataset):
 
     def generate(self):
         """
-        Generates the initial simulations from which we can infer data
+        Generates the initial simulations from which we can infer data. 
+        Should be quite fast, but will generate lots of files, and probably
+        take up a fair bit of disk space.
         """
         # clear out any old simulations to avoid confusion.
         if os.path.exists(self.simulations_dir):
@@ -222,6 +224,11 @@ class NumRecordsBySampleSizeDataset(Dataset):
                         msprime_ARGweaver.variant_matrix_to_ARGweaver_in(S, (v.position for v in ts.variants()), argweaver_in)
 
     def process(self):
+        """
+        This runs the inference methods. It will be the most time consuming bit.
+        The final files saved will be .nexus files containing multiple trees. In the case of
+        fastARG and msinfer methods, we could also save hdf5 files for reference
+        """
         df = pd.DataFrame(columns=(
             "tool", "num_samples", "error_rate", "replicate", "source_records",
             "inferred_records", "cpu_time", "memory"))
