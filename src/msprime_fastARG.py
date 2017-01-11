@@ -29,22 +29,24 @@ def variant_matrix_to_fastARG_in(var_matrix, var_positions, fastARG_filehandle):
         print(pos, "".join((str(v) for v in row)), sep="\t", file=fastARG_filehandle)
     fastARG_filehandle.flush()
 
-
-
 def run_fastARG(executable, fastARG_in, fastARG_out_filehandle, seed=None, status_to=sys.stdout):
+    import time
     if status_to:
         print("== Running fastARG ==", file=status_to)
-    fastARG_in_filehandle.seek(0) #make sure we reset to the start of the infile
     from subprocess import call
     exe = [str(executable), 'build']
     if seed:
         exe += ['-s', str(int(seed))]
     start_time = time.time()
-    call(exe + [fastARG_in_filehandle.name], stdout=fastARG_out_filehandle)
+    call(exe + [fastARG_in], stdout=fastARG_out_filehandle)
     end_time = time.time()
     memory = 0 #TO DO
     fastARG_out_filehandle.flush()
     return (end_time-start_time, memory)
+
+def variant_positions_from_fastARGin_name(fastARG_in):
+    with open(fastARG_in) as fastARG_in_filehandle:
+        return(variant_positions_from_fastARGin(fastARG_in_filehandle))
 
 def variant_positions_from_fastARGin(fastARG_in_filehandle):
     import numpy as np
@@ -199,7 +201,7 @@ def main(sim, fastARG_executable, fa_in, fa_out, tree, muts, fa_revised, hdf5_ou
         ts = msprime_hdf5_to_fastARG_in(sim, fa_in)
     run_fastARG(fastARG_executable, fa_in, fa_out)
     root_seq = fastARG_root_seq(fa_out)
-    fastARG_out_to_msprime_txts(fa_out, variant_positions_from_fastARGin(fa_in), tree, muts)
+    fastARG_out_to_msprime_txts(fa_out, variant_positions_from_fastARGin(fa_in.name), tree, muts)
     new_ts = msprime_txts_to_fastARG_in_revised(tree, muts, root_seq, simplify=False)
     simple_ts = msprime_txts_to_fastARG_in_revised(tree, muts, root_seq, fa_revised, hdf5_outname)
     print("Initial num records = {}, fastARG (simplified) = {}, fastARG (unsimplified) = {}".format(ts.get_num_records(), simple_ts.get_num_records(), new_ts.get_num_records()))
