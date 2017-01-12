@@ -147,10 +147,6 @@ new.read.nexus <- function (file, tree.names = NULL, force.multi=FALSE)
     trees
 }
 library(ape) #for read.nexus
-unlockBinding("read.nexus", as.environment("package:ape"))
-assign("read.nexus", new.read.nexus, pos=as.environment("package:ape"))
-lockBinding("read.nexus", as.environment("package:ape"))
-
 
 
 genome.trees.dist <- function(a, b, output_full_table = FALSE, acceptable_length_diff_pct = 0.1, rooted=FALSE, variant.positions=NULL) { 
@@ -288,7 +284,6 @@ fa.aw.compare <- function(original.simulation.files="tmp/nexus_files/msprime*.ne
 
 metrics <- fa.aw.compare()
 
-equipment
 
 #plot(as.numeric(sub("muts\\d+", "", rownames(gpos_metrics))), gpos_metrics$RF)
 #points(as.numeric(sub("muts\\d+", "", rownames(mpos_metrics))), mpos_metrics$RF, colors="red")

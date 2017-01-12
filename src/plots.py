@@ -19,6 +19,10 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as pyplot
 import pandas as pd
+import rpy2.robjects as robjects
+from rpy2.robjects.packages import importr
+from rpy2.robjects import pandas2ri
+pandas2ri.activate()
 
 # import the local copy of msprime in preference to the global one
 curr_dir = os.path.dirname(os.path.abspath(__file__))
@@ -230,8 +234,8 @@ class Dataset(object):
         """
         ts = msprime.simulate(n, Ne, l, recombination_rate=rho, mutation_rate=mu, random_seed=int(seed))
         #here we might want to iterate over mutation rates for the same genealogy, setting a different mut_seed
-        #but only so that we can see for ourselves the effect of mutation rate variation on a single topology
-        #for the moment, we don't bother, and have mut_seed==genealogy_seed
+        #so that we can see for ourselves the effect of mutation rate variation on a single topology
+        #but for the moment, we don't bother, and simply write mut_seed==genealogy_seed
         sim_fn = msprime_name(n, Ne, l, rho, mu, seed, seed, self.simulations_dir)
         logging.debug("writing {}.hdf5".format(sim_fn))
         ts.dump(sim_fn+".hdf5", zlib_compression=True)
@@ -309,6 +313,14 @@ class Dataset(object):
         #cannot translate these to msprime ts objects, as smc2arg does not work
         #see https://github.com/mdrasmus/argweaver/issues/20
         return new_files, new_stats_file_name, cpu_time, memory_use
+
+    @staticmethod
+    def ARG_metrics(true_nexus, **inferred_nexuses):
+        """
+        pass in a set of inferred nexus files (each of which could be an array)
+        e.g. ARG_metrics(true.nex, fastARG=fa.nex, argWeaver=[aw1.nex, aw2.nex])
+        """
+        raise NotImplementedError()
 
 class NumRecordsBySampleSizeDataset(Dataset):
     """
