@@ -12,6 +12,7 @@ import time
 import collections
 import itertools
 import tempfile
+import subprocess
 import filecmp
 
 import numpy as np
@@ -81,7 +82,7 @@ def msprime_name(n, Ne, l, rho, mu, genealogy_seed, mut_seed, directory=None):
     """
     #format mut rate & recomb rate to print non-exponential notation without
     # trailing zeroes 12 dp should be ample for these rates
-    rho = "{:.12f}".format(float(rho)).rstrip('0') 
+    rho = "{:.12f}".format(float(rho)).rstrip('0')
     mu = "{:.12f}".format(float(mu)).rstrip('0')
     file = "msprime-n{}_Ne{}_l{}_rho{}_mu{}-gs{}_ms{}".format(int(n), float(Ne), int(l), rho, \
         mu, int(genealogy_seed), int(mut_seed))
@@ -89,7 +90,7 @@ def msprime_name(n, Ne, l, rho, mu, genealogy_seed, mut_seed, directory=None):
         return file
     else:
         return os.path.join(directory,file)
-                
+
 def add_error_param_to_name(sim_name, error_rate):
     """
     Append the error param to the msprime simulation filename.
@@ -139,6 +140,31 @@ def construct_msinfer_name(sim_name):
     """
     d,f = os.path.split(sim_name)
     return os.path.join(d,'+'.join(['msinfer', f, ""]))
+
+
+def time_cmd(cmd, stdout):
+    full_cmd = ["/usr/bin/time", "-f%M %S %U"] + cmd
+    with tempfile.TemporaryFile() as stderr:
+        exit_status = subprocess.call(full_cmd, stderr=stderr, stdout=stdout)
+        stderr.seek(0)
+        if exit_status != 0:
+            raise ValueError(
+                "Error running '{}': status={}:stderr{}".format(
+                    cmd, exit_status, stderr.read()))
+
+        split = stderr.readlines()[-1].split()
+        # From the time man page:
+        # M: Maximum resident set size of the process during its lifetime,
+        #    in Kilobytes.
+        # S: Total number of CPU-seconds used by the system on behalf of
+        #    the process (in kernel mode), in seconds.
+        # U: Total number of CPU-seconds that the process used directly
+        #    (in user mode), in seconds.
+        max_memory = int(split[0]) * 1024
+        system_time = float(split[1])
+        user_time = float(split[2])
+    return user_time + system_time, max_memory
+
 
 class Figure(object):
     """
@@ -269,21 +295,21 @@ class Dataset(object):
         return ts_simplified, cpu_time, memory_use
 
     @staticmethod
-    def run_fastarg(file_name):
+    def run_fastarg(file_name, seed):
         with tempfile.NamedTemporaryFile("w+") as fa_out, \
-             tempfile.NamedTemporaryFile("w+") as tree,   \
-             tempfile.NamedTemporaryFile("w+") as muts,   \
-             tempfile.NamedTemporaryFile("w+") as fa_revised:
-            cpu_time, memory_use = msprime_fastARG.run_fastARG(fastARG_executable,
-                                                               file_name, fa_out,
-                                                               seed=d.seed, status_to=None)
+                tempfile.NamedTemporaryFile("w+") as tree, \
+                tempfile.NamedTemporaryFile("w+") as muts, \
+                tempfile.NamedTemporaryFile("w+") as fa_revised:
+            cmd = msprime_fastARG.get_cmd(fastARG_executable, file_name, seed)
+            cpu_time, memory_use = time_cmd(cmd, fa_out)
+            logging.debug("ran fastarg [{} s]: '{}'".format(cpu_time, cmd))
             var_pos = msprime_fastARG.variant_positions_from_fastARGin_name(file_name)
             root_seq = msprime_fastARG.fastARG_root_seq(fa_out)
-            msprime_fastARG.fastARG_out_to_msprime_txts(fa_out, var_pos, tree, muts)
-            inferred_ts = msprime_fastARG.msprime_txts_to_fastARG_in_revised(tree, muts, root_seq,
-                                                                             fa_revised, simplify=True)
-            assert filecmp.cmp(infile, fa_revised.name, shallow=False), \
-                "Initial fastARG haplotype input file differs from inferred fastARG haplotypes"
+            msprime_fastARG.fastARG_out_to_msprime_txts(
+                    fa_out, var_pos, tree, muts, status_to=None)
+            inferred_ts = msprime_fastARG.msprime_txts_to_fastARG_in_revised(
+                    tree, muts, root_seq, fa_revised, simplify=True, status_to=None)
+            assert filecmp.cmp(file_name, fa_revised.name, shallow=False)
             return inferred_ts, cpu_time, memory_use
 
 
@@ -359,9 +385,9 @@ class NumRecordsBySampleSizeDataset(Dataset):
         add_columns(self.data, ['source_records','inferred_records','cpu_time','memory'])
         for i in self.data.index:
             d = self.data.iloc[i]
-            sim_fn=msprime_name(d.sample_size, d.Ne, d.length, d.recombination_rate, 
-                                d.mutation_rate, d.seed, d.seed, self.simulations_dir)
-            err_fn=add_error_param_to_name(sim_fn, d.error_rate)
+            sim_fn = msprime_name(d.sample_size, d.Ne, d.length, d.recombination_rate,
+                                  d.mutation_rate, d.seed, d.seed, self.simulations_dir)
+            err_fn = add_error_param_to_name(sim_fn, d.error_rate)
             ts = msprime.load(sim_fn+".hdf5")
             inferred_ts = None
             assert ts.sample_size == d.sample_size
@@ -379,7 +405,9 @@ class NumRecordsBySampleSizeDataset(Dataset):
                 out_fn = construct_fastarg_name(err_fn, d.seed)
                 logging.info("processing fastARG inference for n = {}".format(d.sample_size))
                 logging.debug("reading: {} for msprime inference".format(infile))
-                inferred_ts, time, memory = self.run_fastarg(infile)
+                inferred_ts, time, memory = self.run_fastarg(infile, d.seed)
+            else:
+                raise ValueError("Unknown tool: {}".format(tool))
             self.data.loc[i,['source_records','inferred_records','cpu_time','memory']] = \
                 (ts.get_num_records(), inferred_ts.get_num_records(),time, memory)
 
@@ -463,38 +491,38 @@ def main():
     subparsers.required = True
     subparsers.dest = 'command'
 
-    generate_parser = subparsers.add_parser('setup')
+    subparser = subparsers.add_parser('setup')
     # TODO: something like this will be useful to set up smaller runs for
     # testing purposes and to control the number of processes used.
-    # generate_parser.add_argument(
+    # subparser.add_argument(
     #     "--processes", '-p', help="number of processes",
     #     type=int, default=1)
-    generate_parser.add_argument(
+    subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
         help='the dataset identifier')
-    generate_parser.add_argument(
+    subparser.add_argument(
          '--replicates', '-r', help="number of replicates", type=int)
-    generate_parser.add_argument(
+    subparser.add_argument(
          '--seed', '-s', help="use a non-default RNG seed", type=int)
-    generate_parser.set_defaults(func=run_setup)
+    subparser.set_defaults(func=run_setup)
 
-    generate_parser = subparsers.add_parser('generate')
-    generate_parser.add_argument(
+    subparser = subparsers.add_parser('generate')
+    subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
         help='the dataset identifier')
-    generate_parser.set_defaults(func=run_generate)
+    subparser.set_defaults(func=run_generate)
 
-    process_parser = subparsers.add_parser('process')
-    process_parser.add_argument(
+    subparser = subparsers.add_parser('process')
+    subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
         help='the dataset identifier')
-    process_parser.set_defaults(func=run_process)
+    subparser.set_defaults(func=run_process)
 
-    figure_parser = subparsers.add_parser('figure')
-    figure_parser.add_argument(
+    subparser = subparsers.add_parser('figure')
+    subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
         help='the figure identifier')
-    figure_parser.set_defaults(func=run_plot)
+    subparser.set_defaults(func=run_plot)
 
     args = parser.parse_args()
     log_level = logging.WARNING
