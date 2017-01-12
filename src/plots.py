@@ -413,9 +413,10 @@ class MetricsByMutationRate(Dataset):
 
 
 def run_setup(cls, extra_args):
-    logging.info("Setting up base data {}".format(cls.name))
-    f = cls()
-    f.setup(**extra_args)
+    logging.info("Setting up base data for {}{}".format(cls.name,
+        " with extra arguments {}".format(extra_args) if extra_args else ""))
+    f = cls(**extra_args)
+    f.setup()
 
 def run_generate(cls, extra_args):
     logging.info("Generating {}".format(cls.name))
