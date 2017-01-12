@@ -258,7 +258,7 @@ def test_sim(nexus_dir, mut_rates=[2e-8], sample_size=8, length=1e4, Ne=1e4, rec
                     if filecmp.cmp(fa_in.name, fa_revised.name, shallow=False) == False:
                         warn("Initial fastARG input file differs from processed fastARG file")
                     write_nexus_trees(ts_fa, nex_g, index_trees_by_variants=False, zero_based_tip_numbers=False)
-                argweaver_base = construct_argweaver_basename(inference_seed, simname)
+                argweaver_base = construct_argweaver_basename(simname, inference_seed)
                 with open(os.path.join(tmp, argweaver_base+".sites"), "w+") as aw_in:
                     msprime_to_ARGweaver_in(ts, aw_in)
                     aw_prefix=os.path.join(tmp, argweaver_base)
