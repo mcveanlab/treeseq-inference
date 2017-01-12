@@ -177,12 +177,21 @@ class Dataset(object):
         os.makedirs(self.raw_data_dir, exist_ok=True)
 
     def setup(self):
+        """
+        creates the simulations to use as a base
+        """
         raise NotImplementedError()
 
     def generate(self):
+        """
+        generates the inferences
+        """
         raise NotImplementedError()
 
     def process(self):
+        """
+        processes the inferred ARGs
+        """
         raise NotImplementedError()
 
     def get_seeds(self, n, upper=1e7):
@@ -258,7 +267,7 @@ class NumRecordsBySampleSizeDataset(Dataset):
     """
     name = "num_records_by_sample_size"
 
-    def __init__(self, seed=123):
+    def __init__(self, seed=123, replicates=10):
         """
         Everything is done via a Data Frame which contains the initial params and is then used to 
         store the output values.
@@ -273,11 +282,11 @@ class NumRecordsBySampleSizeDataset(Dataset):
         params['length']             = 50000,
         params['recombination_rate'] = 2.5e-8,
         params['mutation_rate']      = 1.5e-8,
-        params['replicates']         = np.arange(10)
+        params['replicate']         = np.arange(replicates)
         sim_params = list(params.keys())
         #now add some other params, where multiple vals exists for one simulation
         params['error_rate']         = [0, 0.01, 0.1]
-        params['tool']               = ["msinfer"]
+        params['tool']               = ["fastARG", "msinfer"]
         
         #all combinations of params in a DataFrame
         self.data = expand_grid(params)
@@ -286,7 +295,7 @@ class NumRecordsBySampleSizeDataset(Dataset):
         #set unique seeds for each sim
         self.data['seed'] = self.get_seeds(max(self.data.sim)+1)[self.data.sim]
         
-    def generate(self):
+    def setup(self):
         """
         Generates the initial simulations from which we can infer data. 
         Should be quite fast, but will generate lots of files, and probably
@@ -311,7 +320,7 @@ class NumRecordsBySampleSizeDataset(Dataset):
                                             pd.unique(sim.seed)) #same mutation_seed as genealogy_seed
             self.save_variant_matrices(ts, fn, pd.unique(sim.error_rate))
             
-    def process(self, save_trees=False):
+    def generate(self, save_trees=False):
         """
         This runs the inference methods. It will be the most time consuming bit.
         The final files saved will be nexus files containing multiple trees.
@@ -329,6 +338,7 @@ class NumRecordsBySampleSizeDataset(Dataset):
                                       d.mutation_rate, d.seed, d.seed)
             filename=add_error_param_to_name(basename, d.error_rate)
             ts = msprime.load(basename+".hdf5")
+            inferred_ts = None
             assert ts.sample_size == d.sample_size
             if d.tool == 'msinfer':
                 logging.info("processing msinfer inference for n = {}".format(d.sample_size))
@@ -336,9 +346,6 @@ class NumRecordsBySampleSizeDataset(Dataset):
                 S = np.load(filename + ".npy")
                 assert S.shape == (ts.sample_size, ts.num_mutations)
                 inferred_ts, time, memory = self.run_tsinf(S, 4*d.recombination_rate*d.Ne)
-                self.data.loc[i,['source_records','inferred_records','cpu_time','memory']] = (
-                    ts.get_num_records(),
-                    inferred_ts.get_num_records(), time, memory)
             elif d.tool == 'fastARG':
                 logging.info("processing fastARG inference for n = {}".format(d.sample_size))
                 infile = filename + ".hap"
@@ -357,9 +364,8 @@ class NumRecordsBySampleSizeDataset(Dataset):
                                                                                      fa_revised, simplify=True)
                     assert filecmp.cmp(infile, fa_revised.name, shallow=False), \
                         "Initial fastARG haplotype input file differs from inferred fastARG haplotypes"
-                    self.data.loc[i,['source_records','inferred_records','cpu_time','memory']] = (
-                        ts.get_num_records(),
-                        inferred_ts.get_num_records(), time, memory)
+            self.data.loc[i,['source_records','inferred_records','cpu_time','memory']] = \
+                (ts.get_num_records(), inferred_ts.get_num_records(),time, memory)
             
             # Save each row so we can use the information while it's being built
             self.data.to_csv(self.data_file)
@@ -387,7 +393,7 @@ class MetricsByMutationRate(Dataset):
         params['length']             = 50000,
         params['recombination_rate'] = 2.5e-8,
         params['mutation_rate']      = np.linspace(1.5e-8, 500, num=10)
-        params['replicates']         = np.arange(100)
+        params['replicate']         = np.arange(100)
         sim_params = list(params.keys())
         #now add some other params, where multiple vals exists for one simulation
         params['error_rate']         = [0, 0.01, 0.1]
@@ -404,19 +410,24 @@ class MetricsByMutationRate(Dataset):
 
 
 
-def run_generate(cls, args):
+def run_setup(cls, extra_args):
+    logging.info("Setting up base data {}".format(cls.name))
+    f = cls()
+    f.setup(**extra_args)
+
+def run_generate(cls, extra_args):
     logging.info("Generating {}".format(cls.name))
     f = cls()
     f.generate()
 
 
-def run_process(cls, args):
+def run_process(cls, extra_args):
     logging.info("Processing {}".format(cls.name))
     f = cls()
     f.process()
 
 
-def run_plot(cls, args):
+def run_plot(cls, extra_args):
     f = cls()
     f.plot()
 
@@ -429,20 +440,28 @@ def main():
     ]
     name_map = dict([(d.name, d) for d in datasets + figures])
     parser = argparse.ArgumentParser(
-        description= "Generate datasets, process raw data and generate figures.")
-    parser.add_argument('--verbose', '-v', action='count', default=0)
+        description= "Set up base data, generate inferred datasets, process datasets and plot figures.")
+    parser.add_argument('--verbosity', '-v', action='count', default=0)
     subparsers = parser.add_subparsers()
     subparsers.required = True
     subparsers.dest = 'command'
 
-    generate_parser = subparsers.add_parser('generate')
-    # TODO: something like this will be useful to run smaller runs for
+    generate_parser = subparsers.add_parser('setup')
+    # TODO: something like this will be useful to set up smaller runs for
     # testing purposes and to control the number of processes used.
-    # generate_parser.add_argument(
-    #     '-n', help="number of replicates", type=int, default=-1)
     # generate_parser.add_argument(
     #     "--processes", '-p', help="number of processes",
     #     type=int, default=1)
+    generate_parser.add_argument(
+        'name', metavar='NAME', type=str, nargs=1,
+        help='the dataset identifier')
+    generate_parser.add_argument(
+         '--replicates', '-r', help="number of replicates", type=int)
+    generate_parser.add_argument(
+         '--seed', '-s', help="use a non-default RNG seed", type=int)
+    generate_parser.set_defaults(func=run_setup)
+
+    generate_parser = subparsers.add_parser('generate')
     generate_parser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
         help='the dataset identifier')
@@ -451,7 +470,7 @@ def main():
     process_parser = subparsers.add_parser('process')
     process_parser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
-        help='the simulation identifier')
+        help='the dataset identifier')
     process_parser.set_defaults(func=run_process)
 
     figure_parser = subparsers.add_parser('figure')
@@ -462,13 +481,15 @@ def main():
 
     args = parser.parse_args()
     log_level = logging.WARNING
-    if args.verbose == 1:
+    if args.verbosity == 1:
         log_level = logging.INFO
-    if args.verbose >= 2:
+    if args.verbosity >= 2:
         log_level = logging.DEBUG
     logging.basicConfig(
         format='%(asctime)s %(message)s', level=log_level, stream=sys.stdout)
 
+    base_args = ['name','verbosity','command','func']
+    extra_args = {k:v for k,v in vars(args).items() if k not in base_args and v is not None}
     k = args.name[0]
     if k == "all":
         classes = datasets
@@ -476,10 +497,10 @@ def main():
             classes = figures
         for name, cls in name_map.items():
             if cls in classes:
-                args.func(cls, args)
+                args.func(cls, extra_args)
     else:
         cls = name_map[k]
-        args.func(cls, args)
+        args.func(cls, extra_args)
 
 if __name__ == "__main__":
     main()
