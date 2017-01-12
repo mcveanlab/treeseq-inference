@@ -323,7 +323,7 @@ class NumRecordsBySampleSizeDataset(Dataset):
         Everything is done via a Data Frame which contains the initial params and is then used to
         store the output values.
         """
-        super(NumRecordsBySampleSizeDataset, self).__init__(seed)
+        super().__init__(seed)
         self.simulations_dir = os.path.join(self.raw_data_dir, "simulations")
 
         #set up a pd Data Frame containing all the params
@@ -422,7 +422,7 @@ class MetricsByMutationRate(Dataset):
         Everything is done via a Data Frame which contains the initial params and is then used to
         store the output values.
         """
-        super(MetricsByMutationRate, self).__init__(seed)
+        super().__init__(seed)
         self.simulations_dir = os.path.join(self.raw_data_dir, "simulations")
 
         #set up a pd Data Frame containing all the params
