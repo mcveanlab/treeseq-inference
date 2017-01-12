@@ -30,6 +30,9 @@ def variant_matrix_to_fastARG_in(var_matrix, var_positions, fastARG_filehandle):
     fastARG_filehandle.flush()
 
 def run_fastARG(executable, fastARG_in, fastARG_out_filehandle, seed=None, status_to=sys.stdout):
+    """
+    run the fastARG executable on fastARG_in (which can be a filename or filehandle with .name attr)
+    """
     import time
     if status_to:
         print("== Running fastARG ==", file=status_to)
@@ -38,7 +41,7 @@ def run_fastARG(executable, fastARG_in, fastARG_out_filehandle, seed=None, statu
     if seed:
         exe += ['-s', str(int(seed))]
     start_time = time.time()
-    call(exe + [fastARG_in], stdout=fastARG_out_filehandle)
+    call(exe + [fastARG_in.name if hasattr(fastARG_in, "name") else fastARG_in], stdout=fastARG_out_filehandle)
     end_time = time.time()
     memory = 0 #TO DO
     fastARG_out_filehandle.flush()
