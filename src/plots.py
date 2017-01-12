@@ -33,7 +33,7 @@ import tsinf
 fastARG_executable = os.path.join(curr_dir,'..','fastARG','fastARG')
 ARGweaver_executable = os.path.join(curr_dir,'..','argweaver','bin','arg-sample')
 #monkey-patch write.nexus into msprime
-msprime.TreeSequence.write_nexus = msprime_extras.write_nexus
+msprime.TreeSequence.write_nexus_trees = msprime_extras.write_nexus_trees
 
 if sys.version_info[0] < 3:
     raise Exception("Python 3 only")
