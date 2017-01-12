@@ -25,12 +25,15 @@ import pandas as pd
 curr_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(1,os.path.join(curr_dir,'..','msprime'))
 import msprime
+import msprime_extras
 import msprime_fastARG
 import msprime_ARGweaver
 import tsinf
 
 fastARG_executable = os.path.join(curr_dir,'..','fastARG','fastARG')
 ARGweaver_executable = os.path.join(curr_dir,'..','argweaver','bin','arg-sample')
+#monkey-patch write.nexus into msprime
+msprime.TreeSequence.write_nexus = msprime_extras.write_nexus
 
 if sys.version_info[0] < 3:
     raise Exception("Python 3 only")
@@ -266,6 +269,25 @@ class Dataset(object):
         memory_use = 0 #To DO
         return ts_simplified, cpu_time, memory_use
 
+    @staticmethod
+    def run_fastarg(file_name):
+        with tempfile.NamedTemporaryFile("w+") as fa_out, \
+             tempfile.NamedTemporaryFile("w+") as tree,   \
+             tempfile.NamedTemporaryFile("w+") as muts,   \
+             tempfile.NamedTemporaryFile("w+") as fa_revised:
+            cpu_time, memory_use = msprime_fastARG.run_fastARG(fastARG_executable,
+                                                               file_name, fa_out,
+                                                               seed=d.seed, status_to=None)
+            var_pos = msprime_fastARG.variant_positions_from_fastARGin_name(file_name)
+            root_seq = msprime_fastARG.fastARG_root_seq(fa_out)
+            msprime_fastARG.fastARG_out_to_msprime_txts(fa_out, var_pos, tree, muts)
+            inferred_ts = msprime_fastARG.msprime_txts_to_fastARG_in_revised(tree, muts, root_seq,
+                                                                             fa_revised, simplify=True)
+            assert filecmp.cmp(infile, fa_revised.name, shallow=False), \
+                "Initial fastARG haplotype input file differs from inferred fastARG haplotypes"
+            return inferred_ts, cpu_time, memory_use
+
+
 class NumRecordsBySampleSizeDataset(Dataset):
     """
     Information on the number of coalescence records inferred by tsinf
@@ -358,21 +380,7 @@ class NumRecordsBySampleSizeDataset(Dataset):
                 out_fn = construct_fastarg_name(err_fn, d.seed)
                 logging.info("processing fastARG inference for n = {}".format(d.sample_size))
                 logging.debug("reading: {} for msprime inference".format(infile))
-                with tempfile.NamedTemporaryFile("w+") as fa_out, \
-                     tempfile.NamedTemporaryFile("w+") as tree,   \
-                     tempfile.NamedTemporaryFile("w+") as muts,   \
-                     tempfile.NamedTemporaryFile("w+") as fa_revised:
-                    time, memory = msprime_fastARG.run_fastARG(fastARG_executable,
-                                                               infile, fa_out,
-                                                               seed=d.seed, status_to=None)
-                    var_pos = msprime_fastARG.variant_positions_from_fastARGin_name(infile)
-                    root_seq = msprime_fastARG.fastARG_root_seq(fa_out)
-                    msprime_fastARG.fastARG_out_to_msprime_txts(fa_out, var_pos, tree, muts)
-                    inferred_ts = msprime_fastARG.msprime_txts_to_fastARG_in_revised(tree, muts, root_seq,
-                                                                                     fa_revised, simplify=True)
-                    assert filecmp.cmp(infile, fa_revised.name, shallow=False), \
-                        "Initial fastARG haplotype input file differs from inferred fastARG haplotypes"
-                    inferred_ts
+                inferred_ts, time, memory = self.run_fastarg(infile)
             self.data.loc[i,['source_records','inferred_records','cpu_time','memory']] = \
                 (ts.get_num_records(), inferred_ts.get_num_records(),time, memory)
 
