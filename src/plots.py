@@ -338,8 +338,8 @@ class NumRecordsBySampleSizeDataset(Dataset):
         add_columns(self.data, ['source_records','inferred_records','cpu_time','memory'])
         for i in self.data.index:
             d = self.data.iloc[i]
-            sim_fn=msprime_basename(d.sample_size, d.Ne, d.length, d.recombination_rate, 
-                                    d.mutation_rate, d.seed, d.seed, self.simulations_dir)
+            sim_fn=msprime_name(d.sample_size, d.Ne, d.length, d.recombination_rate, 
+                                d.mutation_rate, d.seed, d.seed, self.simulations_dir)
             err_fn=add_error_param_to_name(sim_fn, d.error_rate)
             ts = msprime.load(sim_fn+".hdf5")
             inferred_ts = None
@@ -355,7 +355,7 @@ class NumRecordsBySampleSizeDataset(Dataset):
                 inferred_ts.dump(out_fn +".hdf5", zlib_compression=True)
             elif d.tool == 'fastARG':
                 infile = err_fn + ".hap"
-                out_fn = construct_fastarg_name(err_fn)
+                out_fn = construct_fastarg_name(err_fn, d.seed)
                 logging.info("processing fastARG inference for n = {}".format(d.sample_size))
                 logging.debug("reading: {} for msprime inference".format(infile))
                 with tempfile.NamedTemporaryFile("w+") as fa_out, \
@@ -370,7 +370,7 @@ class NumRecordsBySampleSizeDataset(Dataset):
                     msprime_fastARG.fastARG_out_to_msprime_txts(fa_out, var_pos, tree, muts)
                     inferred_ts = msprime_fastARG.msprime_txts_to_fastARG_in_revised(tree, muts, root_seq,
                                                                                      fa_revised, simplify=True)
-                    assert filecmp.cmp(full_infile, fa_revised.name, shallow=False), \
+                    assert filecmp.cmp(infile, fa_revised.name, shallow=False), \
                         "Initial fastARG haplotype input file differs from inferred fastARG haplotypes"
                     inferred_ts
             self.data.loc[i,['source_records','inferred_records','cpu_time','memory']] = \
