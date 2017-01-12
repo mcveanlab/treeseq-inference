@@ -24,12 +24,15 @@ import pandas as pd
 curr_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(1,os.path.join(curr_dir,'..','msprime'))
 import msprime
+import msprime_extras
 import msprime_fastARG
 import msprime_ARGweaver
 import tsinf
 
 fastARG_executable = os.path.join(curr_dir,'..','fastARG','fastARG')
 ARGweaver_executable = os.path.join(curr_dir,'..','argweaver','bin','arg-sample')
+#monkey-patch write.nexus into msprime
+msprime.TreeSequence.write_nexus_trees = msprime_extras.write_nexus_trees
 
 if sys.version_info[0] < 3:
     raise Exception("Python 3 only")
@@ -71,64 +74,71 @@ def generate_samples(ts, error_p):
             done = 0 < s < ts.sample_size
     return S
 
-def msprime_basename(n, Ne, l, rho, mu, genealogy_seed, mut_seed):
+def msprime_name(n, Ne, l, rho, mu, genealogy_seed, mut_seed, directory=None):
     """
     Create a filename for saving an msprime simulation (without extension)
     Other functions add error rates and/or a subsample sizes to the name
     """
     #format mut rate & recomb rate to print non-exponential notation without
     # trailing zeroes 12 dp should be ample for these rates
-    rho = "{:.12f}".format(float(rho)).rstrip('0')
+    rho = "{:.12f}".format(float(rho)).rstrip('0') 
     mu = "{:.12f}".format(float(mu)).rstrip('0')
-    return "msprime-n{}_Ne{}_l{}_rho{}_mu{}-gs{}_ms{}".format(int(n), float(Ne), int(l), rho, \
+    file = "msprime-n{}_Ne{}_l{}_rho{}_mu{}-gs{}_ms{}".format(int(n), float(Ne), int(l), rho, \
         mu, int(genealogy_seed), int(mut_seed))
-
-def add_error_param_to_name(sim_basename, error_rate):
+    if directory is None:
+        return file
+    else:
+        return os.path.join(directory,file)
+                
+def add_error_param_to_name(sim_name, error_rate):
     """
     Append the error param to the msprime simulation filename.
     Only relevant for files downstream of the step where sequence error is added
     """
-    if sim_basename.endswith("+") or sim_basename.endswith("-"):
+    if sim_name.endswith("+") or sim_name.endswith("-"):
         #this is the first param
-        return sim_basename + "_err{}".format(float(error_rate))
+        return sim_name + "_err{}".format(float(error_rate))
     else:
         #this is the first param
-        return sim_basename + "err{}".format(float(error_rate))
+        return sim_name + "err{}".format(float(error_rate))
 
-def add_subsample_param_to_name(sim_basename, subsample_size):
+def add_subsample_param_to_name(sim_name, subsample_size):
     """
     Mark a filename as containing only a subset of the samples of the full sim
     Can be used on msprime output files but also e.g. msinfer output files
     """
-    if sim_basename.endswith("+") or sim_basename.endswith("-"):
+    if sim_name.endswith("+") or sim_name.endswith("-"):
         #this is the first param
         return sim_basename + "max{}".format(int(subsample_size))
     else:
         return sim_basename + "_max{}".format(int(subsample_size))
 
-def construct_fastarg_basename(sim_basename, seed):
+def construct_fastarg_name(sim_name, seed, directory=None):
     """
     Returns a fastARG inference filename (without file extension),
     based on a simulation name
     """
-    return '+'.join(['fastarg', sim_basename, "fs"+str(seed)])
+    d,f = os.path.split(sim_name)
+    return os.path.join(d,'+'.join(['fastarg', f, "fs"+str(seed)]))
 
-def construct_argweaver_basename(sim_basename, seed):
+def construct_argweaver_name(sim_name, seed):
     """
     Returns an ARGweaver inference filename (without file extension),
     based on a simulation name. The iteration number (used in .smc and .nex output)
     is not added here, but is added instead by the ARGweaver `arg-sample` program,
     in the format .10, .20, etc.
     """
-    return '+'.join(['aweaver', sim_basename, "ws"+str(seed)])
+    d,f = os.path.split(sim_name)
+    return os.path.join(d,'+'.join(['aweaver', f, "ws"+str(seed)]))
 
-def construct_msinfer_basename(sim_basename):
+def construct_msinfer_name(sim_name):
     """
     Returns an MSprime Li & Stevens inference filename.
     If the file is a subset of the original, this can be added to the
     basename later using the add_subsample_param_to_name() routine.
     """
-    return '+'.join(["msinfer", sim_basename, ""])
+    d,f = os.path.split(sim_name)
+    return os.path.join(d,'+'.join(['msinfer', f, ""]))
 
 class Figure(object):
     """
@@ -205,8 +215,7 @@ class Dataset(object):
             seeds = np.unique(seeds)
         return seeds
 
-    @staticmethod
-    def single_simulation(n, Ne, l, rho, mu, seed, mut_seed=None, subsample=None):
+    def single_simulation(self, n, Ne, l, rho, mu, seed, mut_seed=None, subsample=None):
         """
         The standard way to run one msprime simulation for a set of parameter values.
         Saves the output to an .hdf5 file, and also saves variant files for use in
@@ -223,20 +232,20 @@ class Dataset(object):
         #here we might want to iterate over mutation rates for the same genealogy, setting a different mut_seed
         #but only so that we can see for ourselves the effect of mutation rate variation on a single topology
         #for the moment, we don't bother, and have mut_seed==genealogy_seed
-        sim_filename = msprime_basename(n, Ne, l, rho, mu, seed, seed)
-        logging.debug("writing {}.hdf5".format(sim_filename))
-        ts.dump(sim_filename+".hdf5", zlib_compression=True)
+        sim_fn = msprime_name(n, Ne, l, rho, mu, seed, seed, self.simulations_dir)
+        logging.debug("writing {}.hdf5".format(sim_fn))
+        ts.dump(sim_fn+".hdf5", zlib_compression=True)
         if subsample is not None:
             ts = ts.simplify(list(range(subsample)))
-            sim_filename = add_subsample_param_to_name(sim_filename, subsample)
-            ts.dump(sim_filename +".hdf5", zlib_compression=True)
-        return ts, sim_filename
+            sim_fn = add_subsample_param_to_name(sim_fn, subsample)
+            ts.dump(sim_fn +".hdf5", zlib_compression=True)
+        return ts, sim_fn
 
     @staticmethod
-    def save_variant_matrices(ts, basename, error_rates):
+    def save_variant_matrices(ts, fname, error_rates):
         for error_rate in error_rates:
             S = generate_samples(ts, error_rate)
-            err_filename = add_error_param_to_name(basename, error_rate)
+            err_filename = add_error_param_to_name(fname, error_rate)
             logging.debug("writing variant matrix to {}.npy for msinfer".format(err_filename))
             np.save(err_filename+".npy", S)
 
@@ -258,6 +267,25 @@ class Dataset(object):
         cpu_time = time.clock() - before
         memory_use = 0 #To DO
         return ts_simplified, cpu_time, memory_use
+
+    @staticmethod
+    def run_fastarg(file_name):
+        with tempfile.NamedTemporaryFile("w+") as fa_out, \
+             tempfile.NamedTemporaryFile("w+") as tree,   \
+             tempfile.NamedTemporaryFile("w+") as muts,   \
+             tempfile.NamedTemporaryFile("w+") as fa_revised:
+            cpu_time, memory_use = msprime_fastARG.run_fastARG(fastARG_executable,
+                                                               file_name, fa_out,
+                                                               seed=d.seed, status_to=None)
+            var_pos = msprime_fastARG.variant_positions_from_fastARGin_name(file_name)
+            root_seq = msprime_fastARG.fastARG_root_seq(fa_out)
+            msprime_fastARG.fastARG_out_to_msprime_txts(fa_out, var_pos, tree, muts)
+            inferred_ts = msprime_fastARG.msprime_txts_to_fastARG_in_revised(tree, muts, root_seq,
+                                                                             fa_revised, simplify=True)
+            assert filecmp.cmp(infile, fa_revised.name, shallow=False), \
+                "Initial fastARG haplotype input file differs from inferred fastARG haplotypes"
+            return inferred_ts, cpu_time, memory_use
+
 
 class NumRecordsBySampleSizeDataset(Dataset):
     """
@@ -304,7 +332,6 @@ class NumRecordsBySampleSizeDataset(Dataset):
         if os.path.exists(self.simulations_dir):
             shutil.rmtree(self.simulations_dir)
         os.makedirs(self.simulations_dir)
-        os.chdir(self.simulations_dir) #so that by default, all saved files go here
         for s in range(max(self.data.sim)+1):
             sim = self.data[self.data.sim == s]
             logging.info("Running simulation for n = {}".format(pd.unique(sim.sample_size)))
@@ -329,40 +356,30 @@ class NumRecordsBySampleSizeDataset(Dataset):
         and fire up another instance in which we run 'process()'.
 
         """
-        os.chdir(self.simulations_dir) #so that by default, all saved files go here
         add_columns(self.data, ['source_records','inferred_records','cpu_time','memory'])
         for i in self.data.index:
             d = self.data.iloc[i]
-            basename=msprime_basename(d.sample_size, d.Ne, d.length, d.recombination_rate,
-                                      d.mutation_rate, d.seed, d.seed)
-            filename=add_error_param_to_name(basename, d.error_rate)
-            ts = msprime.load(basename+".hdf5")
+            sim_fn=msprime_name(d.sample_size, d.Ne, d.length, d.recombination_rate, 
+                                d.mutation_rate, d.seed, d.seed, self.simulations_dir)
+            err_fn=add_error_param_to_name(sim_fn, d.error_rate)
+            ts = msprime.load(sim_fn+".hdf5")
             inferred_ts = None
             assert ts.sample_size == d.sample_size
             if d.tool == 'msinfer':
+                infile = err_fn + ".npy"
+                out_fn = construct_msinfer_name(err_fn)
                 logging.info("processing msinfer inference for n = {}".format(d.sample_size))
-                logging.debug("reading: {}.npy for msprime inference".format(filename))
-                S = np.load(filename + ".npy")
+                logging.debug("reading: {} for msprime inference".format(infile))
+                S = np.load(infile)
                 assert S.shape == (ts.sample_size, ts.num_mutations)
                 inferred_ts, time, memory = self.run_tsinf(S, 4*d.recombination_rate*d.Ne)
+                inferred_ts.dump(out_fn +".hdf5", zlib_compression=True)
             elif d.tool == 'fastARG':
+                infile = err_fn + ".hap"
+                out_fn = construct_fastarg_name(err_fn, d.seed)
                 logging.info("processing fastARG inference for n = {}".format(d.sample_size))
-                infile = filename + ".hap"
                 logging.debug("reading: {} for msprime inference".format(infile))
-                with tempfile.NamedTemporaryFile("w+") as fa_out, \
-                     tempfile.NamedTemporaryFile("w+") as tree,   \
-                     tempfile.NamedTemporaryFile("w+") as muts,   \
-                     tempfile.NamedTemporaryFile("w+") as fa_revised:
-                    time, memory = msprime_fastARG.run_fastARG(fastARG_executable,
-                                                               infile, fa_out,
-                                                               seed=d.seed, status_to=None)
-                    var_pos = msprime_fastARG.variant_positions_from_fastARGin_name(infile)
-                    root_seq = msprime_fastARG.fastARG_root_seq(fa_out)
-                    msprime_fastARG.fastARG_out_to_msprime_txts(fa_out, var_pos, tree, muts)
-                    inferred_ts = msprime_fastARG.msprime_txts_to_fastARG_in_revised(tree, muts, root_seq,
-                                                                                     fa_revised, simplify=True)
-                    assert filecmp.cmp(infile, fa_revised.name, shallow=False), \
-                        "Initial fastARG haplotype input file differs from inferred fastARG haplotypes"
+                inferred_ts, time, memory = self.run_fastarg(infile)
             self.data.loc[i,['source_records','inferred_records','cpu_time','memory']] = \
                 (ts.get_num_records(), inferred_ts.get_num_records(),time, memory)
 
