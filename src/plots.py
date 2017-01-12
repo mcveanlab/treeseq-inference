@@ -348,7 +348,6 @@ class NumRecordsBySampleSizeDataset(Dataset):
         sim_params = list(params.keys())
         #now add some other params, where multiple vals exists for one simulation
         params['error_rate']         = [0, 0.01, 0.1]
-        params['tool']               = ["fastARG", "msinfer"]
 
         #all combinations of params in a DataFrame
         self.data = expand_grid(params)
@@ -391,7 +390,11 @@ class NumRecordsBySampleSizeDataset(Dataset):
         and fire up another instance in which we run 'process()'.
 
         """
-        add_columns(self.data, ['source_records','inferred_records','cpu_time','memory'])
+        results = ['source_records','inferred_records','cpu_time','memory']
+        tools = ["fastARG", "msinfer"]
+        tool_cols = {t:["-".join([t,rc]) for rc in results] for t in tools}
+        for tool in tools:
+            add_columns(self.data, tool_cols[tool])
         for i in self.data.index:
             d = self.data.iloc[i]
             sim_fn=msprime_name(d.sample_size, d.Ne, d.length, d.recombination_rate, 
@@ -399,22 +402,25 @@ class NumRecordsBySampleSizeDataset(Dataset):
             err_fn=add_error_param_to_name(sim_fn, d.error_rate)
             ts = msprime.load(sim_fn+".hdf5")
             assert ts.sample_size == d.sample_size
-            if d.tool == 'msinfer':
-                infile = err_fn + ".npy"
-                out_fn = construct_msinfer_name(err_fn)
-                logging.info("processing msinfer inference for n = {}".format(d.sample_size))
-                logging.debug("reading: {} for msprime inference".format(infile))
-                S = np.load(infile)
-                assert S.shape == (ts.sample_size, ts.num_mutations)
-                inferred_ts, time, memory = self.run_tsinf(S, 4*d.recombination_rate*d.Ne)
-            elif d.tool == 'fastARG':
-                infile = err_fn + ".hap"
-                out_fn = construct_fastarg_name(err_fn, d.seed)
-                logging.info("processing fastARG inference for n = {}".format(d.sample_size))
-                logging.debug("reading: {} for msprime inference".format(infile))
-                inferred_ts, time, memory = self.run_fastarg(infile, d.seed)
-            inferred_ts.dump(out_fn +".hdf5", zlib_compression=True)
-            self.data.loc[i,['source_records','inferred_records','cpu_time','memory']] = \
+            for tool, result_cols in tool_cols.items():
+                if tool == 'msinfer':
+                    infile = err_fn + ".npy"
+                    out_fn = construct_msinfer_name(err_fn)
+                    logging.info("processing msinfer inference for n = {}".format(d.sample_size))
+                    logging.debug("reading: {} for msprime inference".format(infile))
+                    S = np.load(infile)
+                    assert S.shape == (ts.sample_size, ts.num_mutations)
+                    inferred_ts, time, memory = self.run_tsinf(S, 4*d.recombination_rate*d.Ne)
+                elif tool == 'fastARG':
+                    infile = err_fn + ".hap"
+                    out_fn = construct_fastarg_name(err_fn, d.seed)
+                    logging.info("processing fastARG inference for n = {}".format(d.sample_size))
+                    logging.debug("reading: {} for msprime inference".format(infile))
+                    inferred_ts, time, memory = self.run_fastarg(infile, d.seed)
+                else:
+                    raise KeyError
+                inferred_ts.dump(out_fn +".hdf5", zlib_compression=True)
+                self.data.loc[i, result_cols] = \
                 (ts.get_num_records(), inferred_ts.get_num_records(),time, memory)
 
             # Save each row so we can use the information while it's being built
@@ -447,7 +453,6 @@ class MetricsByMutationRate(Dataset):
         sim_params = list(params.keys())
         #now add some other params, where multiple vals exists for one simulation
         params['error_rate']         = [0, 0.01, 0.1]
-        params['tool']               = ["fastARG","ARGweaver", "msinfer"]
 
         #all combinations of params in a DataFrame
         self.data = expand_grid(params)
@@ -483,7 +488,11 @@ class MetricsByMutationRate(Dataset):
         and fire up another instance in which we run 'process()'.
 
         """
-        add_columns(self.data, ['cpu_time','memory'])
+        results = ['cpu_time','memory']
+        tools = ["fastARG","ARGweaver", "msinfer"]
+        tool_cols = {t:["-".join([t,rc]) for rc in results] for t in tools}
+        for tool in tools:
+            add_columns(self.data, tool_cols[tool])
         for i in self.data.index:
             d = self.data.iloc[i]
             sim_fn=msprime_name(d.sample_size, d.Ne, d.length, d.recombination_rate, 
@@ -492,41 +501,37 @@ class MetricsByMutationRate(Dataset):
             ts = msprime.load(sim_fn+".hdf5")
             ts.write_nexus_trees(out_fn +".nex")
             assert ts.sample_size == d.sample_size
-            if d.tool == 'msinfer':
-                infile = err_fn + ".npy"
-                out_fn = construct_msinfer_name(err_fn)
-                logging.info("processing msinfer inference for n = {}".format(d.sample_size))
-                logging.debug("reading: {} for msprime inference".format(infile))
-                S = np.load(infile)
-                assert S.shape == (ts.sample_size, ts.num_mutations)
-                inferred_ts, time, memory = self.run_tsinf(S, 4*d.recombination_rate*d.Ne)
-                with open(out_fn +".nex", "w+") as out:
-                    inferred_ts.write_nexus_trees(out)
-                #calculate tree_metrics here
-
-            elif d.tool == 'fastARG':
-                infile = err_fn + ".hap"
-                out_fn = construct_fastarg_name(err_fn, d.seed)
-                logging.info("processing fastARG inference for n = {}".format(d.sample_size))
-                logging.debug("reading: {} for msprime inference".format(infile))
-                inferred_ts, time, memory = self.run_fastarg(infile)
-                with open(out_fn +".nex", "w+") as out:
-                    inferred_ts.write_nexus_trees(out)
-                #calculate tree_metrics here
-
-            elif d.tool == 'ARGweaver':
-                infile = err_fn + ".sites"
-                out_fn = construct_argweaver_name(err_fn, d.seed)
-                smc_files, stats_file, time, memory = self.run_argweaver(infile, d.Ne, d.recombination_rate, 
-                    d.mutation_rate, out_fn, d.seed)
-                #now must convert all of the .smc files to 
-                for smc_fn in smc_files:
-                    with open(smc_fn[:-4]+".nex", "w+") as out:
-                        msprime_ARGweaver.ARGweaver_smc_to_nexus(smc_fn, out, zero_based_tip_numbers=False)
-                #calculate tree_metrics here
-                        
-            self.data.loc[i,['source_records','inferred_records','cpu_time','memory']] = \
-                (ts.get_num_records(), inferred_ts.get_num_records(),time, memory)
+            for tool, result_cols in tool_cols.items():
+                if d.tool == 'msinfer':
+                    infile = err_fn + ".npy"
+                    out_fn = construct_msinfer_name(err_fn)
+                    logging.info("processing msinfer inference for n = {}".format(d.sample_size))
+                    logging.debug("reading: {} for msprime inference".format(infile))
+                    S = np.load(infile)
+                    assert S.shape == (ts.sample_size, ts.num_mutations)
+                    inferred_ts, time, memory = self.run_tsinf(S, 4*d.recombination_rate*d.Ne)
+                    with open(out_fn +".nex", "w+") as out:
+                        inferred_ts.write_nexus_trees(out)
+                elif d.tool == 'fastARG':
+                    infile = err_fn + ".hap"
+                    out_fn = construct_fastarg_name(err_fn, d.seed)
+                    logging.info("processing fastARG inference for n = {}".format(d.sample_size))
+                    logging.debug("reading: {} for msprime inference".format(infile))
+                    inferred_ts, time, memory = self.run_fastarg(infile)
+                    with open(out_fn +".nex", "w+") as out:
+                        inferred_ts.write_nexus_trees(out)
+                elif d.tool == 'ARGweaver':
+                    infile = err_fn + ".sites"
+                    out_fn = construct_argweaver_name(err_fn, d.seed)
+                    smc_files, stats_file, time, memory = self.run_argweaver(infile, d.Ne, d.recombination_rate, 
+                        d.mutation_rate, out_fn, d.seed)
+                    #now must convert all of the .smc files to 
+                    for smc_fn in smc_files:
+                        with open(smc_fn[:-4]+".nex", "w+") as out:
+                            msprime_ARGweaver.ARGweaver_smc_to_nexus(smc_fn, out, zero_based_tip_numbers=False)
+                else:
+                    raise KeyError
+                self.data.loc[i, result_cols] = (time, memory)
 
             # Save each row so we can use the information while it's being built
             self.data.to_csv(self.data_file)
@@ -535,6 +540,7 @@ class MetricsByMutationRate(Dataset):
         """
         Extracts metrics from the .nex files using R, and saves the results
         """
+        ["fastARG","ARGweaver", "msinfer"]
         add_columns(self.data, ['RF_rooted','RF_unrooted','RF','memory'])
 
 
