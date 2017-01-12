@@ -9,6 +9,10 @@ import os.path
 import shutil
 import sys
 import time
+import collections
+import itertools
+import tempfile
+import filecmp
 
 import numpy as np
 import matplotlib
@@ -20,19 +24,20 @@ import seaborn as sns
 # import the local copy of msprime in preference to the global one
 curr_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(1,os.path.join(curr_dir,'..','msprime')) 
-
 import msprime
 import msprime_fastARG
 import msprime_ARGweaver
 import tsinf
+
+fastARG_executable = os.path.join(curr_dir,'..','fastARG','fastARG')
+ARGweaver_executable = os.path.join(curr_dir,'..','argweaver','bin','arg-sample')
 
 if sys.version_info[0] < 3:
     raise Exception("Python 3 only")
 
 def expand_grid(data_dict):
     """from last example in http://pandas.pydata.org/pandas-docs/stable/cookbook.html"""
-    from itertools import product
-    rows = product(*data_dict.values())
+    rows = itertools.product(*data_dict.values())
     return pd.DataFrame.from_records(rows, columns=data_dict.keys())
 
 def add_columns(dataframe, colnames):
@@ -172,6 +177,9 @@ class Dataset(object):
             logging.info("Making raw data dir {}".format(self.raw_data_dir))
         os.makedirs(self.raw_data_dir, exist_ok=True)
 
+    def setup(self):
+        raise NotImplementedError()
+
     def generate(self):
         raise NotImplementedError()
 
@@ -246,7 +254,6 @@ class Dataset(object):
 
 class NumRecordsBySampleSizeDataset(Dataset):
     """
-    Dataset for Figure 1: 
     Information on the number of coalescence records inferred by tsinf
     and FastARG for various sample sizes, under 3 different error rates
     """
@@ -257,12 +264,11 @@ class NumRecordsBySampleSizeDataset(Dataset):
         Everything is done via a Data Frame which contains the initial params and is then used to 
         store the output values.
         """
-        from collections import OrderedDict
         super(NumRecordsBySampleSizeDataset, self).__init__(seed)
         self.simulations_dir = os.path.join(self.raw_data_dir, "simulations")
 
         #set up a pd Data Frame containing all the params
-        params = OrderedDict()
+        params = collections.OrderedDict()
         params['sample_size']       = np.linspace(10, 500, num=10).astype(int)
         params['Ne']                 = 5000,
         params['length']             = 50000,
@@ -272,7 +278,7 @@ class NumRecordsBySampleSizeDataset(Dataset):
         sim_params = list(params.keys())
         #now add some other params, where multiple vals exists for one simulation
         params['error_rate']         = [0, 0.01, 0.1]
-        params['tool']               = ["fastARG","msinfer"]
+        params['tool']               = ["msinfer"]
         
         #all combinations of params in a DataFrame
         self.data = expand_grid(params)
@@ -316,8 +322,6 @@ class NumRecordsBySampleSizeDataset(Dataset):
         and fire up another instance in which we run 'process()'.
         
         """
-        from tempfile import NamedTemporaryFile
-        import filecmp
         os.chdir(self.simulations_dir) #so that by default, all saved files go here
         add_columns(self.data, ['source_records','inferred_records','cpu_time','memory'])
         for i in self.data.index:
@@ -340,11 +344,11 @@ class NumRecordsBySampleSizeDataset(Dataset):
                 logging.info("processing fastARG inference for n = {}".format(d.sample_size))
                 infile = filename + ".hap"
                 logging.debug("reading: {} for msprime inference".format(infile))
-                with NamedTemporaryFile("w+") as fa_out, \
-                     NamedTemporaryFile("w+") as tree,   \
-                     NamedTemporaryFile("w+") as muts,   \
-                     NamedTemporaryFile("w+") as fa_revised:
-                    time, memory = msprime_fastARG.run_fastARG(os.path.join(curr_dir,'..','fastARG','fastARG'), 
+                with tempfile.NamedTemporaryFile("w+") as fa_out, \
+                     tempfile.NamedTemporaryFile("w+") as tree,   \
+                     tempfile.NamedTemporaryFile("w+") as muts,   \
+                     tempfile.NamedTemporaryFile("w+") as fa_revised:
+                    time, memory = msprime_fastARG.run_fastARG(fastARG_executable,
                                                                infile, fa_out, 
                                                                seed=d.seed, status_to=None)
                     var_pos = msprime_fastARG.variant_positions_from_fastARGin_name(infile)
@@ -360,6 +364,45 @@ class NumRecordsBySampleSizeDataset(Dataset):
             
             # Save each row so we can use the information while it's being built
             self.data.to_csv(self.data_file)
+
+class MetricsByMutationRate(Dataset):
+    """
+    Dataset for Figure 1
+    Accuracy of ARG inference (measured by various statistics)
+    tending to fully accurate as mutation rate increases
+    """
+    name = "num_records_by_sample_size"
+
+    def __init__(self, seed=111):
+        """
+        Everything is done via a Data Frame which contains the initial params and is then used to 
+        store the output values.
+        """
+        super(NumRecordsBySampleSizeDataset, self).__init__(seed)
+        self.simulations_dir = os.path.join(self.raw_data_dir, "simulations")
+
+        #set up a pd Data Frame containing all the params
+        params = collections.OrderedDict()
+        params['sample_size']       = 12
+        params['Ne']                 = 5000,
+        params['length']             = 50000,
+        params['recombination_rate'] = 2.5e-8,
+        params['mutation_rate']      = np.linspace(1.5e-8, 500, num=10)
+        params['replicates']         = np.arange(100)
+        sim_params = list(params.keys())
+        #now add some other params, where multiple vals exists for one simulation
+        params['error_rate']         = [0, 0.01, 0.1]
+        params['tool']               = ["fastARG","ARGweaver", "msinfer"]
+        
+        #all combinations of params in a DataFrame
+        self.data = expand_grid(params)
+        #assign a unique index for each simulation
+        self.data['sim'] = pd.Categorical(self.data[sim_params].astype(str).apply("".join, 1)).codes
+        #set unique seeds for each sim
+        self.data['seed'] = self.get_seeds(max(self.data.sim)+1)[self.data.sim]
+
+
+
 
 
 def run_generate(cls, args):
