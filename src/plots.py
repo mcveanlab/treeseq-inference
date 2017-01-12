@@ -20,12 +20,10 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as pyplot
 import seaborn as sns
 import pandas as pd
-if not hasattr(pd.Categorical,"codes"): #hack for old pandas versions
-    setattr(pd.Categorical,"codes", pd.Categorical.labels)
 
 # import the local copy of msprime in preference to the global one
 curr_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(1,os.path.join(curr_dir,'..','msprime')) 
+sys.path.insert(1,os.path.join(curr_dir,'..','msprime'))
 import msprime
 import msprime_fastARG
 import msprime_ARGweaver
@@ -49,7 +47,7 @@ def add_columns(dataframe, colnames):
     for cn in colnames:
         if cn not in dataframe.columns:
             dataframe[cn]=np.NaN
-   
+
 def make_errors(v, p):
     """
     Flip each bit with probability p.
@@ -79,7 +77,7 @@ def msprime_name(n, Ne, l, rho, mu, genealogy_seed, mut_seed, directory=None):
     Create a filename for saving an msprime simulation (without extension)
     Other functions add error rates and/or a subsample sizes to the name
     """
-    #format mut rate & recomb rate to print non-exponential notation without 
+    #format mut rate & recomb rate to print non-exponential notation without
     # trailing zeroes 12 dp should be ample for these rates
     rho = "{:.12f}".format(float(rho)).rstrip('0') 
     mu = "{:.12f}".format(float(mu)).rstrip('0')
@@ -115,7 +113,7 @@ def add_subsample_param_to_name(sim_name, subsample_size):
 
 def construct_fastarg_name(sim_name, seed, directory=None):
     """
-    Returns a fastARG inference filename (without file extension), 
+    Returns a fastARG inference filename (without file extension),
     based on a simulation name
     """
     d,f = os.path.split(sim_name)
@@ -123,9 +121,9 @@ def construct_fastarg_name(sim_name, seed, directory=None):
 
 def construct_argweaver_name(sim_name, seed):
     """
-    Returns an ARGweaver inference filename (without file extension), 
+    Returns an ARGweaver inference filename (without file extension),
     based on a simulation name. The iteration number (used in .smc and .nex output)
-    is not added here, but is added instead by the ARGweaver `arg-sample` program, 
+    is not added here, but is added instead by the ARGweaver `arg-sample` program,
     in the format .10, .20, etc.
     """
     d,f = os.path.split(sim_name)
@@ -134,7 +132,7 @@ def construct_argweaver_name(sim_name, seed):
 def construct_msinfer_name(sim_name):
     """
     Returns an MSprime Li & Stevens inference filename.
-    If the file is a subset of the original, this can be added to the 
+    If the file is a subset of the original, this can be added to the
     basename later using the add_subsample_param_to_name() routine.
     """
     d,f = os.path.split(sim_name)
@@ -173,8 +171,8 @@ class Dataset(object):
         """
         If we initialize a dataset with the same seed, it should exactly
         duplicate the previous set of simulations (overwriting the old files)
-        
-        If we initialize a dataset with a different seed, it should create a new 
+
+        If we initialize a dataset with a different seed, it should create a new
         set of files which re-run the simulations w/ different throws of the dice.
         """
         self.instance = seed
@@ -218,14 +216,14 @@ class Dataset(object):
     def single_simulation(self, n, Ne, l, rho, mu, seed, mut_seed=None, subsample=None):
         """
         The standard way to run one msprime simulation for a set of parameter values.
-        Saves the output to an .hdf5 file, and also saves variant files for use in 
+        Saves the output to an .hdf5 file, and also saves variant files for use in
         fastARG (a .hap file, in the format specified by https://github.com/lh3/fastARG#input-format)
         ARGweaver (a .sites file: http://mdrasmus.github.io/argweaver/doc/#sec-file-sites)
         msinfer (currently a numpy array containing the variant matrix)
-        
+
         mutation_seed is not yet implemented, but should allow the same ancestry to be simulated (if the same
         genealogy_seed is given) but have different mutations thrown onto the trees (even with different mutation_rates)
-        
+
         Returns a tuple of treesequence, filename (without file type extension)
         """
         ts = msprime.simulate(n, Ne, l, recombination_rate=rho, mutation_rate=mu, random_seed=int(seed))
@@ -248,7 +246,7 @@ class Dataset(object):
             err_filename = add_error_param_to_name(fname, error_rate)
             logging.debug("writing variant matrix to {}.npy for msinfer".format(err_filename))
             np.save(err_filename+".npy", S)
-            
+
             pos = (v.position for v in ts.variants())
             logging.debug("writing variant matrix to {}.hap for fastARG".format(err_filename))
             with open(err_filename+".hap", "w+") as fastarg_in:
@@ -257,7 +255,7 @@ class Dataset(object):
             with open(err_filename+".sites", "w+") as argweaver_in:
                 msprime_ARGweaver.variant_matrix_to_ARGweaver_in(S, pos, argweaver_in)
 
-    @staticmethod 
+    @staticmethod
     def run_tsinf(S, rho):
         before = time.clock()
         panel = tsinf.ReferencePanel(S)
@@ -277,7 +275,7 @@ class NumRecordsBySampleSizeDataset(Dataset):
 
     def __init__(self, seed=123, replicates=10):
         """
-        Everything is done via a Data Frame which contains the initial params and is then used to 
+        Everything is done via a Data Frame which contains the initial params and is then used to
         store the output values.
         """
         super(NumRecordsBySampleSizeDataset, self).__init__(seed)
@@ -295,17 +293,17 @@ class NumRecordsBySampleSizeDataset(Dataset):
         #now add some other params, where multiple vals exists for one simulation
         params['error_rate']         = [0, 0.01, 0.1]
         params['tool']               = ["fastARG", "msinfer"]
-        
+
         #all combinations of params in a DataFrame
         self.data = expand_grid(params)
         #assign a unique index for each simulation
         self.data['sim'] = pd.Categorical(self.data[sim_params].astype(str).apply("".join, 1)).codes
         #set unique seeds for each sim
         self.data['seed'] = self.get_seeds(max(self.data.sim)+1)[self.data.sim]
-        
+
     def setup(self):
         """
-        Generates the initial simulations from which we can infer data. 
+        Generates the initial simulations from which we can infer data.
         Should be quite fast, but will generate lots of files, and probably
         take up a fair bit of disk space.
         """
@@ -316,7 +314,7 @@ class NumRecordsBySampleSizeDataset(Dataset):
         for s in range(max(self.data.sim)+1):
             sim = self.data[self.data.sim == s]
             logging.info("Running simulation for n = {}".format(pd.unique(sim.sample_size)))
-            #note to Jerome - I don't use the num_replicates option in simulate(), although it is presumably more 
+            #note to Jerome - I don't use the num_replicates option in simulate(), although it is presumably more
             # efficient, as then I can't replicate each msprime simulation independently, given a RNG seed.
             ts, fn = self.single_simulation(pd.unique(sim.sample_size),
                                             pd.unique(sim.Ne),
@@ -326,16 +324,16 @@ class NumRecordsBySampleSizeDataset(Dataset):
                                             pd.unique(sim.seed),
                                             pd.unique(sim.seed)) #same mutation_seed as genealogy_seed
             self.save_variant_matrices(ts, fn, pd.unique(sim.error_rate))
-            
+
     def generate(self, save_trees=False):
         """
         This runs the inference methods. It will be the most time consuming bit.
         The final files saved will be nexus files containing multiple trees.
         In the case of fastARG and msinfer methods, we could also save hdf5 files for reference
-        
+
         Note that we should be able to kill a python instance after 'generate()' has run,
         and fire up another instance in which we run 'process()'.
-        
+
         """
         add_columns(self.data, ['source_records','inferred_records','cpu_time','memory'])
         for i in self.data.index:
@@ -365,19 +363,19 @@ class NumRecordsBySampleSizeDataset(Dataset):
                      tempfile.NamedTemporaryFile("w+") as muts,   \
                      tempfile.NamedTemporaryFile("w+") as fa_revised:
                     time, memory = msprime_fastARG.run_fastARG(fastARG_executable,
-                                                               infile, fa_out, 
+                                                               infile, fa_out,
                                                                seed=d.seed, status_to=None)
                     var_pos = msprime_fastARG.variant_positions_from_fastARGin_name(infile)
                     root_seq = msprime_fastARG.fastARG_root_seq(fa_out)
                     msprime_fastARG.fastARG_out_to_msprime_txts(fa_out, var_pos, tree, muts)
-                    inferred_ts = msprime_fastARG.msprime_txts_to_fastARG_in_revised(tree, muts, root_seq, 
+                    inferred_ts = msprime_fastARG.msprime_txts_to_fastARG_in_revised(tree, muts, root_seq,
                                                                                      fa_revised, simplify=True)
                     assert filecmp.cmp(full_infile, fa_revised.name, shallow=False), \
                         "Initial fastARG haplotype input file differs from inferred fastARG haplotypes"
                     inferred_ts
             self.data.loc[i,['source_records','inferred_records','cpu_time','memory']] = \
                 (ts.get_num_records(), inferred_ts.get_num_records(),time, memory)
-            
+
             # Save each row so we can use the information while it's being built
             self.data.to_csv(self.data_file)
 
@@ -391,7 +389,7 @@ class MetricsByMutationRate(Dataset):
 
     def __init__(self, seed=111):
         """
-        Everything is done via a Data Frame which contains the initial params and is then used to 
+        Everything is done via a Data Frame which contains the initial params and is then used to
         store the output values.
         """
         super(NumRecordsBySampleSizeDataset, self).__init__(seed)
@@ -409,7 +407,7 @@ class MetricsByMutationRate(Dataset):
         #now add some other params, where multiple vals exists for one simulation
         params['error_rate']         = [0, 0.01, 0.1]
         params['tool']               = ["fastARG","ARGweaver", "msinfer"]
-        
+
         #all combinations of params in a DataFrame
         self.data = expand_grid(params)
         #assign a unique index for each simulation
