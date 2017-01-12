@@ -81,8 +81,8 @@ def msprime_basename(n, Ne, l, rho, mu, genealogy_seed, mut_seed):
     # trailing zeroes 12 dp should be ample for these rates
     rho = "{:.12f}".format(float(rho)).rstrip('0') 
     mu = "{:.12f}".format(float(mu)).rstrip('0') 
-    return("msprime-n{}_Ne{}_l{}_rho{}_mu{}-gs{}_ms{}".format(int(n), float(Ne), int(l), rho, 
-        mu, int(genealogy_seed), int(mut_seed)))
+    return "msprime-n{}_Ne{}_l{}_rho{}_mu{}-gs{}_ms{}".format(int(n), float(Ne), int(l), rho, \
+        mu, int(genealogy_seed), int(mut_seed))
         
 def add_error_param_to_name(sim_basename, error_rate):
     """
@@ -91,10 +91,10 @@ def add_error_param_to_name(sim_basename, error_rate):
     """
     if sim_basename.endswith("+") or sim_basename.endswith("-"):
         #this is the first param
-        return(sim_basename + "_err{}".format(float(error_rate)))
+        return sim_basename + "_err{}".format(float(error_rate))
     else:
         #this is the first param
-        return(sim_basename + "err{}".format(float(error_rate)))
+        return sim_basename + "err{}".format(float(error_rate))
 
 def add_subsample_param_to_name(sim_basename, subsample_size):
     """
@@ -103,18 +103,17 @@ def add_subsample_param_to_name(sim_basename, subsample_size):
     """
     if sim_basename.endswith("+") or sim_basename.endswith("-"):
         #this is the first param
-        return(sim_basename + "max{}".format(int(subsample_size)))
+        return sim_basename + "max{}".format(int(subsample_size))
     else:
-        return(sim_basename + "_max{}".format(int(subsample_size)))
-    
-    
+        return sim_basename + "_max{}".format(int(subsample_size))
+
 def construct_fastarg_basename(sim_basename, seed):
     """
     Returns a fastARG inference filename (without file extension), 
     based on a simulation name
     """
-    return('+'.join(['fastarg', sim_basename, "fs"+str(seed)]))
-        
+    return '+'.join(['fastarg', sim_basename, "fs"+str(seed)])
+
 def construct_argweaver_basename(sim_basename, seed):
     """
     Returns an ARGweaver inference filename (without file extension), 
@@ -122,7 +121,7 @@ def construct_argweaver_basename(sim_basename, seed):
     is not added here, but is added instead by the ARGweaver `arg-sample` program, 
     in the format .10, .20, etc.
     """
-    return('+'.join(['aweaver', sim_basename, "ws"+str(seed)]))
+    return '+'.join(['aweaver', sim_basename, "ws"+str(seed)])
 
 def construct_msinfer_basename(sim_basename):
     """
@@ -130,8 +129,8 @@ def construct_msinfer_basename(sim_basename):
     If the file is a subset of the original, this can be added to the 
     basename later using the add_subsample_param_to_name() routine.
     """
-    return('+'.join(["msinfer", sim_basename, ""]))
- 
+    return '+'.join(["msinfer", sim_basename, ""])
+
 class Figure(object):
     """
     Superclass of all figures. Each figure depends on a dataset.
@@ -196,7 +195,7 @@ class Dataset(object):
         while len(seeds) != n:
             seeds = np.append(np.random.randint(upper,size = n-len(seeds)))
             seeds = np.unique(seeds)
-        return(seeds)
+        return seeds
 
     @staticmethod
     def single_simulation(n, Ne, l, rho, mu, seed, mut_seed=None, subsample=None):
