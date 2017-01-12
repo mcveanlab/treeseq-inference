@@ -18,8 +18,10 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as pyplot
-import pandas as pd
 import seaborn as sns
+import pandas as pd
+if not hasattr(pd.Categorical,"codes"): #hack for old pandas versions
+    setattr(pd.Categorical,"codes", pd.Categorical.labels)
 
 # import the local copy of msprime in preference to the global one
 curr_dir = os.path.dirname(os.path.abspath(__file__))
