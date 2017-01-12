@@ -68,11 +68,19 @@ def variant_matrix_to_ARGweaver_in(var_matrix, var_positions, ARGweaver_filehand
     """
     pass
     
-def run_ARGweaver(Ne, mut_rate, recomb_rate, executable, ARGweaver_in_filehandle, ARGweaver_out_dir, out_prefix="aw", seed=None, iterations=None, sample_step=None, status_to=sys.stdout, quiet=False, rand_seed=None):
+def run_ARGweaver(Ne, mut_rate, recomb_rate, executable, ARGweaver_in, ARGweaver_out_dir, out_prefix="aw", seed=None, iterations=None, sample_step=None, status_to=sys.stdout, quiet=False, rand_seed=None):
+    """
+    run the ARGweaver executable on fastARG_in (which can be a filename or filehandle with .name attr)
+    """
     import os
     from subprocess import call
     ARGweaver_out_dir = os.path.join(ARGweaver_out_dir,out_prefix)
-    exe = [str(executable), '--output', ARGweaver_out_dir, '--popsize', str(Ne), '--mutrate', str(mut_rate), '--recombrate', str(recomb_rate), '--sites', ARGweaver_in_filehandle.name, '--overwrite']
+    exe = [str(executable), '--output', ARGweaver_out_dir, 
+                            '--popsize', str(Ne),
+                            '--mutrate', str(mut_rate), 
+                            '--recombrate', str(recomb_rate), 
+                            '--sites', ARGweaver_in.name if hasattr(ARGweaver_in, "name") else ARGweaver_in, 
+                            '--overwrite']
     if quiet:
         exe.extend(['--quiet'])
     if rand_seed is not None:
