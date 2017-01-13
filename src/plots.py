@@ -12,6 +12,7 @@ import time
 import collections
 import itertools
 import tempfile
+import subprocess
 import filecmp
 
 import numpy as np
@@ -33,9 +34,9 @@ import tsinf
 
 importr("ape")
 importr("phangorn")
-ARGmetrics = importr("ARGmetrics") 
+ARGmetrics = importr("ARGmetrics")
 #NB the above requires your version of R to have the bespoke ARGmetrics package installed
-#Open R and set the working dir to treeseq-inference, then do 
+#Open R and set the working dir to treeseq-inference, then do
 # > install("ARGmetrics")
 
 fastARG_executable = os.path.join(curr_dir,'..','fastARG','fastARG')
@@ -90,7 +91,7 @@ def msprime_name(n, Ne, l, rho, mu, genealogy_seed, mut_seed, directory=None):
     """
     #format mut rate & recomb rate to print non-exponential notation without
     # trailing zeroes 12 dp should be ample for these rates
-    rho = "{:.12f}".format(float(rho)).rstrip('0') 
+    rho = "{:.12f}".format(float(rho)).rstrip('0')
     mu = "{:.12f}".format(float(mu)).rstrip('0')
     file = "msprime-n{}_Ne{}_l{}_rho{}_mu{}-gs{}_ms{}".format(int(n), float(Ne), int(l), rho, \
         mu, int(genealogy_seed), int(mut_seed))
@@ -98,7 +99,7 @@ def msprime_name(n, Ne, l, rho, mu, genealogy_seed, mut_seed, directory=None):
         return file
     else:
         return os.path.join(directory,file)
-                
+
 def add_error_param_to_name(sim_name, error_rate):
     """
     Append the error param to the msprime simulation filename.
@@ -148,6 +149,35 @@ def construct_msinfer_name(sim_name):
     """
     d,f = os.path.split(sim_name)
     return os.path.join(d,'+'.join(['msinfer', f, ""]))
+
+
+def time_cmd(cmd, stdout):
+    """
+    Runs the specified command line (a list suitable for subprocess.call)
+    and writes the stdout to the specified file object.
+    """
+    full_cmd = ["/usr/bin/time", "-f%M %S %U"] + cmd
+    with tempfile.TemporaryFile() as stderr:
+        exit_status = subprocess.call(full_cmd, stderr=stderr, stdout=stdout)
+        stderr.seek(0)
+        if exit_status != 0:
+            raise ValueError(
+                "Error running '{}': status={}:stderr{}".format(
+                    cmd, exit_status, stderr.read()))
+
+        split = stderr.readlines()[-1].split()
+        # From the time man page:
+        # M: Maximum resident set size of the process during its lifetime,
+        #    in Kilobytes.
+        # S: Total number of CPU-seconds used by the system on behalf of
+        #    the process (in kernel mode), in seconds.
+        # U: Total number of CPU-seconds that the process used directly
+        #    (in user mode), in seconds.
+        max_memory = int(split[0]) * 1024
+        system_time = float(split[1])
+        user_time = float(split[2])
+    return user_time + system_time, max_memory
+
 
 class Figure(object):
     """
@@ -280,19 +310,19 @@ class Dataset(object):
     @staticmethod
     def run_fastarg(file_name, seed):
         with tempfile.NamedTemporaryFile("w+") as fa_out, \
-             tempfile.NamedTemporaryFile("w+") as tree,   \
-             tempfile.NamedTemporaryFile("w+") as muts,   \
-             tempfile.NamedTemporaryFile("w+") as fa_revised:
-            cpu_time, memory_use = msprime_fastARG.run_fastARG(fastARG_executable,
-                                                               file_name, fa_out,
-                                                               seed=seed, status_to=None)
+                tempfile.NamedTemporaryFile("w+") as tree, \
+                tempfile.NamedTemporaryFile("w+") as muts, \
+                tempfile.NamedTemporaryFile("w+") as fa_revised:
+            cmd = msprime_fastARG.get_cmd(fastARG_executable, file_name, seed)
+            cpu_time, memory_use = time_cmd(cmd, fa_out)
+            logging.debug("ran fastarg [{} s]: '{}'".format(cpu_time, cmd))
             var_pos = msprime_fastARG.variant_positions_from_fastARGin_name(file_name)
             root_seq = msprime_fastARG.fastARG_root_seq(fa_out)
-            msprime_fastARG.fastARG_out_to_msprime_txts(fa_out, var_pos, tree, muts)
-            inferred_ts = msprime_fastARG.msprime_txts_to_fastARG_in_revised(tree, muts, root_seq,
-                                                                             fa_revised, simplify=True)
-            assert filecmp.cmp(file_name, fa_revised.name, shallow=False), \
-                "Initial fastARG haplotype input file differs from inferred fastARG haplotypes"
+            msprime_fastARG.fastARG_out_to_msprime_txts(
+                    fa_out, var_pos, tree, muts, status_to=None)
+            inferred_ts = msprime_fastARG.msprime_txts_to_fastARG_in_revised(
+                    tree, muts, root_seq, fa_revised, simplify=True, status_to=None)
+            assert filecmp.cmp(file_name, fa_revised.name, shallow=False)
             return inferred_ts, cpu_time, memory_use
 
     @staticmethod
@@ -303,7 +333,7 @@ class Dataset(object):
         """
         new_prefix = path_prefix + "_i" #we append a '_i' to mark iteration number
         before = time.clock()
-        msprime_ARGweaver.run_ARGweaver(Ne=Ne, 
+        msprime_ARGweaver.run_ARGweaver(Ne=Ne,
                       mut_rate=mutation_rate,
                       recomb_rate=recombination_rate,
                       executable= ARGweaver_executable,
@@ -324,10 +354,10 @@ class Dataset(object):
         """
         Pass in a set of inferred nexus files (each of which could be an array)
         e.g. ARG_metrics(true.nex, fastARG=fa.nex, argWeaver=[aw1.nex, aw2.nex])
-        
+
         Returns a set of Data Frames, one for each nexus file passed in
         """
-        #make sure that the 
+        #make sure that the
         # load the true_nexus into the R session
         orig_tree = ARGmetrics.new_read_nexus(true_nexus)
         metrics={}
@@ -417,9 +447,9 @@ class NumRecordsBySampleSizeDataset(Dataset):
             add_columns(self.data, tool_cols[tool])
         for i in self.data.index:
             d = self.data.iloc[i]
-            sim_fn=msprime_name(d.sample_size, d.Ne, d.length, d.recombination_rate, 
-                                d.mutation_rate, d.seed, d.seed, self.simulations_dir)
-            err_fn=add_error_param_to_name(sim_fn, d.error_rate)
+            sim_fn = msprime_name(d.sample_size, d.Ne, d.length, d.recombination_rate,
+                                  d.mutation_rate, d.seed, d.seed, self.simulations_dir)
+            err_fn = add_error_param_to_name(sim_fn, d.error_rate)
             ts = msprime.load(sim_fn+".hdf5")
             assert ts.sample_size == d.sample_size
             for tool, result_cols in tool_cols.items():
@@ -440,8 +470,8 @@ class NumRecordsBySampleSizeDataset(Dataset):
                 else:
                     raise KeyError
                 inferred_ts.dump(out_fn +".hdf5", zlib_compression=True)
-                self.data.loc[i, result_cols] = \
-                (ts.get_num_records(), inferred_ts.get_num_records(),time, memory)
+                self.data.loc[i, result_cols] = (
+                    ts.get_num_records(), inferred_ts.get_num_records(),time, memory)
 
             # Save each row so we can use the information while it's being built
             self.data.to_csv(self.data_file)
@@ -515,7 +545,7 @@ class MetricsByMutationRate(Dataset):
             add_columns(self.data, tool_cols[tool])
         for i in self.data.index:
             d = self.data.iloc[i]
-            sim_fn=msprime_name(d.sample_size, d.Ne, d.length, d.recombination_rate, 
+            sim_fn=msprime_name(d.sample_size, d.Ne, d.length, d.recombination_rate,
                                 d.mutation_rate, d.seed, d.seed, self.simulations_dir)
             err_fn=add_error_param_to_name(sim_fn, d.error_rate)
             ts = msprime.load(sim_fn+".hdf5")
@@ -543,9 +573,9 @@ class MetricsByMutationRate(Dataset):
                 elif d.tool == 'ARGweaver':
                     infile = err_fn + ".sites"
                     out_fn = construct_argweaver_name(err_fn, d.seed)
-                    smc_files, stats_file, time, memory = self.run_argweaver(infile, d.Ne, d.recombination_rate, 
+                    smc_files, stats_file, time, memory = self.run_argweaver(infile, d.Ne, d.recombination_rate,
                         d.mutation_rate, out_fn, d.seed)
-                    #now must convert all of the .smc files to 
+                    #now must convert all of the .smc files to
                     for smc_fn in smc_files:
                         with open(smc_fn[:-4]+".nex", "w+") as out:
                             msprime_ARGweaver.ARGweaver_smc_to_nexus(smc_fn, out, zero_based_tip_numbers=False)
@@ -601,38 +631,38 @@ def main():
     subparsers.required = True
     subparsers.dest = 'command'
 
-    generate_parser = subparsers.add_parser('setup')
+    subparser = subparsers.add_parser('setup')
     # TODO: something like this will be useful to set up smaller runs for
     # testing purposes and to control the number of processes used.
-    # generate_parser.add_argument(
+    # subparser.add_argument(
     #     "--processes", '-p', help="number of processes",
     #     type=int, default=1)
-    generate_parser.add_argument(
+    subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
         help='the dataset identifier')
-    generate_parser.add_argument(
+    subparser.add_argument(
          '--replicates', '-r', help="number of replicates", type=int)
-    generate_parser.add_argument(
+    subparser.add_argument(
          '--seed', '-s', help="use a non-default RNG seed", type=int)
-    generate_parser.set_defaults(func=run_setup)
+    subparser.set_defaults(func=run_setup)
 
-    generate_parser = subparsers.add_parser('generate')
-    generate_parser.add_argument(
+    subparser = subparsers.add_parser('generate')
+    subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
         help='the dataset identifier')
-    generate_parser.set_defaults(func=run_generate)
+    subparser.set_defaults(func=run_generate)
 
-    process_parser = subparsers.add_parser('process')
-    process_parser.add_argument(
+    subparser = subparsers.add_parser('process')
+    subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
         help='the dataset identifier')
-    process_parser.set_defaults(func=run_process)
+    subparser.set_defaults(func=run_process)
 
-    figure_parser = subparsers.add_parser('figure')
-    figure_parser.add_argument(
+    subparser = subparsers.add_parser('figure')
+    subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
         help='the figure identifier')
-    figure_parser.set_defaults(func=run_plot)
+    subparser.set_defaults(func=run_plot)
 
     args = parser.parse_args()
     log_level = logging.WARNING
