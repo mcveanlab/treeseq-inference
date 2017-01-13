@@ -476,7 +476,7 @@ class NumRecordsBySampleSizeDataset(Dataset):
             # Save each row so we can use the information while it's being built
             self.data.to_csv(self.data_file)
 
-class MetricsByMutationRate(Dataset):
+class MetricsByMutationRateDataset(Dataset):
     """
     Dataset for Figure 1
     Accuracy of ARG inference (measured by various statistics)
@@ -494,15 +494,15 @@ class MetricsByMutationRate(Dataset):
 
         #set up a pd Data Frame containing all the params
         params = collections.OrderedDict()
-        params['sample_size']       = 12
+        params['sample_size']       = 12,
         params['Ne']                 = 5000,
         params['length']             = 50000,
         params['recombination_rate'] = 2.5e-8,
-        params['mutation_rate']      = np.linspace(1.5e-8, 500, num=10)
-        params['replicate']         = np.arange(100)
+        params['mutation_rate']      = 1.5e-7, #np.linspace(1.5e-8, 500, num=10)
+        params['replicate']         = 2, #np.arange(100)
         sim_params = list(params.keys())
         #now add some other params, where multiple vals exists for one simulation
-        params['error_rate']         = [0, 0.01, 0.1]
+        params['error_rate']         = 0, #[0, 0.01, 0.1]
 
         #all combinations of params in a DataFrame
         self.data = expand_grid(params)
@@ -549,10 +549,11 @@ class MetricsByMutationRate(Dataset):
                                 d.mutation_rate, d.seed, d.seed, self.simulations_dir)
             err_fn=add_error_param_to_name(sim_fn, d.error_rate)
             ts = msprime.load(sim_fn+".hdf5")
-            ts.write_nexus_trees(out_fn +".nex")
+            with open(sim_fn +".nex", "w+") as out:
+                ts.write_nexus_trees(out)
             assert ts.sample_size == d.sample_size
             for tool, result_cols in tool_cols.items():
-                if d.tool == 'msinfer':
+                if tool == 'msinfer':
                     infile = err_fn + ".npy"
                     out_fn = construct_msinfer_name(err_fn)
                     logging.info("processing msinfer inference for n = {}".format(d.sample_size))
@@ -562,7 +563,7 @@ class MetricsByMutationRate(Dataset):
                     inferred_ts, time, memory = self.run_tsinf(S, 4*d.recombination_rate*d.Ne)
                     with open(out_fn +".nex", "w+") as out:
                         inferred_ts.write_nexus_trees(out)
-                elif d.tool == 'fastARG':
+                elif tool == 'fastARG':
                     infile = err_fn + ".hap"
                     out_fn = construct_fastarg_name(err_fn, d.seed)
                     logging.info("processing fastARG inference for n = {}".format(d.sample_size))
@@ -570,7 +571,7 @@ class MetricsByMutationRate(Dataset):
                     inferred_ts, time, memory = self.run_fastarg(infile)
                     with open(out_fn +".nex", "w+") as out:
                         inferred_ts.write_nexus_trees(out)
-                elif d.tool == 'ARGweaver':
+                elif tool == 'ARGweaver':
                     infile = err_fn + ".sites"
                     out_fn = construct_argweaver_name(err_fn, d.seed)
                     smc_files, stats_file, time, memory = self.run_argweaver(infile, d.Ne, d.recombination_rate,
@@ -620,6 +621,7 @@ def run_plot(cls, extra_args):
 def main():
     datasets = [
         NumRecordsBySampleSizeDataset,
+        MetricsByMutationRateDataset,
     ]
     figures = [
     ]
