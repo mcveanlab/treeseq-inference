@@ -3,8 +3,8 @@
 #' Requires multiPhylo objects representing sequential trees along a genomic region.
 #'  The tree names should be numbers, which represent the rightmost position along a
 #'  genome (non-inclusive) covered by each tree.
-#' @param a The first multiPhylo object
-#' @param b The second multiPhylo object
+#' @param a The first multiPhylo object, or a path to a .nex file
+#' @param b The second multiPhylo object, or a path to a .nex file
 #' @param output.full.table Output tree metrics for each overlapping region, rather than simply a weighted summary.
 #' @param acceptable.length.diff.pct How much difference in sequence length is allows between the 2 trees? (Default: 0.1 percent)
 #' @param variant.positions A list of positions of each variant (not implemented)
@@ -17,6 +17,12 @@ genome.trees.dist <- function(a, b, output.full.table = FALSE, acceptable.length
     #if variant.positions is given, it should be a vector of genome positions for each variants, and the metric will be compared per variant site
     #rather than per genomic region
     require(phangorn) #to use the various treedist metrics
+    if (class(a) != "multiPhylo") {
+         a <- new.read.nexus(a)
+    }
+    if (class(b) != "multiPhylo") {
+         b <- new.read.nexus(b)
+    }
     brk.a <- as.numeric(names(a))
     if (is.unsorted(brk.a))
         stop("Tree names should correspond to numerical breakpoints or variant totals, sorted from low to high, but tree names in the first trees object are not numbers in ascending order.")
