@@ -472,6 +472,8 @@ class NumRecordsBySampleSizeDataset(Dataset):
                 inferred_ts.dump(out_fn +".hdf5", zlib_compression=True)
                 self.data.loc[i, result_cols] = (
                     ts.get_num_records(), inferred_ts.get_num_records(),time, memory)
+                with open(out_fn +".nex", "w+") as out:
+                    inferred_ts.write_nexus_trees(out)
 
             # Save each row so we can use the information while it's being built
             self.data.to_csv(self.data_file)
