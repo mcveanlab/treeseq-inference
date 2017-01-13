@@ -34,10 +34,10 @@ import tsinf
 
 importr("ape")
 importr("phangorn")
-# ARGmetrics = importr("ARGmetrics")
+ARGmetrics = importr("ARGmetrics")
 #NB the above requires your version of R to have the bespoke ARGmetrics package installed
 #Open R and set the working dir to treeseq-inference, then do
-> install("ARGmetrics")
+# > install("ARGmetrics")
 
 fastARG_executable = os.path.join(curr_dir,'..','fastARG','fastARG')
 ARGweaver_executable = os.path.join(curr_dir,'..','argweaver','bin','arg-sample')
