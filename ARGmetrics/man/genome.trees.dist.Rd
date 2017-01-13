@@ -2,26 +2,33 @@
 % Please edit documentation in R/genome_trees_dist.r
 \name{genome.trees.dist}
 \alias{genome.trees.dist}
-\title{Compare multiple trees across a genomic region}
+\title{Use tree metrics to compare two inferred ancestries (ARGs) over a genomic region}
 \usage{
-genome.trees.dist(a, b, output.full.table = FALSE,
-  acceptable.length.diff.pct = 0.1, variant.positions = NULL)
+genome.trees.dist(treeseq.a, treeseq.b, output.full.table = FALSE,
+  acceptable.length.diff.pct = 0.1, variant.positions = NULL,
+  randomly.resolve.polytomies = FALSE)
 }
 \arguments{
-\item{a}{The first multiPhylo object, or a path to a .nex file}
+\item{treeseq.a}{The first multiPhylo object, or a path to a .nex file}
 
-\item{b}{The second multiPhylo object, or a path to a .nex file}
+\item{treeseq.b}{The second multiPhylo object, or a path to a .nex file}
 
 \item{output.full.table}{Output tree metrics for each overlapping region, rather than simply a weighted summary.}
 
 \item{acceptable.length.diff.pct}{How much difference in sequence length is allows between the 2 trees? (Default: 0.1 percent)}
 
-\item{variant.positions}{A list of positions of each variant (not implemented)}
+\item{variant.positions}{A vector of genome positions of each variant. If given the metric will be 
+calculated for each variant site and averaged over all sites, rather than averaged over every point on the genome (not yet implemented)}
+
+\item{randomly.resolve.polytomies}{Some distance metrics only operate on binary trees. Set this to TRUE to force trees to be binary
+by randomly resolving polytomies where necessary. If a number, it is passed to set.seed as a RNG seed.}
 }
 \description{
-Requires multiPhylo objects representing sequential trees along a genomic region.
- The tree names should be numbers, which represent the rightmost position along a
- genome (non-inclusive) covered by each tree.
+Requires two multiPhylo objects which contain sequential trees (tree sequences) along a genomic region.
+Tips labels in the two tree sequences should correspond (and are assumed to be 1..N) 
+Trees within the multiPhylo object should be in order along the genome, and each tree
+must have a name which can be converted to a number. The name (number) should give
+the (non-inclusive) rightmost genome position covered by that tree.
 }
 \examples{
 genome.trees.dist()

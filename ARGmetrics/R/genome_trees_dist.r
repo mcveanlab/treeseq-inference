@@ -11,25 +11,36 @@
 #' @param acceptable.length.diff.pct How much difference in sequence length is allows between the 2 trees? (Default: 0.1 percent)
 #' @param variant.positions A vector of genome positions of each variant. If given the metric will be 
 #'  calculated for each variant site and averaged over all sites, rather than averaged over every point on the genome (not yet implemented)
+#' @param randomly.resolve.polytomies Some distance metrics only operate on binary trees. Set this to TRUE to force trees to be binary
+#' by randomly resolving polytomies where necessary. If a number, it is passed to set.seed as a RNG seed.
 #' @export
 #' @examples
 #' genome.trees.dist()
 
-genome.trees.dist <- function(treeseq.a, treeseq.b, output.full.table = FALSE, acceptable.length.diff.pct = 0.1, variant.positions=NULL) { 
+genome.trees.dist <- function(treeseq.a, treeseq.b, output.full.table = FALSE, acceptable.length.diff.pct = 0.1, variant.positions=NULL, randomly.resolve.polytomies=FALSE) { 
+    require(ape)
     require(phangorn) #to use the various treedist metrics
+
+    if (randomly.resolve.polytomies) {
+        if (is.numeric(randomly.resolve.polytomies))
+            set.seed(randomly.resolve.polytomies)
+        process = multi2di
+    } else {
+        process = identity
+    }
 
     #check if trees or filenames
     if (class(treeseq.a) != "multiPhylo") {
-        a <- new.read.nexus(treeseq.a, force.multi=TRUE)
+        a <- process(new.read.nexus(treeseq.a, force.multi=TRUE))
     } else {
-        a <- treeseq.a
+        a <- process(treeseq.a)
     }
-    if (class(b) != "multiPhylo") {
-         b <- new.read.nexus(treeseq.b, force.multi=TRUE)
+    if (class(treeseq.b) != "multiPhylo") {
+         b <- process(new.read.nexus(treeseq.b, force.multi=TRUE))
     } else {
-         b <- treeseq.b
+         b <- process(treeseq.b)
     }
-    
+
     brk.a <- as.numeric(names(a))
     if (is.unsorted(brk.a))
         stop("Tree names should correspond to numerical breakpoints or variant totals, sorted from low to high, but tree names in the first trees object are not numbers in ascending order.")
@@ -52,12 +63,19 @@ genome.trees.dist <- function(treeseq.a, treeseq.b, output.full.table = FALSE, a
             break
         }
         rgt <- brk$values[0:1]
-        RF.rooted <- RF.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]], rooted=TRUE)
-        RF.unrooted <- RF.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]], rooted=FALSE)
-        wRF.rooted <- wRF.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]], rooted=TRUE)
-        wRF.unrooted <- wRF.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]], rooted=FALSE)
-        SPR.unrooted <- SPR.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]])
-        path.unrooted <- path.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]])
+        RF.rooted <- RF.unrooted <- wRF.rooted <- wRF.unrooted <- SPR.unrooted  <- path.unrooted <- NA
+        tryCatch({RF.rooted <- RF.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]], rooted=TRUE)}, 
+                 error=function(e){})
+        tryCatch({RF.unrooted <- RF.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]], rooted=FALSE)},
+                 error=function(e){})
+        tryCatch({wRF.rooted <- wRF.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]], rooted=TRUE)},
+                 error=function(e){})
+        tryCatch({wRF.unrooted <- wRF.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]], rooted=FALSE)},
+                 error=function(e){})
+        tryCatch({SPR.unrooted <- SPR.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]])},
+                 error=function(e){})
+        tryCatch({path.unrooted <- path.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]])},
+                 error=function(e){})
         results[nrow(results)+1,] <- c(lft,rgt,RF.rooted, RF.unrooted, wRF.rooted, wRF.unrooted, SPR.unrooted, path.unrooted)
         lft <- rgt
         tree.index.counter[brk$ind] <- tree.index.counter[brk$ind] + 1 #NB, brk$ind is a factor with levels (m1,m2), so we hope that m1==1 and m2==2
