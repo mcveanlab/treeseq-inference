@@ -1,28 +1,35 @@
-#' Compare multiple trees across a genomic region
+#' Use tree metrics to compare two inferred ancestries (ARGs) over a genomic region
 #'
-#' Requires multiPhylo objects representing sequential trees along a genomic region.
-#'  The tree names should be numbers, which represent the rightmost position along a
-#'  genome (non-inclusive) covered by each tree.
-#' @param a The first multiPhylo object, or a path to a .nex file
-#' @param b The second multiPhylo object, or a path to a .nex file
+#' Requires two multiPhylo objects which contain sequential trees (tree sequences) along a genomic region.
+#' Tips labels in the two tree sequences should correspond (and are assumed to be 1..N) 
+#' Trees within the multiPhylo object should be in order along the genome, and each tree
+#' must have a name which can be converted to a number. The name (number) should give
+#' the (non-inclusive) rightmost genome position covered by that tree.
+#' @param treeseq.a The first multiPhylo object, or a path to a .nex file
+#' @param treeseq.b The second multiPhylo object, or a path to a .nex file
 #' @param output.full.table Output tree metrics for each overlapping region, rather than simply a weighted summary.
 #' @param acceptable.length.diff.pct How much difference in sequence length is allows between the 2 trees? (Default: 0.1 percent)
-#' @param variant.positions A list of positions of each variant (not implemented)
+#' @param variant.positions A vector of genome positions of each variant. If given the metric will be 
+#'  calculated for each variant site and averaged over all sites, rather than averaged over every point on the genome (not yet implemented)
 #' @export
 #' @examples
 #' genome.trees.dist()
 
-genome.trees.dist <- function(a, b, output.full.table = FALSE, acceptable.length.diff.pct = 0.1, variant.positions=NULL) { 
-    #a and b should be multiPhylo objects containing multiple trees
-    #if variant.positions is given, it should be a vector of genome positions for each variants, and the metric will be compared per variant site
-    #rather than per genomic region
+genome.trees.dist <- function(treeseq.a, treeseq.b, output.full.table = FALSE, acceptable.length.diff.pct = 0.1, variant.positions=NULL) { 
     require(phangorn) #to use the various treedist metrics
-    if (class(a) != "multiPhylo") {
-         a <- new.read.nexus(a)
+
+    #check if trees or filenames
+    if (class(treeseq.a) != "multiPhylo") {
+        a <- new.read.nexus(treeseq.a, force.multi=TRUE)
+    } else {
+        a <- treeseq.a
     }
     if (class(b) != "multiPhylo") {
-         b <- new.read.nexus(b)
+         b <- new.read.nexus(treeseq.b, force.multi=TRUE)
+    } else {
+         b <- treeseq.b
     }
+    
     brk.a <- as.numeric(names(a))
     if (is.unsorted(brk.a))
         stop("Tree names should correspond to numerical breakpoints or variant totals, sorted from low to high, but tree names in the first trees object are not numbers in ascending order.")
