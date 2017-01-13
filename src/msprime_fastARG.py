@@ -29,8 +29,9 @@ def variant_matrix_to_fastARG_in(var_matrix, var_positions, fastARG_filehandle):
         print(pos, "".join((str(v) for v in row)), sep="\t", file=fastARG_filehandle)
     fastARG_filehandle.flush()
 
-def get_cmd(executable, input_file, seed):
-    exe = [str(executable), 'build', input_file]
+def get_cmd(executable, fastARG_in, seed):
+    files = [fastARG_in.name if hasattr(fastARG_in, "name") else fastARG_in]
+    exe = [str(executable), 'build'] + files
     if seed is not None:
         exe += ['-s', str(int(seed))]
     return exe
