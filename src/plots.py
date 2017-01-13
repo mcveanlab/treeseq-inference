@@ -21,8 +21,6 @@ import matplotlib.pyplot as pyplot
 import pandas as pd
 import rpy2.robjects as robjects
 from rpy2.robjects.packages import importr
-from rpy2.robjects import pandas2ri
-pandas2ri.activate()
 
 # import the local copy of msprime in preference to the global one
 curr_dir = os.path.dirname(os.path.abspath(__file__))
@@ -32,6 +30,13 @@ import msprime_extras
 import msprime_fastARG
 import msprime_ARGweaver
 import tsinf
+
+importr("ape")
+importr("phangorn")
+ARGmetrics = importr("ARGmetrics") 
+#NB the above requires your version of R to have the bespoke ARGmetrics package installed
+#Open R and set the working dir to treeseq-inference, then do 
+# > install("ARGmetrics")
 
 fastARG_executable = os.path.join(curr_dir,'..','fastARG','fastARG')
 ARGweaver_executable = os.path.join(curr_dir,'..','argweaver','bin','arg-sample')
@@ -315,12 +320,27 @@ class Dataset(object):
         return new_files, new_stats_file_name, cpu_time, memory_use
 
     @staticmethod
-    def ARG_metrics(true_nexus, **inferred_nexuses):
+    def ARG_metrics(true_nexus_fn, **inferred_nexus_fns):
         """
-        pass in a set of inferred nexus files (each of which could be an array)
+        Pass in a set of inferred nexus files (each of which could be an array)
         e.g. ARG_metrics(true.nex, fastARG=fa.nex, argWeaver=[aw1.nex, aw2.nex])
+        
+        Returns a set of Data Frames, one for each nexus file passed in
         """
-        raise NotImplementedError()
+        #make sure that the 
+        # load the true_nexus into the R session
+        orig_tree = ARGmetrics.new_read_nexus(true_nexus)
+        metrics={}
+        for tool, nexus_files in inferred_nexus_fns:
+            try:
+                m=[]
+                for weight, nexus_file in nexus_files:
+                    m=ARGmetrics.genome_trees_dist(orig_tree, nexus_files)
+                robjects.r['rbind']
+            except AttributeError:
+                nexus_file = nexus_files
+                m = ARGmetrics.genome_trees_dist(orig_tree, nexus_file)
+                metrics[tool]=pd.DataFrame(data=[tuple(metrics)], columns=metrics.names)
 
 class NumRecordsBySampleSizeDataset(Dataset):
     """
