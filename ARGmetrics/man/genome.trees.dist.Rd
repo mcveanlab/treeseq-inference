@@ -8,9 +8,9 @@ genome.trees.dist(a, b, output.full.table = FALSE,
   acceptable.length.diff.pct = 0.1, variant.positions = NULL)
 }
 \arguments{
-\item{a}{The first multiPhylo object}
+\item{a}{The first multiPhylo object, or a path to a .nex file}
 
-\item{b}{The second multiPhylo object}
+\item{b}{The second multiPhylo object, or a path to a .nex file}
 
 \item{output.full.table}{Output tree metrics for each overlapping region, rather than simply a weighted summary.}
 
