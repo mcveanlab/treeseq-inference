@@ -353,24 +353,24 @@ class Dataset(object):
     def ARG_metrics(true_nexus_fn, **inferred_nexus_fns):
         """
         Pass in a set of inferred nexus files (each of which could be an array)
-        e.g. ARG_metrics(true.nex, fastARG=fa.nex, argWeaver=[aw1.nex, aw2.nex])
+        e.g. ARG_metrics(true.nex, fastARG='fa.nex', argWeaver=['aw1.nex', 'aw2.nex'])
 
-        Returns a set of Data Frames, one for each nexus file passed in
+        Where there are multiple nex files for a given method, we should also allow 
+        different weights to be passed in, to provide a weighted average of metrics
+        over the files. Yet to be coded***
+        
+        Returns a dictionary of Data Frames, one for each nexus file passed in
         """
         #make sure that the
         # load the true_nexus into the R session
         orig_tree = ARGmetrics.new_read_nexus(true_nexus)
         metrics={}
         for tool, nexus_files in inferred_nexus_fns:
-            try:
-                m=[]
-                for weight, nexus_file in nexus_files:
-                    m=ARGmetrics.genome_trees_dist(orig_tree, nexus_files)
-                robjects.r['rbind']
-            except AttributeError:
-                nexus_file = nexus_files
-                m = ARGmetrics.genome_trees_dist(orig_tree, nexus_file)
-                metrics[tool]=pd.DataFrame(data=[tuple(metrics)], columns=metrics.names)
+            if isinstance(nexus_files, str):
+                m = ARGmetrics.genome_trees_dist(orig_tree, nexus_files)
+            else:
+                m = ARGmetrics.genome_trees_dist_multi(orig_tree, nexus_files, weights=1)
+            metrics[tool]=pd.DataFrame(data=[tuple(m)], columns=m.names)
 
 class NumRecordsBySampleSizeDataset(Dataset):
     """
@@ -483,6 +483,7 @@ class MetricsByMutationRateDataset(Dataset):
     tending to fully accurate as mutation rate increases
     """
     name = "metrics_by_mutation_rate"
+    tools = ["fastARG","ARGweaver"]
 
     def __init__(self, seed=111):
         """
@@ -526,6 +527,8 @@ class MetricsByMutationRateDataset(Dataset):
                                             pd.unique(sim.mutation_rate),
                                             pd.unique(sim.seed),
                                             pd.unique(sim.seed)) #same mutation_seed as genealogy_seed
+            with open(fn +".nex", "w+") as out:
+                ts.write_nexus_trees(out)
             self.save_variant_matrices(ts, fn, pd.unique(sim.error_rate))
 
     def generate(self):
@@ -539,19 +542,20 @@ class MetricsByMutationRateDataset(Dataset):
 
         """
         results = ['cpu_time','memory']
-        tools = ["fastARG","ARGweaver", "msinfer"]
         tool_cols = {t:["-".join([t,rc]) for rc in results] for t in tools}
         for tool in tools:
             add_columns(self.data, tool_cols[tool])
+            if tool == "ARGweaver":
+                #we need to store more information in the case of ARGweaver, since
+                #each ARGweaver inference run produces a whole set of results
+                #here we just store the iteration numbers, joined together in a single column
+                add_columns(self.data, ["ARGweaver-iterations"])
+
         for i in self.data.index:
             d = self.data.iloc[i]
-            sim_fn=msprime_name(d.sample_size, d.Ne, d.length, d.recombination_rate,
-                                d.mutation_rate, d.seed, d.seed, self.simulations_dir)
-            err_fn=add_error_param_to_name(sim_fn, d.error_rate)
-            ts = msprime.load(sim_fn+".hdf5")
-            with open(sim_fn +".nex", "w+") as out:
-                ts.write_nexus_trees(out)
-            assert ts.sample_size == d.sample_size
+            sim_fn = msprime_name(d.sample_size, d.Ne, d.length, d.recombination_rate,
+                                  d.mutation_rate, d.seed, d.seed, self.simulations_dir)
+            err_fn = add_error_param_to_name(sim_fn, d.error_rate)
             for tool, result_cols in tool_cols.items():
                 if tool == 'msinfer':
                     infile = err_fn + ".npy"
@@ -559,7 +563,6 @@ class MetricsByMutationRateDataset(Dataset):
                     logging.info("processing msinfer inference for n = {}".format(d.sample_size))
                     logging.debug("reading: {} for msprime inference".format(infile))
                     S = np.load(infile)
-                    assert S.shape == (ts.sample_size, ts.num_mutations)
                     inferred_ts, time, memory = self.run_tsinf(S, 4*d.recombination_rate*d.Ne)
                     with open(out_fn +".nex", "w+") as out:
                         inferred_ts.write_nexus_trees(out)
@@ -574,9 +577,9 @@ class MetricsByMutationRateDataset(Dataset):
                 elif tool == 'ARGweaver':
                     infile = err_fn + ".sites"
                     out_fn = construct_argweaver_name(err_fn, d.seed)
-                    smc_files, stats_file, time, memory = self.run_argweaver(infile, d.Ne, d.recombination_rate,
-                        d.mutation_rate, out_fn, d.seed)
-                    #now must convert all of the .smc files to
+                    smc_files, stats_file, time, memory = self.run_argweaver(infile, d.Ne, 
+                        d.recombination_rate, d.mutation_rate, out_fn, d.seed)
+                    #now must convert all of the .smc files to .nex format
                     for smc_fn in smc_files:
                         with open(smc_fn[:-4]+".nex", "w+") as out:
                             msprime_ARGweaver.ARGweaver_smc_to_nexus(smc_fn, out, zero_based_tip_numbers=False)
@@ -591,9 +594,15 @@ class MetricsByMutationRateDataset(Dataset):
         """
         Extracts metrics from the .nex files using R, and saves the results
         """
-        ["fastARG","ARGweaver", "msinfer"]
-        add_columns(self.data, ['RF_rooted','RF_unrooted','RF','memory'])
+        for i in self.data.index:
+            d = self.data.iloc[i]
+            sim_fn=msprime_name(d.sample_size, d.Ne, d.length, d.recombination_rate,
+                                d.mutation_rate, d.seed, d.seed, self.simulations_dir)
+            err_fn=add_error_param_to_name(sim_fn, d.error_rate)
+        ARG_metrics(sim_fn + ".nex", fastARG=
 
+        add_columns(self.data, )
+        
 
 def run_setup(cls, extra_args):
     logging.info("Setting up base data for {}{}".format(cls.name,
