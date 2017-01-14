@@ -84,11 +84,11 @@ def run_ARGweaver(Ne, mut_rate, recomb_rate, executable, ARGweaver_in, ARGweaver
     if quiet:
         exe.extend(['--quiet'])
     if rand_seed is not None:
-        exe.extend(['--randseed', str(rand_seed)])
+        exe.extend(['--randseed', str(int(rand_seed))])
     if iterations is not None:
-        exe.extend(['--iters', str(iterations)])
+        exe.extend(['--iters', str(int(iterations))])
     if sample_step is not None:
-        exe.extend(['--sample-step', str(sample_step)])
+        exe.extend(['--sample-step', str(int(sample_step))])
     if status_to:
         print("== Running ARGweaver as `{}` ==".format(" ".join(exe)), file=status_to)
     call(exe)
