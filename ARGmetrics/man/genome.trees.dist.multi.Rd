@@ -4,17 +4,18 @@
 \alias{genome.trees.dist.multi}
 \title{Use tree metrics to compare multiple inferred ancestries (ARGs) over a genomic region}
 \usage{
-genome.trees.dist.multi(treeseq.base, treeseq.multi,
+genome.trees.dist.multi(treeseq.base, treeseq.multi, weights = NULL,
   acceptable.length.diff.pct = 0.1, variant.positions = NULL,
   randomly.resolve.polytomies = FALSE)
 }
 \arguments{
 \item{treeseq.base}{The base multiPhylo object, or a path to a .nex file}
 
-\item{treeseq.multi}{A list of multiPhylo objects (or list of paths to .nex files).
-If the list has names which can be all be converted to numbers, then these are treated as 
-weights, and the returned value is a single average set of distance measures over all
-the different tree sequences.}
+\item{treeseq.multi}{A list of n multiPhylo objects (or list of n paths to .nex files).}
+
+\item{weights}{If provided, these are treated as weights, and instead of returning a matrix
+with columns for each measure, and n rows, a single row is returned giving the distance
+measures averaged over all the different tree sequences. Set to 1 for a "standard" unweighted average}
 
 \item{acceptable.length.diff.pct}{How much difference in sequence length is allows between the 2 trees? (Default: 0.1 percent)}
 

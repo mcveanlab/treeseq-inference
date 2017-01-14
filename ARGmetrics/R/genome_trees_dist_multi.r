@@ -3,10 +3,10 @@
 #' Runs genome.trees.dist to compare multiple ancestry estimates against a known original
 #' See ?genome.trees.dist for more information.
 #' @param treeseq.base The base multiPhylo object, or a path to a .nex file
-#' @param treeseq.multi A list of multiPhylo objects (or list of paths to .nex files).
-#' If the list has names which can be all be converted to numbers, then these are treated as 
-#' weights, and the returned value is a single average set of distance measures over all
-#' the different tree sequences.
+#' @param treeseq.multi A list of n multiPhylo objects (or list of n paths to .nex files).
+#' @param weights If provided, these are treated as weights, and instead of returning a matrix
+#' with columns for each measure, and n rows, a single row is returned giving the distance
+#' measures averaged over all the different tree sequences. Set to 1 for a "standard" unweighted average
 #' @param acceptable.length.diff.pct How much difference in sequence length is allows between the 2 trees? (Default: 0.1 percent)
 #' @param variant.positions A list of positions of each variant (not implemented)
 #' @param randomly.resolve.polytomies Some distance metrics only operate on binary trees. Set this to TRUE to force trees to be binary
@@ -15,7 +15,7 @@
 #' @examples
 #' genome.trees.dist.multi()
 
-genome.trees.dist.multi <- function(treeseq.base, treeseq.multi, acceptable.length.diff.pct = 0.1, variant.positions=NULL, randomly.resolve.polytomies=FALSE) { 
+genome.trees.dist.multi <- function(treeseq.base, treeseq.multi, weights=NULL, acceptable.length.diff.pct = 0.1, variant.positions=NULL, randomly.resolve.polytomies=FALSE) { 
     if (class(treeseq.multi) == "multiPhylo") {
         stop("treeseq.multi should contain a *list* of multiPhylo objects, not simply a single multiPhylo object.")
     }
@@ -25,10 +25,9 @@ genome.trees.dist.multi <- function(treeseq.base, treeseq.multi, acceptable.leng
                                     acceptable.length.diff.pct = acceptable.length.diff.pct,
                                     variant.positions = variant.positions,
                                     randomly.resolve.polytomies = randomly.resolve.polytomies))
-    weights <- suppressWarnings(as.numeric(rownames(metrics)))
-    if (any(is.na(weights))) {
-        return(metrics)
-    } else {
+    if (is.numeric(weights)) {
         return(colSums(metrics * weights)/sum(weights))
+    } else {
+        return(metrics)
     }
 }
