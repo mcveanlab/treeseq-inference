@@ -248,7 +248,7 @@ class Dataset(object):
             potential_data_files = glob.glob(os.path.join(self.data_dir,"{}+*.csv".format(self.name)))
             try:
                 data_file = potential_data_files[0]
-                if len(potential_data_files) > 2:
+                if len(potential_data_files) > 1:
                     #should probably pick most recent here
                     logging.info("More than one data file for {}. Picking {}".format(self.name, data_file))
             except:
