@@ -21,8 +21,6 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as pyplot
 import pandas as pd
-import rpy2.robjects as robjects
-from rpy2.robjects.packages import importr
 
 # import the local copy of msprime in preference to the global one
 curr_dir = os.path.dirname(os.path.abspath(__file__))
@@ -32,13 +30,7 @@ import msprime_extras
 import msprime_fastARG
 import msprime_ARGweaver
 import tsinf
-
-importr("ape")
-importr("phangorn")
-ARGmetrics = importr("ARGmetrics")
-#NB the above requires your version of R to have the bespoke ARGmetrics package installed
-#Open R and set the working dir to treeseq-inference, then do
-# > install("ARGmetrics")
+import ARG_metrics
 
 fastARG_executable = os.path.join(curr_dir,'..','fastARG','fastARG')
 ARGweaver_executable = os.path.join(curr_dir,'..','argweaver','bin','arg-sample')
@@ -398,29 +390,6 @@ class Dataset(object):
         print(iterations)
         return iterations, new_stats_file_name, cpu_time, memory_use
 
-    @staticmethod
-    def ARG_metrics(true_nexus_fn, **inferred_nexus_fns):
-        """
-        Pass in a set of inferred nexus files (each of which could be an array)
-        e.g. ARG_metrics(true.nex, fastARG='fa.nex', argWeaver=['aw1.nex', 'aw2.nex'])
-
-        Where there are multiple nex files for a given method, we should also allow 
-        different weights to be passed in, to provide a weighted average of metrics
-        over the files. Yet to be coded***
-        
-        Returns a dictionary of Data Frames, one for each nexus file passed in
-        """
-        #make sure that the
-        # load the true_nexus into the R session
-        orig_tree = ARGmetrics.new_read_nexus(true_nexus_fn)
-        metrics={}
-        for tool, nexus_files in inferred_nexus_fns.items():
-            if isinstance(nexus_files, str):
-                m = ARGmetrics.genome_trees_dist(orig_tree, nexus_files)
-            else:
-                m = ARGmetrics.genome_trees_dist_multi(orig_tree, nexus_files, weights=1)
-            metrics[tool]=pd.DataFrame(data=[tuple(m)], columns=m.names)
-
 class NumRecordsBySampleSizeDataset(Dataset):
     """
     Information on the number of coalescence records inferred by tsinf
@@ -509,7 +478,7 @@ class NumRecordsBySampleSizeDataset(Dataset):
                 if tool == 'msinfer':
                     infile = err_fn + ".npy"
                     out_fn = construct_msinfer_name(err_fn)
-                    logging.info("processing msinfer inference for n = {}".format(d.sample_size))
+                    logging.info("generating msinfer inference for n = {}".format(d.sample_size))
                     logging.debug("reading: {} for msprime inference".format(infile))
                     S = np.load(infile)
                     assert S.shape == (ts.sample_size, ts.num_mutations)
@@ -517,7 +486,7 @@ class NumRecordsBySampleSizeDataset(Dataset):
                 elif tool == 'fastARG':
                     infile = err_fn + ".hap"
                     out_fn = construct_fastarg_name(err_fn, d.seed)
-                    logging.info("processing fastARG inference for n = {}".format(d.sample_size))
+                    logging.info("generating fastARG inference for n = {}".format(d.sample_size))
                     logging.debug("reading: {} for msprime inference".format(infile))
                     inferred_ts, time, memory = self.run_fastarg(infile, d.seed)
                 else:
@@ -616,7 +585,7 @@ class MetricsByMutationRateDataset(Dataset):
                 if tool == 'msinfer':
                     infile = err_fn + ".npy"
                     out_fn = construct_msinfer_name(err_fn)
-                    logging.info("processing msinfer inference for n = {}".format(d.sample_size))
+                    logging.info("generating msinfer inference for n = {}".format(d.sample_size))
                     logging.debug("reading: {} for msprime inference".format(infile))
                     S = np.load(infile)
                     inferred_ts, time, memory = self.run_tsinf(S, 4*d.recombination_rate*d.Ne)
@@ -626,8 +595,8 @@ class MetricsByMutationRateDataset(Dataset):
                 elif tool == 'fastARG':
                     infile = err_fn + ".hap"
                     out_fn = construct_fastarg_name(err_fn, d.seed)
-                    logging.info("processing fastARG inference for n = {}".format(d.sample_size))
-                    logging.debug("reading: {} for msprime inference".format(infile))
+                    logging.info("generating fastARG inference for n = {}".format(d.sample_size))
+                    logging.debug("reading: {} for fastARG inference".format(infile))
                     inferred_ts, time, memory = self.run_fastarg(infile, d.seed)
                     with open(out_fn +".nex", "w+") as out:
                         inferred_ts.write_nexus_trees(out)
@@ -635,6 +604,8 @@ class MetricsByMutationRateDataset(Dataset):
                 elif tool == 'ARGweaver':
                     infile = err_fn + ".sites"
                     out_fn = construct_argweaver_name(err_fn, d.seed)
+                    logging.info("generating ARGweaver inference for n = {}".format(d.sample_size))
+                    logging.debug("reading: {} for ARGweaver inference".format(infile))
                     iteration_ids, stats_file, time, memory = self.run_argweaver(infile, d.Ne, 
                         d.recombination_rate, d.mutation_rate, out_fn, d.seed)
                     print(iteration_ids)
@@ -666,7 +637,7 @@ class MetricsByMutationRateDataset(Dataset):
                 "msinfer":construct_msinfer_name(err_fn)+".nex"
             }
             toolfiles = {k:v for k,v in toolfiles.items() if k in self.tools}
-            self.ARG_metrics(sim_fn + ".nex", **toolfiles)
+            ARG_metrics.get_ARG_metrics(sim_fn + ".nex", **toolfiles)
 
             #Now add the metrics to the data file
             #add_columns(self.data, )
