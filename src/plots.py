@@ -247,10 +247,10 @@ class Dataset(object):
             # look for an existing data file in the data_dir
             potential_data_files = glob.glob(os.path.join(self.data_dir,"{}+*.csv".format(self.name)))
             try:
-                data_file = potential_data_files[0]
+                data_file = max(potential_data_files, key = os.path.getctime)
                 if len(potential_data_files) > 1:
-                    #should probably pick most recent here
-                    logging.info("More than one data file for {}. Picking {}".format(self.name, data_file))
+                    logging.info(("More than one data file for {}. " +
+                        "Picking the most recent {}").format(self.name, data_file))
             except:
                 sys.exit("No data file found, and no parameters specified")
                 
