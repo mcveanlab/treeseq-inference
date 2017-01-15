@@ -1,3 +1,4 @@
+import logging
 import pandas as pd
 import rpy2.robjects as robjects
 from rpy2.robjects.packages import importr
@@ -37,6 +38,8 @@ def get_ARG_metrics(true_nexus_fn, **inferred_nexus_fns):
             try:
                 break_binary_reps = int(metric_params['reps'])
                 seed = metric_params.get('make_bin_seed')
+                logging.debug("calculating tree metrics to compare binarised '{}' vs '{}'.".format(
+                    true_nexus_fn, nexus_files))
                 if seed:
                     m = ARGmetrics.genome.trees.dist.forcebin.b(orig_tree, nexus_files, 
                          replicates = break_binary_reps, seed = int(seed))
@@ -44,8 +47,12 @@ def get_ARG_metrics(true_nexus_fn, **inferred_nexus_fns):
                     m = ARGmetrics.genome.trees.dist.forcebin.b(orig_tree, nexus_files, 
                          replicates = break_binary_reps)
             except:
+                logging.debug("calculating tree metrics to compare '{}' vs '{}'.".format(
+                    true_nexus_fn, nexus_files))
                 m = ARGmetrics.genome_trees_dist(orig_tree, nexus_files)
         else:
+            logging.debug("calculating tree metrics to compare '{}' vs '{}'.".format(
+                true_nexus_fn, nexus_files))
             m = ARGmetrics.genome_trees_dist_multi(orig_tree, nexus_files, weights=weights)
         metrics[tool]=dict(zip(m.names, tuple(m)))
     return metrics
