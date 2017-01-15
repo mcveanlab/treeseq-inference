@@ -492,7 +492,7 @@ class NumRecordsBySampleSizeDataset(Dataset):
                 elif tool == 'fastARG':
                     infile = err_fn + ".hap"
                     out_fn = construct_fastarg_name(err_fn, d.seed)
-                    logging.info("generating fastARG inference for mutation_rate = {}".format(d.sample_size))
+                    logging.info("generating fastARG inference for n = {}".format(d.sample_size))
                     logging.debug("reading: {} for msprime inference".format(infile))
                     inferred_ts, time, memory = self.run_fastarg(infile, d.seed)
                 else:
