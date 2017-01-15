@@ -66,7 +66,7 @@ def variant_matrix_to_ARGweaver_in(var_matrix, var_positions, ARGweaver_filehand
     """
     To Do
     """
-    pass
+    assert len(var_matrix)==len(var_positions)
     
 def run_ARGweaver(Ne, mut_rate, recomb_rate, executable, ARGweaver_in, ARGweaver_out_dir=None, out_prefix="aw", seed=None, iterations=None, sample_step=None, status_to=sys.stdout, quiet=False, rand_seed=None):
     """

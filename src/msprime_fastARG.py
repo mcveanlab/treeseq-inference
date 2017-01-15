@@ -25,6 +25,7 @@ def msprime_to_fastARG_in(ts, fastARG_filehandle):
     fastARG_filehandle.flush()
 
 def variant_matrix_to_fastARG_in(var_matrix, var_positions, fastARG_filehandle):
+    assert len(var_matrix)==len(var_positions)
     for pos, row in zip(var_positions, var_matrix):
         print(pos, "".join((str(v) for v in row)), sep="\t", file=fastARG_filehandle)
     fastARG_filehandle.flush()
