@@ -75,7 +75,7 @@ genome.trees.dist <- function(treeseq.a, treeseq.b, output.full.table = FALSE, a
             break
         }
         rgt <- brk$values[0:1]
-        RFrooted <- RFunrooted <- wRFrooted <- wRFunrooted <- SPR.unrooted  <- pathunrooted <- NA
+        RFrooted <- RFunrooted <- wRFrooted <- wRFunrooted <- SPRunrooted  <- pathunrooted <- NA
         tryCatch({RFrooted <- RF.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]], rooted=TRUE)}, 
                  error=function(e){})
         tryCatch({RFunrooted <- RF.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]], rooted=FALSE)},
