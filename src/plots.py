@@ -326,14 +326,15 @@ class Dataset(object):
             err_filename = add_error_param_to_name(fname, error_rate)
             logging.debug("writing variant matrix to {}.npy for msinfer".format(err_filename))
             np.save(err_filename+".npy", S)
-
-            pos = (v.position for v in ts.variants())
+            #TO DO - here we are just rounding the position to the nearest int, which risks having the same 
+            #position for multiple variants
+            pos = [float(round(v.position)) for v in ts.variants()]
             logging.debug("writing variant matrix to {}.hap for fastARG".format(err_filename))
             with open(err_filename+".hap", "w+") as fastarg_in:
-                msprime_fastARG.variant_matrix_to_fastARG_in(S, pos, fastarg_in)
+                msprime_fastARG.variant_matrix_to_fastARG_in(np.transpose(S), pos, fastarg_in)
             logging.debug("writing variant matrix to {}.sites for ARGweaver".format(err_filename))
             with open(err_filename+".sites", "w+") as argweaver_in:
-                msprime_ARGweaver.variant_matrix_to_ARGweaver_in(S, pos, argweaver_in)
+                msprime_ARGweaver.variant_matrix_to_ARGweaver_in(np.transpose(S), pos, argweaver_in)
 
     @staticmethod
     def run_tsinf(S, rho):
@@ -361,7 +362,12 @@ class Dataset(object):
                     fa_out, var_pos, tree, muts, status_to=None)
             inferred_ts = msprime_fastARG.msprime_txts_to_fastARG_in_revised(
                     tree, muts, root_seq, fa_revised, simplify=True, status_to=None)
-            assert filecmp.cmp(file_name, fa_revised.name, shallow=False)
+            try:
+                assert filecmp.cmp(file_name, fa_revised.name, shallow=False), "{} and {} differ".format(file_name, fa_revised.name)
+            except AssertionError:
+                print("File '{}' copied to 'bad.hap' for debugging".format(fa_revised.name), file=sys.stderr)
+                shutil.copyfile(fa_revised.name, os.path.join('bad.hap'))
+                raise
             return inferred_ts, cpu_time, memory_use
 
     @staticmethod
@@ -463,8 +469,8 @@ class NumRecordsBySampleSizeDataset(Dataset):
         and fire up another instance in which we run 'process()'.
 
         """
-        results = ['source_records','inferred_records','cpu_time','memory']
-        tool_cols = {t:["-".join([t,rc]) for rc in results] for t in self.tools}
+        results = ['sourceNrecords','inferredNrecords','CPUtime','memory']
+        tool_cols = {t:["_".join([t,rc]) for rc in results] for t in self.tools}
         for tool in self.tools:
             add_columns(self.data, tool_cols[tool])
         for i in self.data.index:
@@ -486,7 +492,7 @@ class NumRecordsBySampleSizeDataset(Dataset):
                 elif tool == 'fastARG':
                     infile = err_fn + ".hap"
                     out_fn = construct_fastarg_name(err_fn, d.seed)
-                    logging.info("generating fastARG inference for n = {}".format(d.sample_size))
+                    logging.info("generating fastARG inference for mutation_rate = {}".format(d.sample_size))
                     logging.debug("reading: {} for msprime inference".format(infile))
                     inferred_ts, time, memory = self.run_fastarg(infile, d.seed)
                 else:
@@ -519,15 +525,19 @@ class MetricsByMutationRateDataset(Dataset):
         if self.data is None: #need to create the data file
             #set up a pd Data Frame containing all the params
             params = collections.OrderedDict()
-            params['sample_size']       = 12,
-            params['Ne']                 = 5000,
-            params['length']             = 50000,
-            params['recombination_rate'] = 2.5e-8,
-            params['mutation_rate']      = 1.5e-7, #np.linspace(1.5e-8, 500, num=10)
-            params['replicate']         = np.arange(int(setup_params['reps']))
+            params['sample_size']         = 12,
+            params['Ne']                  = 5000,
+            params['length']              = 50000,
+            params['recombination_rate']  = 2.5e-8,
+            params['mutation_rate']       = np.logspace(-8, -5, num=10)[2:5] * 1.5
+            params['replicate']           = np.arange(int(setup_params['reps']))
             sim_params = list(params.keys())
             #now add some other params, where multiple vals exists for one simulation
-            params['error_rate']         = 0, #[0, 0.01, 0.1]
+            params['error_rate']          = 0, #[0, 0.01, 0.1]
+            #RNG seed used in inference methods - will be filled out in the generate() step
+            params['inference_seed']      = np.nan,
+            #number of polytomy breaking replicates when forcing strict bifurcating (binary) trees
+            params['msinfer_biforce_reps']= 20, 
     
             #all combinations of params in a DataFrame
             self.data = expand_grid(params)
@@ -567,12 +577,12 @@ class MetricsByMutationRateDataset(Dataset):
         and fire up another instance in which we run 'process()'.
 
         """
-        results = ['cpu_time','memory']
-        tool_cols = {t:["-".join([t,rc]) for rc in results] for t in self.tools}
+        results = ['CPUtime','memory']
+        tool_cols = {t:["_".join([t,rc]) for rc in results] for t in self.tools}
         #we need to store more information in the case of ARGweaver, since each ARGweaver
         #run produces a whole set of iterations. We join these together in a single column
         if "ARGweaver" in tool_cols:
-            tool_cols["ARGweaver"].append("ARGweaver-iterations")
+            tool_cols["ARGweaver"].append("ARGweaver_iterations")
         for tool in self.tools:
             add_columns(self.data, tool_cols[tool])
 
@@ -581,37 +591,40 @@ class MetricsByMutationRateDataset(Dataset):
             sim_fn = msprime_name(d.sample_size, d.Ne, d.length, d.recombination_rate,
                                   d.mutation_rate, d.seed, d.seed, self.simulations_dir)
             err_fn = add_error_param_to_name(sim_fn, d.error_rate)
+            inference_seed = d.seed + i
+            self.data.loc[i, 'inference_seed'] = inference_seed
             for tool, result_cols in tool_cols.items():
                 if tool == 'msinfer':
                     infile = err_fn + ".npy"
                     out_fn = construct_msinfer_name(err_fn)
-                    logging.info("generating msinfer inference for n = {}".format(d.sample_size))
+                    logging.info("generating msinfer inference for mu = {}".format(d.mutation_rate))
                     logging.debug("reading: {} for msprime inference".format(infile))
                     S = np.load(infile)
+                    logging.debug("(variant matrix size {})".format("x".join([str(x) for x in S.shape])))
                     inferred_ts, time, memory = self.run_tsinf(S, 4*d.recombination_rate*d.Ne)
                     with open(out_fn +".nex", "w+") as out:
                         inferred_ts.write_nexus_trees(out)
                     self.data.loc[i, result_cols] = (time, memory)
                 elif tool == 'fastARG':
                     infile = err_fn + ".hap"
-                    out_fn = construct_fastarg_name(err_fn, d.seed)
-                    logging.info("generating fastARG inference for n = {}".format(d.sample_size))
+                    out_fn = construct_fastarg_name(err_fn, inference_seed)
+                    logging.info("generating fastARG inference for mu = {}".format(d.mutation_rate))
                     logging.debug("reading: {} for fastARG inference".format(infile))
-                    inferred_ts, time, memory = self.run_fastarg(infile, d.seed)
+                    inferred_ts, time, memory = self.run_fastarg(infile, inference_seed)
                     with open(out_fn +".nex", "w+") as out:
                         inferred_ts.write_nexus_trees(out)
                     self.data.loc[i, result_cols] = (time, memory)
                 elif tool == 'ARGweaver':
                     infile = err_fn + ".sites"
-                    out_fn = construct_argweaver_name(err_fn, d.seed)
-                    logging.info("generating ARGweaver inference for n = {}".format(d.sample_size))
+                    out_fn = construct_argweaver_name(err_fn, inference_seed)
+                    logging.info("generating ARGweaver inference for mu = {}".format(d.mutation_rate))
                     logging.debug("reading: {} for ARGweaver inference".format(infile))
                     iteration_ids, stats_file, time, memory = self.run_argweaver(infile, d.Ne, 
-                        d.recombination_rate, d.mutation_rate, out_fn, d.seed)
+                        d.recombination_rate, d.mutation_rate, out_fn, inference_seed)
                     print(iteration_ids)
                     #now must convert all of the .smc files to .nex format
                     for it in iteration_ids:
-                        base = construct_argweaver_name(err_fn, d.seed, it)
+                        base = construct_argweaver_name(err_fn, inference_seed, it)
                         with open(base+".nex", "w+") as out:
                             msprime_ARGweaver.ARGweaver_smc_to_nexus(base+".smc", out, zero_based_tip_numbers=False)
                     self.data.loc[i, result_cols] = (time, memory, ",".join(iteration_ids))
@@ -624,24 +637,40 @@ class MetricsByMutationRateDataset(Dataset):
     def process(self):
         """
         Extracts metrics from the .nex files using R, and saves the results
+        in the csv file under fastARG_RFunrooted, etc etc.
+        The msinfer routine has two possible sets of stats: for nonbinary trees
+        and for randomly resolved strictly bifurcating trees (with a random seed given)
+        These are stored in 'msipoly_RFunrooted' and 
+        'msibifu_RFunrooted', and the random seed used (as passed to R via
+        genome_trees_dist_forcebin_b) is stored in 'msibifu_seed'
         """
+        
         for i in self.data.index:
             d = self.data.iloc[i]
             sim_fn=msprime_name(d.sample_size, d.Ne, d.length, d.recombination_rate,
                                 d.mutation_rate, d.seed, d.seed, self.simulations_dir)
             err_fn=add_error_param_to_name(sim_fn, d.error_rate)
+            polytomy_resolution_seed = d.inference_seed #hack: use same seed as in inference step
             toolfiles = {
-                "fastARG":construct_fastarg_name(err_fn, d.seed)+".nex",
-                #"ARGweaver":[construct_argweaver_name(err_fn, d.seed, it)+".nex" \
-                #for it in d['ARGweaver-iterations'].split(",")],
-                "msinfer":construct_msinfer_name(err_fn)+".nex"
+                "fastARG":construct_fastarg_name(err_fn, d.inference_seed)+".nex",
+                #"ARGweaver":{'nexus':construct_argweaver_name(err_fn, d.inference_seed, it)+".nex" \
+                #for it in d['ARGweaver-iterations'].split(",")]},
+                "MSIpoly":construct_msinfer_name(err_fn)+".nex",
+                #"MSIbifu":{'nexus':construct_msinfer_name(err_fn)+".nex",
+                #           'reps':d.msinfer_biforce_reps,
+                #           'seed':polytomy_resolution_seed}
             }
-            toolfiles = {k:v for k,v in toolfiles.items() if k in self.tools}
-            ARG_metrics.get_ARG_metrics(sim_fn + ".nex", **toolfiles)
-
-            #Now add the metrics to the data file
-            #add_columns(self.data, )
-        self.data.to_csv(self.data_file)        
+            m = ARG_metrics.get_ARG_metrics(sim_fn + ".nex", **toolfiles)
+            print(m)
+            self.data.loc[i,"MSIbifu_seed"] = polytomy_resolution_seed
+            #Now add all the metrics to the data file
+            for prefix, metrics in m.items():
+                colnames = ["_".join([prefix,k]) for k in sorted(metrics.keys())]
+                add_columns(self.data, colnames)
+                self.data.loc[i, colnames] = metrics.values()
+                
+             # Save each row so we can use the information while it's being built
+            self.data.to_csv(self.data_file)
 
 def run_setup(cls, extra_args):
     set_args = {k:v for k,v in extra_args.items() if v is not None}
