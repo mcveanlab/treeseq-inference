@@ -327,7 +327,8 @@ class Dataset(object):
             logging.debug("writing variant matrix to {}.npy for msinfer".format(err_filename))
             np.save(err_filename+".npy", S)
             #TO DO - here we are just rounding the position to the nearest int, which risks having the same 
-            #position for multiple variants
+            #position for multiple variants. This will cause the generate step to bomb out
+            #pos = [v.position for v in ts.variants()]
             pos = [float(round(v.position)) for v in ts.variants()]
             logging.debug("writing variant matrix to {}.hap for fastARG".format(err_filename))
             with open(err_filename+".hap", "w+") as fastarg_in:
@@ -424,7 +425,7 @@ class NumRecordsBySampleSizeDataset(Dataset):
             params['replicate']         = np.arange(int(setup_params['reps']))
             sim_params = list(params.keys())
             #now add some other params, where multiple vals exists for one simulation
-            params['error_rate']         = [0, 0.01, 0.1]
+            params['error_rate']         = [0, 0.1, 0.01]
     
             #all combinations of params in a DataFrame
             self.data = expand_grid(params)
@@ -484,7 +485,8 @@ class NumRecordsBySampleSizeDataset(Dataset):
                 if tool == 'msinfer':
                     infile = err_fn + ".npy"
                     out_fn = construct_msinfer_name(err_fn)
-                    logging.info("generating msinfer inference for n = {}".format(d.sample_size))
+                    logging.info("generating msinfer inference for n = {}, err = {}".format(
+                        d.sample_size, d.error_rate))
                     logging.debug("reading: {} for msprime inference".format(infile))
                     S = np.load(infile)
                     assert S.shape == (ts.sample_size, ts.num_mutations)
@@ -492,7 +494,8 @@ class NumRecordsBySampleSizeDataset(Dataset):
                 elif tool == 'fastARG':
                     infile = err_fn + ".hap"
                     out_fn = construct_fastarg_name(err_fn, d.seed)
-                    logging.info("generating fastARG inference for n = {}".format(d.sample_size))
+                    logging.info("generating fastARG inference for n = {}, err = {}".format(
+                        d.sample_size, d.error_rate))
                     logging.debug("reading: {} for msprime inference".format(infile))
                     inferred_ts, time, memory = self.run_fastarg(infile, d.seed)
                 else:
