@@ -26,25 +26,26 @@ def get_ARG_metrics(true_nexus_fn, **inferred_nexus_fns):
     # load the true_nexus into the R session
     orig_tree = ARGmetrics.new_read_nexus(true_nexus_fn)
     weights = 1
-    metrics={}
-    for tool, nexus_files in inferred_nexus_fns.items():
+    metrics ={}
+    for tool, metric_params in inferred_nexus_fns.items():
         try:
-            nexus = nexus_files['nexus']
-            weights = nexus_files.get('weights') or 1
+            nexus_files = metric_params['nexus']
+            weights = metric_params('weights') or 1
         except:
-            nexus = nexus_files
-        if isinstance(nexus, str):
+            nexus_files = metric_params
+        if isinstance(nexus_files, str):
             try:
-                break_binary_reps = int(nexus_files['reps'])
-                seed = nexus_files.get('make_bin_seed')
+                break_binary_reps = int(metric_params['reps'])
+                seed = metric_params.get('make_bin_seed')
                 if seed:
-                    m = ARGmetrics.genome.trees.dist.forcebin.b(orig_tree, nexus, 
+                    m = ARGmetrics.genome.trees.dist.forcebin.b(orig_tree, nexus_files, 
                          replicates = break_binary_reps, seed = int(seed))
                 else:
-                    m = ARGmetrics.genome.trees.dist.forcebin.b(orig_tree, nexus, 
+                    m = ARGmetrics.genome.trees.dist.forcebin.b(orig_tree, nexus_files, 
                          replicates = break_binary_reps)
             except:
-                m = ARGmetrics.genome_trees_dist(orig_tree, nexus)
+                m = ARGmetrics.genome_trees_dist(orig_tree, nexus_files)
         else:
-            m = ARGmetrics.genome_trees_dist_multi(orig_tree, nexus, weights=weights, randomly_resolve_polytomies)
-        metrics[tool]=pd.DataFrame(data=[tuple(m)], columns=m.names)
+            m = ARGmetrics.genome_trees_dist_multi(orig_tree, nexus_files, weights=weights)
+        metrics[tool]=dict(zip(m.names, tuple(m)))
+    return metrics
