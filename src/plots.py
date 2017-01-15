@@ -9,6 +9,7 @@ import os.path
 import shutil
 import sys
 import time
+import glob
 import collections
 import itertools
 import tempfile
@@ -131,15 +132,19 @@ def construct_fastarg_name(sim_name, seed, directory=None):
     d,f = os.path.split(sim_name)
     return os.path.join(d,'+'.join(['fastarg', f, "fs"+str(seed)]))
 
-def construct_argweaver_name(sim_name, seed):
+def construct_argweaver_name(sim_name, seed, iteration=None):
     """
     Returns an ARGweaver inference filename (without file extension),
     based on a simulation name. The iteration number (used in .smc and .nex output)
-    is not added here, but is added instead by the ARGweaver `arg-sample` program,
-    in the format .10, .20, etc.
+    is usually added by the ARGweaver `arg-sample` program,
+    in the format .10, .20, etc. (we append an 'i' too, giving
+    'i.10', 'i.100', etc
     """
     d,f = os.path.split(sim_name)
-    return os.path.join(d,'+'.join(['aweaver', f, "ws"+str(seed)]))
+    suffix = "ws"+str(seed)
+    if iteration is not None:
+        suffix += "_"+iteration
+    return os.path.join(d,'+'.join(['aweaver', f, suffix]))
 
 def construct_msinfer_name(sim_name):
     """
@@ -150,20 +155,36 @@ def construct_msinfer_name(sim_name):
     d,f = os.path.split(sim_name)
     return os.path.join(d,'+'.join(['msinfer', f, ""]))
 
+def get_seeds(n, seed=123, upper=1e7):
+    """
+    returns a set of n unique seeds suitable for seeding RNGs
+    """
+    np.random.seed()
+    seeds = np.random.randint(upper, size=n)
+    seeds = np.unique(seeds)
+    while len(seeds) != n:
+        seeds = np.append(np.random.randint(upper,size = n-len(seeds)))
+        seeds = np.unique(seeds)
+    return seeds
 
 def time_cmd(cmd, stdout):
     """
     Runs the specified command line (a list suitable for subprocess.call)
     and writes the stdout to the specified file object.
     """
-    full_cmd = ["/usr/bin/time", "-f%M %S %U"] + cmd
+    if sys.platform == 'darwin':
+        #on OS X, install gtime using `brew install gnu-time`
+        time_cmd = "/usr/local/bin/gtime"
+    else:
+        time_cmd = "/usr/bin/time"
+    full_cmd = [time_cmd, "-f%M %S %U"] + cmd
     with tempfile.TemporaryFile() as stderr:
         exit_status = subprocess.call(full_cmd, stderr=stderr, stdout=stdout)
         stderr.seek(0)
         if exit_status != 0:
             raise ValueError(
                 "Error running '{}': status={}:stderr{}".format(
-                    cmd, exit_status, stderr.read()))
+                    " ".join(cmd), exit_status, stderr.read()))
 
         split = stderr.readlines()[-1].split()
         # From the time man page:
@@ -208,21 +229,59 @@ class Dataset(object):
 
     data_dir = "data"
 
-    def __init__(self, seed):
+    def __init__(self, data_file=None, reps=None, seed=None):
         """
-        If we initialize a dataset with the same seed, it should exactly
-        duplicate the previous set of simulations (overwriting the old files)
+        Creates initial names for a data file & data dir.
+        
+        A data_file can be passed which should contain a '+'
+        followed by param1=value1_param2=value2, etc.
+        Otherwise, parameters should be passed as **params
+        
+        If data file already exists, read it in to self.data,
+        otherwise set self.data to None, which flags up that 
+        we need to generate one.
+        
+        Return dict of params (either as set or from the data file name)
+        """
+        if data_file is None and reps is None and seed is None:
+            # look for an existing data file in the data_dir
+            potential_data_files = glob.glob(os.path.join(self.data_dir,"{}+*.csv".format(self.name)))
+            try:
+                data_file = potential_data_files[0]
+                if len(potential_data_files) > 2:
+                    #should probably pick most recent here
+                    logging.info("More than one data file for {}. Picking {}".format(self.name, data_file))
+            except:
+                sys.exit("No data file found, and no parameters specified")
+                
+        if data_file is not None:
+            self.data = pd.read_csv(data_file)
+            assert data_file.endswith(".csv")
+            assert data_file.rfind("+") != -1
+            #extract params from the filename
+            param_string = data_file[(data_file.rfind("+")+1):-4]
+            run_params = {p.split("=",1)[0]:p.split("=",1)[1] for p in param_string.split("_")}
+        else:
+            self.data = None
+            run_params = {'reps':reps, 'seed':seed}
 
-        If we initialize a dataset with a different seed, it should create a new
-        set of files which re-run the simulations w/ different throws of the dice.
-        """
-        self.instance = seed
+        self.run_id = "_".join([k+"="+str(run_params[k]) for k in sorted(run_params.keys())])
         self.data_file = os.path.abspath(os.path.join(self.data_dir,
-            "{}_{}.csv".format(self.name, self.instance)))
-        self.raw_data_dir = os.path.join(self.data_dir, "raw__NOBACKUP__", self.name, str(self.instance))
+            "{}+{}.csv".format(self.name, self.run_id)))
+            
+        self.raw_data_dir = os.path.join(self.data_dir, "raw__NOBACKUP__", self.name, str(self.run_id))
         if not os.path.exists(self.raw_data_dir):
             logging.info("Making raw data dir {}".format(self.raw_data_dir))
         os.makedirs(self.raw_data_dir, exist_ok=True)
+
+        return(run_params)
+
+    @staticmethod
+    def set_default_run_params(param_dict, default_dict):
+        for key, val in default_dict.items():
+            if key in param_dict and param_dict[key] is None:
+                param_dict[key] = val
+
 
     def setup(self):
         """
@@ -241,18 +300,6 @@ class Dataset(object):
         processes the inferred ARGs
         """
         raise NotImplementedError()
-
-    def get_seeds(self, n, upper=1e7):
-        """
-        returns a set of n unique seeds suitable for seeding RNGs
-        """
-        np.random.seed(self.instance)
-        seeds = np.random.randint(upper, size=n)
-        seeds = np.unique(seeds)
-        while len(seeds) != n:
-            seeds = np.append(np.random.randint(upper,size = n-len(seeds)))
-            seeds = np.unique(seeds)
-        return seeds
 
     def single_simulation(self, n, Ne, l, rho, mu, seed, mut_seed=None, subsample=None):
         """
@@ -284,6 +331,7 @@ class Dataset(object):
     def save_variant_matrices(ts, fname, error_rates):
         for error_rate in error_rates:
             S = generate_samples(ts, error_rate)
+            print(S)
             err_filename = add_error_param_to_name(fname, error_rate)
             logging.debug("writing variant matrix to {}.npy for msinfer".format(err_filename))
             np.save(err_filename+".npy", S)
@@ -329,7 +377,7 @@ class Dataset(object):
     def run_argweaver(sites_file, Ne, recombination_rate, mutation_rate, path_prefix, seed):
         """
         this produces a whole load of .smc files labelled <path_prefix>i.0.smc, <path_prefix>i.10.smc, etc.
-        these filenames are returned by this function
+        the iteration numbers ('i.0', 'i.10', etc) are returned by this function
         """
         new_prefix = path_prefix + "_i" #we append a '_i' to mark iteration number
         before = time.clock()
@@ -339,15 +387,17 @@ class Dataset(object):
                       executable= ARGweaver_executable,
                       ARGweaver_in=sites_file,
                       rand_seed=seed,
-                      ARGweaver_out_dir=new_prefix)
+                      out_prefix=new_prefix)
         cpu_time = time.clock() - before
         memory_use = 0 #To DO
-        new_files = glob.glob(new_prefix + "*" + ".smc")
+        #here we need to look for the .smc files output by argweaver
+        iterations = [f[len(new_prefix):-4] for f in glob.glob(new_prefix + "*" + ".smc")]
         new_stats_file_name = path_prefix+".stats"
         os.rename(new_prefix + ".stats", new_stats_file_name)
         #cannot translate these to msprime ts objects, as smc2arg does not work
         #see https://github.com/mdrasmus/argweaver/issues/20
-        return new_files, new_stats_file_name, cpu_time, memory_use
+        print(iterations)
+        return iterations, new_stats_file_name, cpu_time, memory_use
 
     @staticmethod
     def ARG_metrics(true_nexus_fn, **inferred_nexus_fns):
@@ -363,9 +413,9 @@ class Dataset(object):
         """
         #make sure that the
         # load the true_nexus into the R session
-        orig_tree = ARGmetrics.new_read_nexus(true_nexus)
+        orig_tree = ARGmetrics.new_read_nexus(true_nexus_fn)
         metrics={}
-        for tool, nexus_files in inferred_nexus_fns:
+        for tool, nexus_files in inferred_nexus_fns.items():
             if isinstance(nexus_files, str):
                 m = ARGmetrics.genome_trees_dist(orig_tree, nexus_files)
             else:
@@ -378,33 +428,38 @@ class NumRecordsBySampleSizeDataset(Dataset):
     and FastARG for various sample sizes, under 3 different error rates
     """
     name = "num_records_by_sample_size"
+    tools = ["fastARG", "msinfer"]
 
-    def __init__(self, seed=123, replicates=10):
+    def __init__(self, **params):
         """
         Everything is done via a Data Frame which contains the initial params and is then used to
         store the output values.
         """
-        super().__init__(seed)
+        self.set_default_run_params(params, {'seed':123, 'reps':10})
+        setup_params = super().__init__(**params)
         self.simulations_dir = os.path.join(self.raw_data_dir, "simulations")
-
-        #set up a pd Data Frame containing all the params
-        params = collections.OrderedDict()
-        params['sample_size']       = np.linspace(10, 500, num=10).astype(int)
-        params['Ne']                 = 5000,
-        params['length']             = 50000,
-        params['recombination_rate'] = 2.5e-8,
-        params['mutation_rate']      = 1.5e-8,
-        params['replicate']         = np.arange(replicates)
-        sim_params = list(params.keys())
-        #now add some other params, where multiple vals exists for one simulation
-        params['error_rate']         = [0, 0.01, 0.1]
-
-        #all combinations of params in a DataFrame
-        self.data = expand_grid(params)
-        #assign a unique index for each simulation
-        self.data['sim'] = pd.Categorical(self.data[sim_params].astype(str).apply("".join, 1)).codes
-        #set unique seeds for each sim
-        self.data['seed'] = self.get_seeds(max(self.data.sim)+1)[self.data.sim]
+        self.seed=int(setup_params['seed'])
+        if self.data is None: #need to create the data file
+            #set up a pd Data Frame containing all the sim params
+            params = collections.OrderedDict()
+            params['sample_size']       = np.linspace(10, 500, num=10).astype(int)
+            params['Ne']                 = 5000,
+            params['length']             = 50000,
+            params['recombination_rate'] = 2.5e-8,
+            params['mutation_rate']      = 1.5e-8,
+            params['replicate']         = np.arange(int(self.setup_params['reps']))
+            sim_params = list(params.keys())
+            #now add some other params, where multiple vals exists for one simulation
+            params['error_rate']         = [0, 0.01, 0.1]
+    
+            #all combinations of params in a DataFrame
+            self.data = expand_grid(params)
+            #assign a unique index for each simulation
+            self.data['sim'] = pd.Categorical(self.data[sim_params].astype(str).apply("".join, 1)).codes
+            #set unique seeds for each sim
+            self.data['seed'] = get_seeds(max(self.data.sim)+1, self.seed)[self.data.sim]
+            #now save it for future ref
+            self.data.to_csv(self.data_file)
 
     def setup(self):
         """
@@ -441,9 +496,8 @@ class NumRecordsBySampleSizeDataset(Dataset):
 
         """
         results = ['source_records','inferred_records','cpu_time','memory']
-        tools = ["fastARG", "msinfer"]
-        tool_cols = {t:["-".join([t,rc]) for rc in results] for t in tools}
-        for tool in tools:
+        tool_cols = {t:["-".join([t,rc]) for rc in results] for t in self.tools}
+        for tool in self.tools:
             add_columns(self.data, tool_cols[tool])
         for i in self.data.index:
             d = self.data.iloc[i]
@@ -483,34 +537,38 @@ class MetricsByMutationRateDataset(Dataset):
     tending to fully accurate as mutation rate increases
     """
     name = "metrics_by_mutation_rate"
-    tools = ["fastARG","ARGweaver"]
+    tools = ["fastARG","msinfer"]
 
-    def __init__(self, seed=111):
+    def __init__(self, **params):
         """
-        Everything is done via a Data Frame which contains the initial params and is then used to
-        store the output values.
+        Everything is done via a Data Frame which contains the initial params and is 
+        then used to store the output values.
         """
-        super().__init__(seed)
+        self.set_default_run_params(params, {'seed':13, 'reps':10})
+        setup_params = super().__init__(**params)
         self.simulations_dir = os.path.join(self.raw_data_dir, "simulations")
-
-        #set up a pd Data Frame containing all the params
-        params = collections.OrderedDict()
-        params['sample_size']       = 12,
-        params['Ne']                 = 5000,
-        params['length']             = 50000,
-        params['recombination_rate'] = 2.5e-8,
-        params['mutation_rate']      = 1.5e-7, #np.linspace(1.5e-8, 500, num=10)
-        params['replicate']         = 2, #np.arange(100)
-        sim_params = list(params.keys())
-        #now add some other params, where multiple vals exists for one simulation
-        params['error_rate']         = 0, #[0, 0.01, 0.1]
-
-        #all combinations of params in a DataFrame
-        self.data = expand_grid(params)
-        #assign a unique index for each simulation
-        self.data['sim'] = pd.Categorical(self.data[sim_params].astype(str).apply("".join, 1)).codes
-        #set unique seeds for each sim
-        self.data['seed'] = self.get_seeds(max(self.data.sim)+1)[self.data.sim]
+        self.seed=int(setup_params['seed'])
+        if self.data is None: #need to create the data file
+            #set up a pd Data Frame containing all the params
+            params = collections.OrderedDict()
+            params['sample_size']       = 12,
+            params['Ne']                 = 5000,
+            params['length']             = 50000,
+            params['recombination_rate'] = 2.5e-8,
+            params['mutation_rate']      = 1.5e-7, #np.linspace(1.5e-8, 500, num=10)
+            params['replicate']         = np.arange(int(setup_params['reps']))
+            sim_params = list(params.keys())
+            #now add some other params, where multiple vals exists for one simulation
+            params['error_rate']         = 0, #[0, 0.01, 0.1]
+    
+            #all combinations of params in a DataFrame
+            self.data = expand_grid(params)
+            #assign a unique index for each simulation
+            self.data['sim'] = pd.Categorical(self.data[sim_params].astype(str).apply("".join, 1)).codes
+            #set unique seeds for each sim
+            self.data['seed'] = get_seeds(max(self.data.sim)+1, self.seed)[self.data.sim]
+            #now save it for future ref
+            self.data.to_csv(self.data_file)
 
     def setup(self):
         # clear out any old simulations to avoid confusion.
@@ -542,14 +600,13 @@ class MetricsByMutationRateDataset(Dataset):
 
         """
         results = ['cpu_time','memory']
-        tool_cols = {t:["-".join([t,rc]) for rc in results] for t in tools}
-        for tool in tools:
+        tool_cols = {t:["-".join([t,rc]) for rc in results] for t in self.tools}
+        #we need to store more information in the case of ARGweaver, since each ARGweaver
+        #run produces a whole set of iterations. We join these together in a single column
+        if "ARGweaver" in tool_cols:
+            tool_cols["ARGweaver"].append("ARGweaver-iterations")
+        for tool in self.tools:
             add_columns(self.data, tool_cols[tool])
-            if tool == "ARGweaver":
-                #we need to store more information in the case of ARGweaver, since
-                #each ARGweaver inference run produces a whole set of results
-                #here we just store the iteration numbers, joined together in a single column
-                add_columns(self.data, ["ARGweaver-iterations"])
 
         for i in self.data.index:
             d = self.data.iloc[i]
@@ -566,26 +623,30 @@ class MetricsByMutationRateDataset(Dataset):
                     inferred_ts, time, memory = self.run_tsinf(S, 4*d.recombination_rate*d.Ne)
                     with open(out_fn +".nex", "w+") as out:
                         inferred_ts.write_nexus_trees(out)
+                    self.data.loc[i, result_cols] = (time, memory)
                 elif tool == 'fastARG':
                     infile = err_fn + ".hap"
                     out_fn = construct_fastarg_name(err_fn, d.seed)
                     logging.info("processing fastARG inference for n = {}".format(d.sample_size))
                     logging.debug("reading: {} for msprime inference".format(infile))
-                    inferred_ts, time, memory = self.run_fastarg(infile)
+                    inferred_ts, time, memory = self.run_fastarg(infile, d.seed)
                     with open(out_fn +".nex", "w+") as out:
                         inferred_ts.write_nexus_trees(out)
+                    self.data.loc[i, result_cols] = (time, memory)
                 elif tool == 'ARGweaver':
                     infile = err_fn + ".sites"
                     out_fn = construct_argweaver_name(err_fn, d.seed)
-                    smc_files, stats_file, time, memory = self.run_argweaver(infile, d.Ne, 
+                    iteration_ids, stats_file, time, memory = self.run_argweaver(infile, d.Ne, 
                         d.recombination_rate, d.mutation_rate, out_fn, d.seed)
+                    print(iteration_ids)
                     #now must convert all of the .smc files to .nex format
-                    for smc_fn in smc_files:
-                        with open(smc_fn[:-4]+".nex", "w+") as out:
-                            msprime_ARGweaver.ARGweaver_smc_to_nexus(smc_fn, out, zero_based_tip_numbers=False)
+                    for it in iteration_ids:
+                        base = construct_argweaver_name(err_fn, d.seed, it)
+                        with open(base+".nex", "w+") as out:
+                            msprime_ARGweaver.ARGweaver_smc_to_nexus(base+".smc", out, zero_based_tip_numbers=False)
+                    self.data.loc[i, result_cols] = (time, memory, ",".join(iteration_ids))
                 else:
                     raise KeyError
-                self.data.loc[i, result_cols] = (time, memory)
 
             # Save each row so we can use the information while it's being built
             self.data.to_csv(self.data_file)
@@ -599,31 +660,44 @@ class MetricsByMutationRateDataset(Dataset):
             sim_fn=msprime_name(d.sample_size, d.Ne, d.length, d.recombination_rate,
                                 d.mutation_rate, d.seed, d.seed, self.simulations_dir)
             err_fn=add_error_param_to_name(sim_fn, d.error_rate)
-        ARG_metrics(sim_fn + ".nex", fastARG=
+            toolfiles = {
+                "fastARG":construct_fastarg_name(err_fn, d.seed)+".nex",
+                #"ARGweaver":[construct_argweaver_name(err_fn, d.seed, it)+".nex" \
+                #for it in d['ARGweaver-iterations'].split(",")],
+                "msinfer":construct_msinfer_name(err_fn)+".nex"
+            }
+            toolfiles = {k:v for k,v in toolfiles.items() if k in self.tools}
+            self.ARG_metrics(sim_fn + ".nex", **toolfiles)
 
-        add_columns(self.data, )
-        
+            #Now add the metrics to the data file
+            #add_columns(self.data, )
+        self.data.to_csv(self.data_file)        
 
 def run_setup(cls, extra_args):
-    logging.info("Setting up base data for {}{}".format(cls.name,
-        " with extra arguments {}".format(extra_args) if extra_args else ""))
+    set_args = {k:v for k,v in extra_args.items() if v is not None}
+    set_text = " with extra arguments {}".format(set_args) if set_args else ""
+    logging.info("Setting up base data for {}{}".format(cls.name, set_text))
     f = cls(**extra_args)
     f.setup()
 
 def run_generate(cls, extra_args):
+    set_args = {k:v for k,v in extra_args.items() if v is not None}
+    set_text = " from {}".format(set_args) if set_args else ""
     logging.info("Generating {}".format(cls.name))
-    f = cls()
+    f = cls(**extra_args)
     f.generate()
 
 
 def run_process(cls, extra_args):
+    set_args = {k:v for k,v in extra_args.items() if v is not None}
+    set_text = " from {}".format(set_args) if set_args else ""
     logging.info("Processing {}".format(cls.name))
-    f = cls()
+    f = cls(**extra_args)
     f.process()
 
 
 def run_plot(cls, extra_args):
-    f = cls()
+    f = cls(**extra_args)
     f.plot()
 
 
@@ -652,21 +726,28 @@ def main():
         'name', metavar='NAME', type=str, nargs=1,
         help='the dataset identifier')
     subparser.add_argument(
-         '--replicates', '-r', help="number of replicates", type=int)
+         '--reps', '-r', type=int, help="number of replicates")
     subparser.add_argument(
-         '--seed', '-s', help="use a non-default RNG seed", type=int)
+         '--seed', '-s', type=int, help="use a non-default RNG seed")
     subparser.set_defaults(func=run_setup)
 
     subparser = subparsers.add_parser('generate')
     subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
         help='the dataset identifier')
+    subparser.add_argument(
+         '--data_file', '-f', type=str,
+         help="which CSV file to use for existing data, if not the default", )
     subparser.set_defaults(func=run_generate)
+
 
     subparser = subparsers.add_parser('process')
     subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
         help='the dataset identifier')
+    subparser.add_argument(
+         '--data_file', '-f', type=str,
+         help="which CSV file to use for existing data, if not the default")
     subparser.set_defaults(func=run_process)
 
     subparser = subparsers.add_parser('figure')
@@ -685,7 +766,8 @@ def main():
         format='%(asctime)s %(message)s', level=log_level, stream=sys.stdout)
 
     base_args = ['name','verbosity','command','func']
-    extra_args = {k:v for k,v in vars(args).items() if k not in base_args and v is not None}
+    #pass in any extra args to the func, e.g. seed, reps
+    extra_args = {k:v for k,v in vars(args).items() if k not in base_args}
     k = args.name[0]
     if k == "all":
         classes = datasets
