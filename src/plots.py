@@ -331,7 +331,6 @@ class Dataset(object):
     def save_variant_matrices(ts, fname, error_rates):
         for error_rate in error_rates:
             S = generate_samples(ts, error_rate)
-            print(S)
             err_filename = add_error_param_to_name(fname, error_rate)
             logging.debug("writing variant matrix to {}.npy for msinfer".format(err_filename))
             np.save(err_filename+".npy", S)
