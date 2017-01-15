@@ -95,11 +95,11 @@ genome.trees.dist <- function(treeseq.a, treeseq.b, output.full.table = FALSE, a
     if (output.full.table) {
         return(results)
     } else {
-        return(c(RFrooted=weighted.mean(results$RFrooted, (results$rgt-results$lft)),
-                 RFunrooted=weighted.mean(results$RFunrooted, (results$rgt-results$lft)),
-                 wRFrooted=weighted.mean(results$wRFrooted, (results$rgt-results$lft)),
-                 wRFunrooted=weighted.mean(results$wRFunrooted, (results$rgt-results$lft)),
-                 SPRunrooted=weighted.mean(results$SPRunrooted, (results$rgt-results$lft)),
-                 pathunrooted=weighted.mean(results$pathunrooted, (results$rgt-results$lft))))
+        return(c(RFrooted=weighted.mean(results$RFrooted, (results$rgt-results$lft), na.rm = TRUE),
+                 RFunrooted=weighted.mean(results$RFunrooted, (results$rgt-results$lft), na.rm = TRUE),
+                 wRFrooted=weighted.mean(results$wRFrooted, (results$rgt-results$lft), na.rm = TRUE),
+                 wRFunrooted=weighted.mean(results$wRFunrooted, (results$rgt-results$lft), na.rm = TRUE),
+                 SPRunrooted=weighted.mean(results$SPRunrooted, (results$rgt-results$lft), na.rm = TRUE),
+                 pathunrooted=weighted.mean(results$pathunrooted, (results$rgt-results$lft), na.rm = TRUE)))
     }
 }

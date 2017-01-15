@@ -29,6 +29,7 @@ def get_ARG_metrics(true_nexus_fn, **inferred_nexus_fns):
     weights = 1
     metrics ={}
     for tool, metric_params in inferred_nexus_fns.items():
+        logging.info("calculating ARG metrics for {}.".format(tool))
         try:
             nexus_files = metric_params['nexus']
             weights = metric_params('weights') or 1
