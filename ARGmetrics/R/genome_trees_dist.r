@@ -54,8 +54,8 @@ genome.trees.dist <- function(treeseq.a, treeseq.b, output.full.table = FALSE, a
     breaks.table <- by(breaks.table, breaks.table$values, function(x) x) #put identical breakpoints together
     tree.index.counter=c(a=1, b=1) 
     lft <- 0
-    results=data.frame(lft=numeric(), rgt=numeric(), RF.rooted=numeric(), RF.unrooted=numeric(),
-        wRF.rooted=numeric(), wRF.unrooted=numeric(), SPR.unrooted=numeric(), path.unrooted=numeric())
+    results=data.frame(lft=numeric(), rgt=numeric(), RFrooted=numeric(), RFunrooted=numeric(),
+        wRFrooted=numeric(), wRFunrooted=numeric(), SPRunrooted=numeric(), pathunrooted=numeric())
     for (o in order(as.numeric(names(breaks.table)))) {
         brk = breaks.table[[o]]
         if (any(tree.index.counter[brk$ind] > c(length(a),length(b))[brk$ind])) {
@@ -63,31 +63,31 @@ genome.trees.dist <- function(treeseq.a, treeseq.b, output.full.table = FALSE, a
             break
         }
         rgt <- brk$values[0:1]
-        RF.rooted <- RF.unrooted <- wRF.rooted <- wRF.unrooted <- SPR.unrooted  <- path.unrooted <- NA
-        tryCatch({RF.rooted <- RF.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]], rooted=TRUE)}, 
+        RFrooted <- RFunrooted <- wRFrooted <- wRFunrooted <- SPR.unrooted  <- pathunrooted <- NA
+        tryCatch({RFrooted <- RF.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]], rooted=TRUE)}, 
                  error=function(e){})
-        tryCatch({RF.unrooted <- RF.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]], rooted=FALSE)},
+        tryCatch({RFunrooted <- RF.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]], rooted=FALSE)},
                  error=function(e){})
-        tryCatch({wRF.rooted <- wRF.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]], rooted=TRUE)},
+        tryCatch({wRFrooted <- wRF.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]], rooted=TRUE)},
                  error=function(e){})
-        tryCatch({wRF.unrooted <- wRF.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]], rooted=FALSE)},
+        tryCatch({wRFunrooted <- wRF.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]], rooted=FALSE)},
                  error=function(e){})
-        tryCatch({SPR.unrooted <- SPR.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]])},
+        tryCatch({SPRunrooted <- SPR.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]])},
                  error=function(e){})
-        tryCatch({path.unrooted <- path.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]])},
+        tryCatch({pathunrooted <- path.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]])},
                  error=function(e){})
-        results[nrow(results)+1,] <- c(lft,rgt,RF.rooted, RF.unrooted, wRF.rooted, wRF.unrooted, SPR.unrooted, path.unrooted)
+        results[nrow(results)+1,] <- c(lft,rgt,RFrooted, RFunrooted, wRFrooted, wRFunrooted, SPRunrooted, pathunrooted)
         lft <- rgt
         tree.index.counter[brk$ind] <- tree.index.counter[brk$ind] + 1 #NB, brk$ind is a factor with levels (m1,m2), so we hope that m1==1 and m2==2
     }
     if (output.full.table) {
         return(results)
     } else {
-        return(c(RF.rooted=weighted.mean(results$RF.rooted, (results$rgt-results$lft)),
-                 RF.unrooted=weighted.mean(results$RF.unrooted, (results$rgt-results$lft)),
-                 wRF.rooted=weighted.mean(results$wRF.rooted, (results$rgt-results$lft)),
-                 wRF.unrooted=weighted.mean(results$wRF.unrooted, (results$rgt-results$lft)),
-                 SPR.unrooted=weighted.mean(results$SPR.unrooted, (results$rgt-results$lft)),
-                 path.unrooted=weighted.mean(results$path.unrooted, (results$rgt-results$lft))))
+        return(c(RFrooted=weighted.mean(results$RFrooted, (results$rgt-results$lft)),
+                 RFunrooted=weighted.mean(results$RFunrooted, (results$rgt-results$lft)),
+                 wRFrooted=weighted.mean(results$wRFrooted, (results$rgt-results$lft)),
+                 wRFunrooted=weighted.mean(results$wRFunrooted, (results$rgt-results$lft)),
+                 SPRunrooted=weighted.mean(results$SPRunrooted, (results$rgt-results$lft)),
+                 pathunrooted=weighted.mean(results$pathunrooted, (results$rgt-results$lft))))
     }
 }
