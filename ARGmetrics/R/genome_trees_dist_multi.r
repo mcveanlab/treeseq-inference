@@ -9,22 +9,23 @@
 #' measures averaged over all the different tree sequences. Set to 1 for a "standard" unweighted average
 #' @param acceptable.length.diff.pct How much difference in sequence length is allows between the 2 trees? (Default: 0.1 percent)
 #' @param variant.positions A list of positions of each variant (not implemented)
-#' @param randomly.resolve.polytomies Some distance metrics only operate on binary trees. Set this to TRUE to force trees to be binary
-#' by randomly resolving polytomies where necessary. If a number, it is passed to set.seed as a RNG seed.
 #' @export
 #' @examples
 #' genome.trees.dist.multi()
 
-genome.trees.dist.multi <- function(treeseq.base, treeseq.multi, weights=NULL, acceptable.length.diff.pct = 0.1, variant.positions=NULL, randomly.resolve.polytomies=FALSE) { 
+genome.trees.dist.multi <- function(treeseq.base, treeseq.multi, weights=NULL, acceptable.length.diff.pct = 0.1, variant.positions=NULL) { 
     if (class(treeseq.multi) == "multiPhylo") {
         stop("treeseq.multi should contain a *list* of multiPhylo objects, not simply a single multiPhylo object.")
+    }
+    if (randomly.resolve.polytomies != FALSE) {
+        set.seed(randomly.resolve.polytomies)
+        randomly.resolve.polytomies = TRUE
     }
     metrics <- do.call(rbind,lapply(treeseq.multi, 
                                     genome.trees.dist, 
                                     treeseq.base,
                                     acceptable.length.diff.pct = acceptable.length.diff.pct,
-                                    variant.positions = variant.positions,
-                                    randomly.resolve.polytomies = randomly.resolve.polytomies))
+                                    variant.positions = variant.positions))
     if (is.numeric(weights)) {
         return(colSums(metrics * weights)/sum(weights))
     } else {

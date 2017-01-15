@@ -11,34 +11,46 @@
 #' @param acceptable.length.diff.pct How much difference in sequence length is allows between the 2 trees? (Default: 0.1 percent)
 #' @param variant.positions A vector of genome positions of each variant. If given the metric will be 
 #'  calculated for each variant site and averaged over all sites, rather than averaged over every point on the genome (not yet implemented)
-#' @param randomly.resolve.polytomies Some distance metrics only operate on binary trees. Set this to TRUE to force trees to be binary
-#' by randomly resolving polytomies where necessary. If a number, it is passed to set.seed as a RNG seed.
+#' @param randomly.resolve.a Some distance metrics only operate on binary trees. Set this to TRUE to 
+#' force trees in treeseq.a to be binary by randomly resolving polytomies where necessary, using the
+#' multi2di routine in the 'ape' library. If this is a number, it is additionally used as an RNG seed.
+#' @param randomly.resolve.b Some distance metrics only operate on binary trees. Set this to TRUE to 
+#' force trees in treeseq.b to be binary by randomly resolving polytomies where necessary, using the
+#' multi2di routine in the 'ape' library. If this is a number, it is additionally used as an RNG seed.
 #' @export
 #' @examples
 #' genome.trees.dist()
 
-genome.trees.dist <- function(treeseq.a, treeseq.b, output.full.table = FALSE, acceptable.length.diff.pct = 0.1, variant.positions=NULL, randomly.resolve.polytomies=FALSE) { 
+genome.trees.dist <- function(treeseq.a, treeseq.b, output.full.table = FALSE, acceptable.length.diff.pct = 0.1, variant.positions=NULL, randomly.resolve.a=FALSE, randomly.resolve.b=FALSE) { 
     require(ape)
     require(phangorn) #to use the various treedist metrics
 
-    if (randomly.resolve.polytomies) {
+    if (randomly.resolve.a) {
         if (is.numeric(randomly.resolve.polytomies))
             set.seed(randomly.resolve.polytomies)
-        process = multi2di
+        process.a = multi2di
     } else {
-        process = identity
+        process.a = identity
+    }
+
+    if (randomly.resolve.b) {
+        if (is.numeric(randomly.resolve.polytomies))
+            set.seed(randomly.resolve.polytomies)
+        process.b = multi2di
+    } else {
+        process.b = identity
     }
 
     #check if trees or filenames
     if (class(treeseq.a) != "multiPhylo") {
-        a <- process(new.read.nexus(treeseq.a, force.multi=TRUE))
+        a <- process.a(new.read.nexus(treeseq.a, force.multi=TRUE))
     } else {
-        a <- process(treeseq.a)
+        a <- process.a(treeseq.a)
     }
     if (class(treeseq.b) != "multiPhylo") {
-         b <- process(new.read.nexus(treeseq.b, force.multi=TRUE))
+         b <- process.b(new.read.nexus(treeseq.b, force.multi=TRUE))
     } else {
-         b <- process(treeseq.b)
+         b <- process.b(treeseq.b)
     }
 
     brk.a <- as.numeric(names(a))

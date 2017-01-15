@@ -6,7 +6,7 @@
 \usage{
 genome.trees.dist(treeseq.a, treeseq.b, output.full.table = FALSE,
   acceptable.length.diff.pct = 0.1, variant.positions = NULL,
-  randomly.resolve.polytomies = FALSE)
+  randomly.resolve.a = FALSE, randomly.resolve.b = FALSE)
 }
 \arguments{
 \item{treeseq.a}{The first multiPhylo object, or a path to a .nex file}
@@ -20,8 +20,13 @@ genome.trees.dist(treeseq.a, treeseq.b, output.full.table = FALSE,
 \item{variant.positions}{A vector of genome positions of each variant. If given the metric will be 
 calculated for each variant site and averaged over all sites, rather than averaged over every point on the genome (not yet implemented)}
 
-\item{randomly.resolve.polytomies}{Some distance metrics only operate on binary trees. Set this to TRUE to force trees to be binary
-by randomly resolving polytomies where necessary. If a number, it is passed to set.seed as a RNG seed.}
+\item{randomly.resolve.a}{Some distance metrics only operate on binary trees. Set this to TRUE to 
+force trees in treeseq.a to be binary by randomly resolving polytomies where necessary, using the
+multi2di routine in the 'ape' library. If this is a number, it is additionally used as an RNG seed.}
+
+\item{randomly.resolve.b}{Some distance metrics only operate on binary trees. Set this to TRUE to 
+force trees in treeseq.b to be binary by randomly resolving polytomies where necessary, using the
+multi2di routine in the 'ape' library. If this is a number, it is additionally used as an RNG seed.}
 }
 \description{
 Requires two multiPhylo objects which contain sequential trees (tree sequences) along a genomic region.
