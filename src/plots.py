@@ -663,8 +663,9 @@ class MetricsByMutationRateDataset(Dataset):
                 #           'reps':d.msinfer_biforce_reps,
                 #           'seed':polytomy_resolution_seed}
             }
+            logging.info("processing ARG for mu = {}, err = {}.".format(
+                d.mutation_rate, d.error_rate))
             m = ARG_metrics.get_ARG_metrics(sim_fn + ".nex", **toolfiles)
-            print(m)
             self.data.loc[i,"MSIbifu_seed"] = polytomy_resolution_seed
             #Now add all the metrics to the data file
             for prefix, metrics in m.items():
