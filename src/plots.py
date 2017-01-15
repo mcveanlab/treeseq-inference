@@ -447,7 +447,7 @@ class NumRecordsBySampleSizeDataset(Dataset):
             params['length']             = 50000,
             params['recombination_rate'] = 2.5e-8,
             params['mutation_rate']      = 1.5e-8,
-            params['replicate']         = np.arange(int(self.setup_params['reps']))
+            params['replicate']         = np.arange(int(setup_params['reps']))
             sim_params = list(params.keys())
             #now add some other params, where multiple vals exists for one simulation
             params['error_rate']         = [0, 0.01, 0.1]
