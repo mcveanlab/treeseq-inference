@@ -9,18 +9,20 @@ E.g. for 8.hdf files produced by generate_data.py
 
 """
 import sys
+from math import ceil
+import numpy as np
 import os.path
 sys.path.insert(1,os.path.join(sys.path[0],'..','msprime')) # use the local copy of msprime in preference to the global one
 import msprime
+import logging
 from warnings import warn
 
-def msprime_hdf5_to_ARGweaver_in(msprime_hdf5, ARGweaver_filehandle, status_to=sys.stdout):
+def msprime_hdf5_to_ARGweaver_in(msprime_hdf5, ARGweaver_filehandle):
     """
     take an hdf5 file, and convert it into an input file suitable for ARGweaver
     Returns the simulation parameters (Ne, mu, r) used to create the hdf5 file
     """
-    if status_to:
-        print("== Saving to ARGweaver input format ==", file=status_to)
+    logging.info("== Saving to ARGweaver input format ==")
     ts = msprime.load(msprime_hdf5.name)
     msprime_to_ARGweaver_in(ts, ARGweaver_filehandle)
     #here we should extract the /provenance information from the hdf5 file and return {'Ne':XXX, 'mutation_rate':XXX, 'recombination_rate':XXX}
@@ -30,24 +32,28 @@ def msprime_hdf5_to_ARGweaver_in(msprime_hdf5, ARGweaver_filehandle, status_to=s
     
 def msprime_to_ARGweaver_in(ts, ARGweaver_filehandle):
     """
-    Takes an msprime TreeSequence object, and outputs a file in .sites format, suitable for input into ARGweaver
-    (see http://mdrasmus.github.io/argweaver/doc/#sec-file-sites)
-    Note that the documentation (http://mdrasmus.github.io/argweaver/doc/#sec-prog-arg-sample) states that the only mutation
-    model is Jukes-Cantor (i.e. equal mutation between all bases). Assuming adjacent sites are treated independently, we
-    convert variant format (0,1) to sequence format (A, T, G, C) by simply converting 0->A and 1->T
+    Takes an msprime TreeSequence, and outputs a file in .sites format, suitable for input 
+    into ARGweaver (see http://mdrasmus.github.io/argweaver/doc/#sec-file-sites)
+    The documentation (http://mdrasmus.github.io/argweaver/doc/#sec-prog-arg-sample) 
+    states that the only mutation model is Jukes-Cantor (i.e. equal mutation between 
+    all bases). Assuming adjacent sites are treated independently, we convert variant 
+    format (0,1) to sequence format (A, T, G, C) by simply converting 0->A and 1->T
     
-    Also note that the msprime simulations assume infinite sites by allowing mutations to occur at floating-point
-    positions long a sequence. These need to be converted to integer positions along the genome for use in ARGweaver
-    
+    Msprime simulations assume infinite sites by allowing mutations to occur at 
+    floating-point positions along a sequence. ARGweaver has discrete sites instead. 
+    This routine implements a basic discretising function, which simply rounds upwards
+    to the nearest int, ANDing the results if 2 or more variants end up at the same 
+    integer position.
+
+    Note that ARGweaver uses position coordinates (1,N) - i.e. [0,N). 
+    That compares to msprime which uses (0..N-1) - i.e. (0,N].
     """
-    from math import ceil
-    import numpy as np
     simple_ts = ts.simplify()
     print("\t".join(["NAMES"]+[str(x) for x in range(simple_ts.get_sample_size())]), file=ARGweaver_filehandle)
     print("\t".join(["REGION", "chr", "1", str(int(simple_ts.get_sequence_length()))]), file=ARGweaver_filehandle)
     genotypes = None
     pos = 0
-    for j, v in enumerate(simple_ts.variants()):
+    for v in simple_ts.variants():
         if int(ceil(v.position)) != pos:
             #this is a new position. Print the genotype at the old position, and then reset everything
             if pos:
@@ -62,13 +68,34 @@ def msprime_to_ARGweaver_in(ts, ARGweaver_filehandle):
     ARGweaver_filehandle.flush()
     ARGweaver_filehandle.seek(0)
 
-def variant_matrix_to_ARGweaver_in(var_matrix, var_positions, ARGweaver_filehandle):
+def variant_matrix_to_ARGweaver_in(var_matrix, var_positions, seq_length, ARGweaver_filehandle):
     """
-    To Do
-    """
-    assert len(var_matrix)==len(var_positions)
+    Takes an variant matrix, and outputs a file in .sites format, suitable for input 
+    into ARGweaver (see http://mdrasmus.github.io/argweaver/doc/#sec-file-sites)
+    The documentation (http://mdrasmus.github.io/argweaver/doc/#sec-prog-arg-sample) 
+    states that the only mutation model is Jukes-Cantor (i.e. equal mutation between 
+    all bases). Assuming adjacent sites are treated independently, we convert variant 
+    format (0,1) to sequence format (A, T, G, C) by simply converting 0->A and 1->T
     
-def run_ARGweaver(Ne, mut_rate, recomb_rate, executable, ARGweaver_in, ARGweaver_out_dir=None, out_prefix="aw", seed=None, iterations=None, sample_step=None, status_to=sys.stdout, quiet=False, rand_seed=None):
+    Assumes that the variant positions have been made unique (e.g. by 
+    discretise_mutations() in msprime_extras.py.
+    
+    Note that ARGweaver uses position coordinates (1,N) - i.e. [0,N). 
+    That compares to msprime which uses (0..N-1) - i.e. (0,N].
+    """
+    n_variants, n_samples = var_matrix.shape
+    assert len(var_matrix)==n_variants
+    print("\t".join(["NAMES"]+[str(x) for x in range(n_samples)]), file=ARGweaver_filehandle)
+    print("\t".join(["REGION", "chr", "1", str(seq_length)]), file=ARGweaver_filehandle)
+    genotypes = None
+    pos = 0
+    for pos, v in zip(var_positions, var_matrix):
+        print(pos+1, "".join(np.where(v==0,"A","T")), sep="\t", file=ARGweaver_filehandle)
+
+    ARGweaver_filehandle.flush()
+    ARGweaver_filehandle.seek(0)
+    
+def run_ARGweaver(Ne, mut_rate, recomb_rate, executable, ARGweaver_in, ARGweaver_out_dir=None, out_prefix="aw", iterations=None, sample_step=None, quiet=False, rand_seed=None):
     """
     run the ARGweaver executable on fastARG_in (which can be a filename or filehandle with .name attr)
     """
@@ -93,8 +120,7 @@ def run_ARGweaver(Ne, mut_rate, recomb_rate, executable, ARGweaver_in, ARGweaver
         exe.extend(['--iters', str(int(iterations))])
     if sample_step is not None:
         exe.extend(['--sample-step', str(int(sample_step))])
-    if status_to:
-        print("== Running ARGweaver as `{}` ==".format(" ".join(exe)), file=status_to)
+    logging.info("== Running ARGweaver as `{}` ==".format(" ".join(exe)))
     call(exe)
     
     
