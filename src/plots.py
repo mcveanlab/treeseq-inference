@@ -689,6 +689,57 @@ class MetricsByMutationRateDataset(Dataset):
              # Save each row so we can use the information while it's being built
             self.data.to_csv(self.data_file)
 
+class SampleSizeEffectOnSubsetDataset(Dataset):
+    """
+    Dataset for Figure 3
+    Dataset testing the effect on a subset of samples when extra genomes are 
+    added to the dataset used for inference. The hope is that the extra samples 
+    allowed by our msinference method will more than compensate for biases in the 
+    inference method over more statistically rigorous methods (e.g. ARGweaver).
+    
+    We should expect this to be the case, as the benefit of adding more
+    intermediate branches to trees (e.g. to halt long-branch attraction
+    artifacts) is well documented in the phylogenetic literature, under 
+    the general heading of 'taxon sampling'.
+    
+    Method: take a large simulated dataset (thousands?), with fixed, realistic
+    mutation and recombination rates, over a large span of genome. Use the msprime 
+    simplify() function to cut it down to a subset of n genomes (n ~ 10 or 20).
+    Call this subset S_n_base. Run all the inference methods on this base subset 
+    to get inference outputs (eventually saved as .nex files). Then take larger 
+    and larger subsets of the original simulation - S_N for N=20, 40, 100, etc. -
+    and run msinfer (but not the other methods) on these larger subsets, ensuring 
+    that after each inference attempt, the resulting TreeSequence is subset 
+    (simplify()ed) back down to cover only the first n samples. Use ARGmetrics to 
+    compare these secondarily-simplified ARGs with the true (original, simulated)
+    S_n subset. We would hope that the ARG accuracy metrics tend to 0 as the msinfer
+    subset size N goes up.
+    """
+    name = "sample_size_effect_on_subset"
+
+    def __init__(self, **params):
+        """
+        Note that here we do *not* want to try all combinations of subset size
+        with all inference tools. We only want to try 
+        """
+
+    def setup(self):
+
+    def generate(self):
+        """
+        """
+
+    def process(self):
+        """
+        Extracts metrics from the .nex files using R, and saves the results
+        in the csv file under fastARG_RFunrooted, etc etc.
+        The msinfer routine has two possible sets of stats: for nonbinary trees
+        and for randomly resolved strictly bifurcating trees (with a random seed given)
+        These are stored in 'msipoly_RFunrooted' and
+        'msibifu_RFunrooted', and the random seed used (as passed to R via
+        genome_trees_dist_forcebin_b) is stored in 'msibifu_seed'
+        """
+
 def run_setup(cls, extra_args):
     set_args = {k:v for k,v in extra_args.items() if v is not None}
     set_text = " with extra arguments {}".format(set_args) if set_args else ""
