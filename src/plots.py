@@ -351,9 +351,6 @@ class Dataset(object):
                         inferred_ts.write_nexus_trees(out)
                     self.data.loc[i, result_cols] = (time, memory)
                 elif tool == 'ARGweaver':
-                    print("FIXME!!! SKIPPING ARGWEAVER")
-                    continue
-
                     infile = err_fn + ".sites"
                     out_fn = construct_argweaver_name(err_fn, inference_seed)
                     logging.info(
