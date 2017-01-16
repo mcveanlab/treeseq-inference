@@ -528,7 +528,7 @@ class MetricsByMutationRateDataset(Dataset):
     tending to fully accurate as mutation rate increases
     """
     name = "metrics_by_mutation_rate"
-    tools = ["fastARG","msinfer"]
+    tools = ["fastARG","msinfer","ARGweaver"]
 
     def __init__(self, **params):
         """
@@ -666,16 +666,16 @@ class MetricsByMutationRateDataset(Dataset):
             d = self.data.iloc[i]
             sim_fn=msprime_name(d.sample_size, d.Ne, d.length, d.recombination_rate,
                                 d.mutation_rate, d.seed, d.seed, self.simulations_dir)
-            err_fn=add_error_param_to_name(sim_fn, d.error_rate)
+            base_fn=add_error_param_to_name(sim_fn, d.error_rate)
             polytomy_resolution_seed = d.inference_seed #hack: use same seed as in inference step
             toolfiles = {
-                "fastARG":construct_fastarg_name(err_fn, d.inference_seed)+".nex",
-                #"ARGweaver":{'nexus':construct_argweaver_name(err_fn, d.inference_seed, it)+".nex" \
-                #for it in d['ARGweaver-iterations'].split(",")]},
-                "MSIpoly":construct_msinfer_name(err_fn)+".nex",
-                #"MSIbifu":{'nexus':construct_msinfer_name(err_fn)+".nex",
-                #           'reps':d.msinfer_biforce_reps,
-                #           'seed':polytomy_resolution_seed}
+                "fastARG":construct_fastarg_name(base_fn, d.inference_seed)+".nex",
+                "ARGweaver":{'nexus':construct_argweaver_name(base_fn, d.inference_seed, it)+".nex" \
+                    for it in d['ARGweaver_iterations'].split(",")},
+                "MSIpoly":construct_msinfer_name(base_fn)+".nex",
+                "MSIbifu":{'nexus':construct_msinfer_name(base_fn)+".nex",
+                           'reps':d.msinfer_biforce_reps,
+                           'seed':polytomy_resolution_seed}
             }
             logging.info("processing ARG for mu = {}, err = {}.".format(
                 d.mutation_rate, d.error_rate))
