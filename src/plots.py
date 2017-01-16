@@ -358,7 +358,8 @@ class Dataset(object):
                     logging.debug("reading: {} for ARGweaver inference".format(infile))
                     iteration_ids, stats_file, time, memory = self.run_argweaver(
                         infile, d.Ne, d.recombination_rate, d.mutation_rate,
-                        out_fn, inference_seed)
+                        out_fn, inference_seed, d.aw_burnin_iters, 
+                        d.aw_n_out_samples, d.aw_iter_out_freq)
                     #now must convert all of the .smc files to .nex format
                     for it in iteration_ids:
                         base = construct_argweaver_name(err_fn, inference_seed, it)
@@ -440,7 +441,8 @@ class Dataset(object):
                 msprime_fastARG.variant_matrix_to_fastARG_in(np.transpose(S), pos, fastarg_in)
             logging.debug("writing variant matrix to {}.sites for ARGweaver".format(err_filename))
             with open(err_filename+".sites", "w+") as argweaver_in:
-                msprime_ARGweaver.variant_matrix_to_ARGweaver_in(np.transpose(S), pos, argweaver_in)
+                msprime_ARGweaver.variant_matrix_to_ARGweaver_in(np.transpose(S), pos, 
+                    ts.get_sequence_length(), argweaver_in)
 
     @staticmethod
     def run_tsinf(S, sequence_length, sites, rho, num_workers=1):
@@ -479,7 +481,9 @@ class Dataset(object):
             return inferred_ts, cpu_time, memory_use
 
     @staticmethod
-    def run_argweaver(sites_file, Ne, recombination_rate, mutation_rate, path_prefix, seed):
+    def run_argweaver(sites_file, Ne, recombination_rate, 
+        mutation_rate, path_prefix, seed,
+        burnin_iterations, n_samples, sampling_freq):
         """
         this produces a whole load of .smc files labelled <path_prefix>i.0.smc,
         <path_prefix>i.10.smc, etc. the iteration numbers ('i.0', 'i.10', etc)
@@ -582,8 +586,12 @@ class MetricsByMutationRateDataset(Dataset):
             #now add some other params, where multiple vals exists for one simulation
             params['error_rate']          = 0, #[0, 0.01, 0.1]
             #RNG seed used in inference methods - will be filled out in the generate() step
-            params['inference_seed']      = np.nan,
-            #number of polytomy breaking replicates when forcing strict bifurcating (binary) trees
+            params['inference_seed']     = np.nan,
+            ## argweaver params: aw_n_out_samples will be produced, every argweaver_iter_out_freq
+            params['aw_burnin_iters']    = 5000,
+            params['aw_n_out_samples']   = 100,
+            params['aw_iter_out_freq']   = 10,
+            ## msinfer params: number of times to randomly resolve into bifurcating (binary) trees
             params['msinfer_biforce_reps']= 20,
 
             #all combinations of params in a DataFrame
