@@ -36,7 +36,7 @@ def get_ARG_metrics(true_nexus_fn, **inferred_nexus_fns):
         logging.info("calculating ARG metrics for {}.".format(tool))
         try:
             nexus_files = metric_params['nexus']
-            weights = metric_params('weights') or 1
+            weights = metric_params.get('weights') or 1
         except:
             nexus_files = metric_params
         if isinstance(nexus_files, str):
