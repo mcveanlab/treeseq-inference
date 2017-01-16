@@ -156,11 +156,10 @@ def fastARG_root_seq(fastARG_out_filehandle):
     return([])
 
 def msprime_txts_to_fastARG_in_revised(tree_filehandle, mutations_filehandle, root_seq, fastARG_filehandle=None, hdf5_outname=None, simplify=True):
-    if status_to:
-        if hdf5_outname:
-            logging.info("== Saving new msprime ARG as hdf5 and also as input format for fastARG ==")
-        else:
-            logging.info("== Saving new msprime ARG as input format for fastARG ==")
+    if hdf5_outname:
+        logging.info("== Saving new msprime ARG as hdf5 and also as input format for fastARG ==")
+    else:
+        logging.info("== Saving new msprime ARG as input format for fastARG ==")
     tree_filehandle.seek(0)
     mutations_filehandle.seek(0)
 
