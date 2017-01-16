@@ -23,12 +23,12 @@ genome.trees.dist.forcebin.b <- function(treeseq.a, treeseq.b, replicates=1, see
                                     acceptable.length.diff.pct = acceptable.length.diff.pct,
                                     variant.positions = variant.positions))
     if (class(treeseq.a) != "multiPhylo") {
-        a <- new.read.nexus(treeseq.a, force.multi=TRUE)
+        a <- read.nexus(treeseq.a, force.multi=TRUE)
     } else {
         a <- treeseq.a
     }
     if (class(treeseq.b) != "multiPhylo") {
-         b <- new.read.nexus(treeseq.b, force.multi=TRUE)
+         b <- read.nexus(treeseq.b, force.multi=TRUE)
     } else {
          b <- treeseq.b
     }

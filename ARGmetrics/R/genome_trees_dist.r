@@ -43,12 +43,12 @@ genome.trees.dist <- function(treeseq.a, treeseq.b, output.full.table = FALSE, a
 
     #check if trees or filenames
     if (class(treeseq.a) != "multiPhylo") {
-        a <- process.a(new.read.nexus(treeseq.a, force.multi=TRUE))
+        a <- process.a(read.nexus(treeseq.a, force.multi=TRUE))
     } else {
         a <- process.a(treeseq.a)
     }
     if (class(treeseq.b) != "multiPhylo") {
-         b <- process.b(new.read.nexus(treeseq.b, force.multi=TRUE))
+         b <- process.b(read.nexus(treeseq.b, force.multi=TRUE))
     } else {
          b <- process.b(treeseq.b)
     }

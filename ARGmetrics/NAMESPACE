@@ -3,4 +3,3 @@
 export(genome.trees.dist)
 export(genome.trees.dist.forcebin.b)
 export(genome.trees.dist.multi)
-export(new.read.nexus)
