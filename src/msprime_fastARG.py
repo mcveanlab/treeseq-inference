@@ -14,7 +14,7 @@ from warnings import warn
 import logging
 
 def msprime_hdf5_to_fastARG_in(msprime_hdf5, fastARG_filehandle):
-    logging.info("== Saving to fastARG input format ==")
+    logging.debug("== Saving to fastARG input format ==")
     ts = msprime.load(msprime_hdf5.name)
     msprime_to_fastARG_in(ts, fastARG_filehandle)
     return(ts)
@@ -53,15 +53,18 @@ def variant_positions_from_fastARGin(fastARG_in_filehandle):
             warn("Could not convert the title on the following line to a floating point value:\n {}".format(line))
     return(np.array(vp))
 
-def fastARG_out_to_msprime_txts(fastARG_out_filehandle, variant_positions, tree_filehandle, mutations_filehandle, seq_len=None):
+def fastARG_out_to_msprime_txts(
+        fastARG_out_filehandle, variant_positions, tree_filehandle, mutations_filehandle,
+        seq_len=None):
     """
-    convert the fastARG output format (plus a list of positions) to 2 text files (tree and mutations) which can be read in to msprime
-    we need to split fastARG records that extend over the whole genome into sections that cover just that
-    coalescence point.
+    convert the fastARG output format (plus a list of positions) to 2 text
+    files (tree and mutations) which can be read in to msprime we need to split
+    fastARG records that extend over the whole genome into sections that cover
+    just that coalescence point.
     """
     import csv
     import numpy as np
-    logging.info("== Converting fastARG output to msprime ==")
+    logging.debug("== Converting fastARG output to msprime ==")
     fastARG_out_filehandle.seek(0) #make sure we reset to the start of the infile
     ARG_nodes={} #An[X] = child1:[left,right], child2:[left,right],... : serves as intermediate ARG storage
     mutations={}
@@ -155,11 +158,13 @@ def fastARG_root_seq(fastARG_out_filehandle):
     warn("No root sequence found in '{}'".format(fastARG_out_filehandle.name))
     return([])
 
-def msprime_txts_to_fastARG_in_revised(tree_filehandle, mutations_filehandle, root_seq, fastARG_filehandle=None, hdf5_outname=None, simplify=True):
+def msprime_txts_to_fastARG_in_revised(
+        tree_filehandle, mutations_filehandle, root_seq, fastARG_filehandle=None,
+        hdf5_outname=None, simplify=True):
     if hdf5_outname:
-        logging.info("== Saving new msprime ARG as hdf5 and also as input format for fastARG ==")
+        logging.debug("== Saving new msprime ARG as hdf5 and also as input format for fastARG ==")
     else:
-        logging.info("== Saving new msprime ARG as input format for fastARG ==")
+        logging.debug("== Saving new msprime ARG as input format for fastARG ==")
     tree_filehandle.seek(0)
     mutations_filehandle.seek(0)
 
@@ -175,7 +180,9 @@ def msprime_txts_to_fastARG_in_revised(tree_filehandle, mutations_filehandle, ro
     if fastARG_filehandle:
         for j, v in enumerate(ts.variants(as_bytes=True)):
             if root_seq[j]:
-                print(v.position, v.genotypes.decode().translate(str.maketrans('01','10')), sep="\t", file=fastARG_filehandle)
+                print(
+                    v.position, v.genotypes.decode().translate(str.maketrans('01','10')),
+                    sep="\t", file=fastARG_filehandle)
             else:
                 print(v.position, v.genotypes.decode(), sep="\t", file=fastARG_filehandle)
         fastARG_filehandle.flush()
@@ -188,7 +195,7 @@ def main(sim, fastARG_executable, fa_in, fa_out, tree, muts, fa_revised, hdf5_ou
     """
     try:
         ts = msprime.simulate(**sim)
-        logging.info("Creating new simulation with {}".format(sim))
+        logging.debug("Creating new simulation with {}".format(sim))
         msprime_to_fastARG_in(ts, fa_in)
     except:
         ts = msprime_hdf5_to_fastARG_in(sim, fa_in)
@@ -197,10 +204,12 @@ def main(sim, fastARG_executable, fa_in, fa_out, tree, muts, fa_revised, hdf5_ou
     fastARG_out_to_msprime_txts(fa_out, variant_positions_from_fastARGin(fa_in.name), tree, muts)
     new_ts = msprime_txts_to_fastARG_in_revised(tree, muts, root_seq, simplify=False)
     simple_ts = msprime_txts_to_fastARG_in_revised(tree, muts, root_seq, fa_revised, hdf5_outname)
-    logging.info("Initial num records = {}, fastARG (simplified) = {}, fastARG (unsimplified) = {}".format(
+    logging.debug(
+        "Initial num records = {}, fastARG (simplified) = {}, fastARG (unsimplified) = {}".format(
         ts.get_num_records(), simple_ts.get_num_records(), new_ts.get_num_records()))
-    logging.info("These numbers are expected to be in ascending order ")
-    if ts.get_num_records() > simple_ts.get_num_records() or simple_ts.get_num_records() > new_ts.get_num_records():
+    logging.debug("These numbers are expected to be in ascending order ")
+    if ts.get_num_records() > simple_ts.get_num_records() \
+            or simple_ts.get_num_records() > new_ts.get_num_records():
         warn("Numbers not in ascending order!")
     if os.stat(fa_in.name).st_size == 0:
         warn("Initial fastARG input file is empty")
