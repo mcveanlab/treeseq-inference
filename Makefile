@@ -1,5 +1,6 @@
 
 deps:
+	make -C src
 	make -C fastARG
 	# This will ultimately be redundant as we will pip install 
 	# a released version.
