@@ -1,9 +1,11 @@
 """
 Extra functionality for msprime which we need here.
 """
-
 import numpy as np
 
+import msprime
+# TMP - remove once proper creation API is in place
+import _msprime
 
 def sparse_tree_to_newick(st, precision, Ne):
     """
@@ -50,6 +52,46 @@ def newick_trees(ts, precision=3, Ne=1):
         l, r = t.interval
         yield r - l, sparse_tree_to_newick(t, precision, Ne)
 
+
+def discretise_mutations(ts):
+    """
+    Takes the specified tree sequence returns a new tree sequence which discretises
+    the mutations such that all positions are integers.
+
+    Raises a ValueError if this is not possible without violating the underlying
+    topology.
+    """
+    breakpoints = sorted(set([r.left for r in ts.records()] + [ts.sequence_length]))
+    old_mutations = list(ts.mutations())
+    positions = []
+    new_mutations = []
+    k = 0
+    for j in range(len(breakpoints) - 1):
+        left, right = breakpoints[j], breakpoints[j + 1]
+        interval_mutations = []
+        while k < ts.num_mutations and old_mutations[k].position < right:
+            interval_mutations.append(old_mutations[k])
+            k += 1
+        if len(interval_mutations) > right - left:
+            raise ValueError(
+                "Cannot discretise {} mutations in interval ({}, {})".format(
+                    len(interval_mutations), left, right))
+        # Start the new mutations at the beginning of the interval and place them
+        # one by one at unit intervals. This will lead to very strange looking
+        # spatial patterns, but will do until we implement a proper finite sites
+        # mutation model in msprime.
+        x = left
+        for mut in interval_mutations:
+            new_mutations.append(
+                msprime.Mutation(position=x, node=mut.node, index=mut.index))
+            x += 1
+    records = list(ts.records())
+    # Ugly!!! Fix this once the new creation API is in place.
+    samples = [msprime.Sample(time=0, population=0) for _ in range(ts.sample_size)]
+    ll_ts = _msprime.TreeSequence()
+    ll_ts.load_records(samples=samples, records=records)
+    ll_ts.set_mutations(new_mutations)
+    return msprime.TreeSequence(ll_ts)
 
 # JK - I've been staring at this for 10 minutes, an I can't figure out what the
 # index_trees_by_variants argument does here. It seems
