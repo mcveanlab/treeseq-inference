@@ -224,15 +224,15 @@ class Dataset(object):
     def __init__(self, data_file=None, reps=None, seed=None):
         """
         Creates initial names for a data file & data dir.
-        
+
         A data_file can be passed which should contain a '+'
         followed by param1=value1_param2=value2, etc.
         Otherwise, parameters should be passed as **params
-        
+
         If data file already exists, read it in to self.data,
-        otherwise set self.data to None, which flags up that 
+        otherwise set self.data to None, which flags up that
         we need to generate one.
-        
+
         Return dict of params (either as set or from the data file name)
         """
         if data_file is None and reps is None and seed is None:
@@ -245,7 +245,7 @@ class Dataset(object):
                         "Picking the most recent {}").format(self.name, data_file))
             except:
                 sys.exit("No data file found, and no parameters specified")
-                
+
         if data_file is not None:
             self.data = pd.read_csv(data_file)
             assert data_file.endswith(".csv")
@@ -260,7 +260,7 @@ class Dataset(object):
         self.run_id = "_".join([k+"="+str(run_params[k]) for k in sorted(run_params.keys())])
         self.data_file = os.path.abspath(os.path.join(self.data_dir,
             "{}+{}.csv".format(self.name, self.run_id)))
-            
+
         self.raw_data_dir = os.path.join(self.data_dir, "raw__NOBACKUP__", self.name, str(self.run_id))
         if not os.path.exists(self.raw_data_dir):
             logging.info("Making raw data dir {}".format(self.raw_data_dir))
@@ -295,21 +295,33 @@ class Dataset(object):
 
     def single_simulation(self, n, Ne, l, rho, mu, seed, mut_seed=None, subsample=None):
         """
-        The standard way to run one msprime simulation for a set of parameter values.
-        Saves the output to an .hdf5 file, and also saves variant files for use in
-        fastARG (a .hap file, in the format specified by https://github.com/lh3/fastARG#input-format)
-        ARGweaver (a .sites file: http://mdrasmus.github.io/argweaver/doc/#sec-file-sites)
-        msinfer (currently a numpy array containing the variant matrix)
+        The standard way to run one msprime simulation for a set of parameter
+        values. Saves the output to an .hdf5 file, and also saves variant files
+        for use in fastARG (a .hap file, in the format specified by
+        https://github.com/lh3/fastARG#input-format) ARGweaver (a .sites file:
+        http://mdrasmus.github.io/argweaver/doc/#sec-file-sites) msinfer
+        (currently a numpy array containing the variant matrix)
 
-        mutation_seed is not yet implemented, but should allow the same ancestry to be simulated (if the same
-        genealogy_seed is given) but have different mutations thrown onto the trees (even with different mutation_rates)
+        mutation_seed is not yet implemented, but should allow the same
+        ancestry to be simulated (if the same genealogy_seed is given) but have
+        different mutations thrown onto the trees (even with different
+        mutation_rates)
 
         Returns a tuple of treesequence, filename (without file type extension)
         """
-        ts = msprime.simulate(n, Ne, l, recombination_rate=rho, mutation_rate=mu, random_seed=int(seed))
-        #here we might want to iterate over mutation rates for the same genealogy, setting a different mut_seed
-        #so that we can see for ourselves the effect of mutation rate variation on a single topology
-        #but for the moment, we don't bother, and simply write mut_seed==genealogy_seed
+        # Since we want to have a finite site model, we force the recombination map
+        # to have exactly l loci with a recombination rate of rho between them.
+        recombination_map = msprime.RecombinationMap.uniform_map(l, rho, l)
+        ts = msprime.simulate(
+            n, Ne, recombination_map=recombination_map, mutation_rate=mu,
+            random_seed=int(seed))
+        # TODO replace this with a proper finite site mutation model in msprime.
+        ts = msprime_extras.discretise_mutations(ts)
+        # Here we might want to iterate over mutation rates for the same
+        # genealogy, setting a different mut_seed so that we can see for
+        # ourselves the effect of mutation rate variation on a single topology
+        # but for the moment, we don't bother, and simply write
+        # mut_seed==genealogy_seed
         sim_fn = msprime_name(n, Ne, l, rho, mu, seed, seed, self.simulations_dir)
         logging.debug("writing {}.hdf5".format(sim_fn))
         ts.dump(sim_fn+".hdf5", zlib_compression=True)
@@ -326,10 +338,7 @@ class Dataset(object):
             err_filename = add_error_param_to_name(fname, error_rate)
             logging.debug("writing variant matrix to {}.npy for msinfer".format(err_filename))
             np.save(err_filename+".npy", S)
-            #TO DO - here we are just rounding the position to the nearest int, which risks having the same 
-            #position for multiple variants. This will cause the generate step to bomb out
-            #pos = [v.position for v in ts.variants()]
-            pos = [float(round(v.position)) for v in ts.variants()]
+            pos = [v.position for v in ts.variants()]
             logging.debug("writing variant matrix to {}.hap for fastARG".format(err_filename))
             with open(err_filename+".hap", "w+") as fastarg_in:
                 msprime_fastARG.variant_matrix_to_fastARG_in(np.transpose(S), pos, fastarg_in)
@@ -364,7 +373,8 @@ class Dataset(object):
             inferred_ts = msprime_fastARG.msprime_txts_to_fastARG_in_revised(
                     tree, muts, root_seq, fa_revised, simplify=True, status_to=None)
             try:
-                assert filecmp.cmp(file_name, fa_revised.name, shallow=False), "{} and {} differ".format(file_name, fa_revised.name)
+                assert filecmp.cmp(file_name, fa_revised.name, shallow=False), \
+                        "{} and {} differ".format(file_name, fa_revised.name)
             except AssertionError:
                 print("File '{}' copied to 'bad.hap' for debugging".format(fa_revised.name), file=sys.stderr)
                 shutil.copyfile(fa_revised.name, os.path.join('bad.hap'))
@@ -426,7 +436,7 @@ class NumRecordsBySampleSizeDataset(Dataset):
             sim_params = list(params.keys())
             #now add some other params, where multiple vals exists for one simulation
             params['error_rate']         = [0, 0.1, 0.01]
-    
+
             #all combinations of params in a DataFrame
             self.data = expand_grid(params)
             #assign a unique index for each simulation
@@ -518,7 +528,7 @@ class MetricsByMutationRateDataset(Dataset):
 
     def __init__(self, **params):
         """
-        Everything is done via a Data Frame which contains the initial params and is 
+        Everything is done via a Data Frame which contains the initial params and is
         then used to store the output values.
         """
         self.set_default_run_params(params, {'seed':13, 'reps':10})
@@ -540,8 +550,8 @@ class MetricsByMutationRateDataset(Dataset):
             #RNG seed used in inference methods - will be filled out in the generate() step
             params['inference_seed']      = np.nan,
             #number of polytomy breaking replicates when forcing strict bifurcating (binary) trees
-            params['msinfer_biforce_reps']= 20, 
-    
+            params['msinfer_biforce_reps']= 20,
+
             #all combinations of params in a DataFrame
             self.data = expand_grid(params)
             #assign a unique index for each simulation
@@ -622,7 +632,7 @@ class MetricsByMutationRateDataset(Dataset):
                     out_fn = construct_argweaver_name(err_fn, inference_seed)
                     logging.info("generating ARGweaver inference for mu = {}".format(d.mutation_rate))
                     logging.debug("reading: {} for ARGweaver inference".format(infile))
-                    iteration_ids, stats_file, time, memory = self.run_argweaver(infile, d.Ne, 
+                    iteration_ids, stats_file, time, memory = self.run_argweaver(infile, d.Ne,
                         d.recombination_rate, d.mutation_rate, out_fn, inference_seed)
                     print(iteration_ids)
                     #now must convert all of the .smc files to .nex format
@@ -643,11 +653,11 @@ class MetricsByMutationRateDataset(Dataset):
         in the csv file under fastARG_RFunrooted, etc etc.
         The msinfer routine has two possible sets of stats: for nonbinary trees
         and for randomly resolved strictly bifurcating trees (with a random seed given)
-        These are stored in 'msipoly_RFunrooted' and 
+        These are stored in 'msipoly_RFunrooted' and
         'msibifu_RFunrooted', and the random seed used (as passed to R via
         genome_trees_dist_forcebin_b) is stored in 'msibifu_seed'
         """
-        
+
         for i in self.data.index:
             d = self.data.iloc[i]
             sim_fn=msprime_name(d.sample_size, d.Ne, d.length, d.recombination_rate,
@@ -672,7 +682,7 @@ class MetricsByMutationRateDataset(Dataset):
                 colnames = ["_".join([prefix,k]) for k in sorted(metrics.keys())]
                 add_columns(self.data, colnames)
                 self.data.loc[i, colnames] = metrics.values()
-                
+
              # Save each row so we can use the information while it's being built
             self.data.to_csv(self.data_file)
 
@@ -739,17 +749,16 @@ def main():
         'name', metavar='NAME', type=str, nargs=1,
         help='the dataset identifier')
     subparser.add_argument(
-         '--data_file', '-f', type=str,
+         '--data-file', '-f', type=str,
          help="which CSV file to use for existing data, if not the default", )
     subparser.set_defaults(func=run_generate)
-
 
     subparser = subparsers.add_parser('process')
     subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
         help='the dataset identifier')
     subparser.add_argument(
-         '--data_file', '-f', type=str,
+         '--data-file', '-f', type=str,
          help="which CSV file to use for existing data, if not the default")
     subparser.set_defaults(func=run_process)
 
