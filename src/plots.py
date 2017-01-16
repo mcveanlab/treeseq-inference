@@ -338,7 +338,10 @@ class Dataset(object):
             err_filename = add_error_param_to_name(fname, error_rate)
             logging.debug("writing variant matrix to {}.npy for msinfer".format(err_filename))
             np.save(err_filename+".npy", S)
-            pos = [v.position for v in ts.variants()]
+            pos = np.array([v.position for v in ts.variants()])
+            np.save(err_filename+".pos.npy", pos)
+            assert all(p.is_integer() for p in pos), \
+                "Variant positions are not all integers in {}".format()
             logging.debug("writing variant matrix to {}.hap for fastARG".format(err_filename))
             with open(err_filename+".hap", "w+") as fastarg_in:
                 msprime_fastARG.variant_matrix_to_fastARG_in(np.transpose(S), pos, fastarg_in)
