@@ -2,7 +2,11 @@ import logging
 import pandas as pd
 import rpy2.robjects as robjects
 from rpy2.robjects.packages import importr
+
 importr("ape")
+assert robjects.r('packageVersion("ape") >= "4.0.0.2"')[0], \
+    "You must install an 'ape' version in R > 4.0.0.2, e.g. by running" + \
+    'install.packages("ape", repos = "http://ape-package.ird.fr/", type="source")'
 importr("phangorn")
 ARGmetrics = importr("ARGmetrics")
 #NB the above requires your version of R to have the bespoke ARGmetrics package installed
