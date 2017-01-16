@@ -30,8 +30,11 @@ class ReferencePanel(object):
     Class representing the reference panel for inferring a tree sequence
     from observed data.
     """
-    def __init__(self, samples):
+    def __init__(self, samples, sites, sequence_length):
         self._ll_reference_panel = _tsinf.ReferencePanel(samples)
+        self.sites = sites
+        self.sequence_length = sequence_length
+        assert len(self.sites) == self._ll_reference_panel.num_sites
 
     def infer_paths(self, rho, num_workers=None):
         N = self._ll_reference_panel.num_haplotypes
@@ -75,6 +78,7 @@ class ReferencePanel(object):
         n = self._ll_reference_panel.num_samples
         m = self._ll_reference_panel.num_sites
         H = self._ll_reference_panel.get_haplotypes()
+        sites = self.sites
 
         assert N, m == P.shape
         assert H.shape == P.shape
@@ -99,7 +103,8 @@ class ReferencePanel(object):
             while H[u, l] == 1:
                 v = u
                 u = P[u][l]
-            mutations.append((l, v))
+            mutations.append((sites[l], v))
+        assert len(mutations) == m
         for u in range(n, N):
             row = C[u]
             last_c = row[0]
@@ -108,14 +113,14 @@ class ReferencePanel(object):
                 if row[l] != last_c:
                     if len(last_c) > 0:
                         records.append(msprime.CoalescenceRecord(
-                            left=left, right=l, node=u, children=tuple(last_c),
+                            left=sites[left], right=sites[l], node=u, children=tuple(last_c),
                             time=u, population=0))
                     left = l
                     last_c = row[l]
             if len(last_c) > 0:
                 records.append(msprime.CoalescenceRecord(
-                    left=left, right=m, node=u, children=tuple(last_c),
-                    time=u, population=0))
+                    left=sites[left], right=self.sequence_length, node=u,
+                    children=tuple(last_c), time=u, population=0))
         records.sort(key=lambda r: r.time)
         # print("records = ")
         # for r in records:
@@ -125,7 +130,10 @@ class ReferencePanel(object):
         ll_ts = _msprime.TreeSequence()
         ll_ts.load_records(records)
         ll_ts.set_mutations(mutations)
+        assert ll_ts.get_num_mutations() == m
         ts = msprime.TreeSequence(ll_ts)
+        assert ts.num_mutations == m
+        assert len(list(ts.mutations())) == m
         return ts
 
 
