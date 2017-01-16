@@ -361,7 +361,7 @@ class Dataset(object):
         return ts_simplified, cpu_time, memory_use
 
     @staticmethod
-    def run_fastarg(file_name, seed):
+    def run_fastarg(file_name, seq_length, seed):
         with tempfile.NamedTemporaryFile("w+") as fa_out, \
                 tempfile.NamedTemporaryFile("w+") as tree, \
                 tempfile.NamedTemporaryFile("w+") as muts, \
@@ -372,14 +372,15 @@ class Dataset(object):
             var_pos = msprime_fastARG.variant_positions_from_fastARGin_name(file_name)
             root_seq = msprime_fastARG.fastARG_root_seq(fa_out)
             msprime_fastARG.fastARG_out_to_msprime_txts(
-                    fa_out, var_pos, tree, muts, status_to=None)
+                    fa_out, var_pos, tree, muts, seq_len=seq_length)
             inferred_ts = msprime_fastARG.msprime_txts_to_fastARG_in_revised(
-                    tree, muts, root_seq, fa_revised, simplify=True, status_to=None)
+                    tree, muts, root_seq, fa_revised, simplify=True)
             try:
                 assert filecmp.cmp(file_name, fa_revised.name, shallow=False), \
-                        "{} and {} differ".format(file_name, fa_revised.name)
+                    "{} and {} differ".format(file_name, fa_revised.name)
             except AssertionError:
-                print("File '{}' copied to 'bad.hap' for debugging".format(fa_revised.name), file=sys.stderr)
+                warn("File '{}' copied to 'bad.hap' for debugging".format(
+                    fa_revised.name), file=sys.stderr)
                 shutil.copyfile(fa_revised.name, os.path.join('bad.hap'))
                 raise
             return inferred_ts, cpu_time, memory_use
@@ -510,7 +511,7 @@ class NumRecordsBySampleSizeDataset(Dataset):
                     logging.info("generating fastARG inference for n = {}, err = {}".format(
                         d.sample_size, d.error_rate))
                     logging.debug("reading: {} for msprime inference".format(infile))
-                    inferred_ts, time, memory = self.run_fastarg(infile, d.seed)
+                    inferred_ts, time, memory = self.run_fastarg(infile, d.length, d.seed)
                 else:
                     raise KeyError
                 inferred_ts.dump(out_fn +".hdf5", zlib_compression=True)
@@ -626,7 +627,7 @@ class MetricsByMutationRateDataset(Dataset):
                     out_fn = construct_fastarg_name(err_fn, inference_seed)
                     logging.info("generating fastARG inference for mu = {}".format(d.mutation_rate))
                     logging.debug("reading: {} for fastARG inference".format(infile))
-                    inferred_ts, time, memory = self.run_fastarg(infile, inference_seed)
+                    inferred_ts, time, memory = self.run_fastarg(infile, d.length, inference_seed)
                     with open(out_fn +".nex", "w+") as out:
                         inferred_ts.write_nexus_trees(out)
                     self.data.loc[i, result_cols] = (time, memory)
@@ -724,7 +725,8 @@ class SampleSizeEffectOnSubsetDataset(Dataset):
         """
 
     def setup(self):
-
+        """
+        """
     def generate(self):
         """
         """
