@@ -274,18 +274,108 @@ class Dataset(object):
             if key in param_dict and param_dict[key] is None:
                 param_dict[key] = val
 
-
     def setup(self):
-        """
-        creates the simulations to use as a base
-        """
-        raise NotImplementedError()
+        # clear out any old simulations to avoid confusion.
+        if os.path.exists(self.simulations_dir):
+            shutil.rmtree(self.simulations_dir)
+        os.makedirs(self.simulations_dir)
+        for s in range(max(self.data.sim)+1):
+            sim = self.data[self.data.sim == s]
+            ts, fn = self.single_simulation(
+                int(pd.unique(sim.sample_size)),
+                int(pd.unique(sim.Ne)),
+                int(pd.unique(sim.length)),
+                float(pd.unique(sim.recombination_rate)),
+                float(pd.unique(sim.mutation_rate)),
+                int(pd.unique(sim.seed)),
+                int(pd.unique(sim.seed))) #same mutation_seed as genealogy_seed
+            with open(fn +".nex", "w+") as out:
+                ts.write_nexus_trees(out)
+            self.save_variant_matrices(ts, fn, pd.unique(sim.error_rate))
 
     def generate(self):
         """
-        generates the inferences
+        TODO abstract out the common functionality across different datasets.
+        We should have a main loop here in common with all the datasets
+        and write the code to run the various tools exactly once. We can have
+        calls into specific things we need to have in subclasses, but we should
+        definitely not have duplication of big important chunks of code.
+
+        This is currently the version of generate() from the
+        MetricsByMutationRateDataset.
         """
-        raise NotImplementedError()
+        results = ['CPUtime','memory']
+        tool_cols = {t:["_".join([t,rc]) for rc in results] for t in self.tools}
+        # We need to store more information in the case of ARGweaver, since
+        # each ARGweaver run produces a whole set of iterations. We join these
+        # together in a single column
+        if "ARGweaver" in tool_cols:
+            tool_cols["ARGweaver"].append("ARGweaver_iterations")
+        for tool in self.tools:
+            add_columns(self.data, tool_cols[tool])
+
+        for i in self.data.index:
+            d = self.data.iloc[i]
+            sim_fn = msprime_name(
+                d.sample_size, d.Ne, d.length, d.recombination_rate,
+                d.mutation_rate, d.seed, d.seed, self.simulations_dir)
+            err_fn = add_error_param_to_name(sim_fn, d.error_rate)
+            inference_seed = d.seed + i
+            self.data.loc[i, 'inference_seed'] = inference_seed
+            for tool, result_cols in sorted(tool_cols.items()):
+                if tool == 'msinfer':
+                    infile = err_fn + ".npy"
+                    logging.info("generating tsinf inference for mu = {}".format(
+                        d.mutation_rate))
+                    logging.debug(
+                        "reading: variant matrix {} for msprime inference".format(infile))
+                    S = np.load(infile)
+                    infile = err_fn + ".pos.npy"
+                    logging.debug(
+                        "reading: positions {} for msprime inference".format(infile))
+                    pos = np.load(infile)
+                    out_fn = construct_msinfer_name(err_fn)
+                    inferred_ts, time, memory = self.run_tsinf(
+                        S, d.length, pos, 4 * d.recombination_rate * d.Ne)
+                    with open(out_fn +".nex", "w+") as out:
+                        inferred_ts.write_nexus_trees(out)
+                    self.data.loc[i, result_cols] = (time, memory)
+                elif tool == 'fastARG':
+                    infile = err_fn + ".hap"
+                    out_fn = construct_fastarg_name(err_fn, inference_seed)
+                    logging.info("generating fastARG inference for mu = {}".format(
+                        d.mutation_rate))
+                    logging.debug("reading: {} for fastARG inference".format(infile))
+                    inferred_ts, time, memory = self.run_fastarg(infile, d.length, inference_seed)
+                    with open(out_fn +".nex", "w+") as out:
+                        inferred_ts.write_nexus_trees(out)
+                    self.data.loc[i, result_cols] = (time, memory)
+                elif tool == 'ARGweaver':
+                    print("FIXME!!! SKIPPING ARGWEAVER")
+                    continue
+
+                    infile = err_fn + ".sites"
+                    out_fn = construct_argweaver_name(err_fn, inference_seed)
+                    logging.info(
+                        "generating ARGweaver inference for mu = {}".format(d.mutation_rate))
+                    logging.debug("reading: {} for ARGweaver inference".format(infile))
+                    iteration_ids, stats_file, time, memory = self.run_argweaver(
+                        infile, d.Ne, d.recombination_rate, d.mutation_rate,
+                        out_fn, inference_seed)
+                    #now must convert all of the .smc files to .nex format
+                    for it in iteration_ids:
+                        base = construct_argweaver_name(err_fn, inference_seed, it)
+                        with open(base+".nex", "w+") as out:
+                            msprime_ARGweaver.ARGweaver_smc_to_nexus(
+                                base+".smc", out, zero_based_tip_numbers=False)
+                    self.data.loc[i, result_cols] = (time, memory, ",".join(iteration_ids))
+                else:
+                    raise KeyError
+
+            # Save each row so we can use the information while it's being built
+            self.data.to_csv(self.data_file)
+
+
 
     def process(self):
         """
@@ -309,6 +399,9 @@ class Dataset(object):
 
         Returns a tuple of treesequence, filename (without file type extension)
         """
+        logging.info(
+            "Running simulation for n = {}, l = {}, rho={}, mu = {} seed={}".format(
+                n, l, rho, mu, seed))
         # Since we want to have a finite site model, we force the recombination map
         # to have exactly l loci with a recombination rate of rho between them.
         recombination_map = msprime.RecombinationMap.uniform_map(l, rho, l)
@@ -336,10 +429,13 @@ class Dataset(object):
         for error_rate in error_rates:
             S = generate_samples(ts, error_rate)
             err_filename = add_error_param_to_name(fname, error_rate)
-            logging.debug("writing variant matrix to {}.npy for msinfer".format(err_filename))
-            np.save(err_filename+".npy", S)
+            outfile = err_filename + ".npy"
+            logging.debug("writing variant matrix to {} for msinfer".format(outfile))
+            np.save(outfile, S)
+            outfile = err_filename + ".pos.npy"
             pos = np.array([v.position for v in ts.variants()])
-            np.save(err_filename+".pos.npy", pos)
+            logging.debug("writing variant positions to {} for msinfer".format(outfile))
+            np.save(outfile, pos)
             assert all(p.is_integer() for p in pos), \
                 "Variant positions are not all integers in {}".format()
             logging.debug("writing variant matrix to {}.hap for fastARG".format(err_filename))
@@ -350,10 +446,10 @@ class Dataset(object):
                 msprime_ARGweaver.variant_matrix_to_ARGweaver_in(np.transpose(S), pos, argweaver_in)
 
     @staticmethod
-    def run_tsinf(S, rho):
+    def run_tsinf(S, sequence_length, sites, rho, num_workers=1):
         before = time.clock()
-        panel = tsinf.ReferencePanel(S)
-        P = panel.infer_paths(rho, num_workers=4)
+        panel = tsinf.ReferencePanel(S, sites, sequence_length)
+        P = panel.infer_paths(rho, num_workers=num_workers)
         ts_new = panel.convert_records(P)
         ts_simplified = ts_new.simplify()
         cpu_time = time.clock() - before
@@ -388,8 +484,9 @@ class Dataset(object):
     @staticmethod
     def run_argweaver(sites_file, Ne, recombination_rate, mutation_rate, path_prefix, seed):
         """
-        this produces a whole load of .smc files labelled <path_prefix>i.0.smc, <path_prefix>i.10.smc, etc.
-        the iteration numbers ('i.0', 'i.10', etc) are returned by this function
+        this produces a whole load of .smc files labelled <path_prefix>i.0.smc,
+        <path_prefix>i.10.smc, etc. the iteration numbers ('i.0', 'i.10', etc)
+        are returned by this function
         """
         new_prefix = path_prefix + "_i" #we append a '_i' to mark iteration number
         before = time.clock()
@@ -450,75 +547,12 @@ class NumRecordsBySampleSizeDataset(Dataset):
             #now save it for future ref
             self.data.to_csv(self.data_file)
 
-    def setup(self):
-        """
-        Generates the initial simulations from which we can infer data.
-        Should be quite fast, but will generate lots of files, and probably
-        take up a fair bit of disk space.
-        """
-        # clear out any old simulations to avoid confusion.
-        if os.path.exists(self.simulations_dir):
-            shutil.rmtree(self.simulations_dir)
-        os.makedirs(self.simulations_dir)
-        for s in range(max(self.data.sim)+1):
-            sim = self.data[self.data.sim == s]
-            n = int(pd.unique(sim.sample_size))
-            logging.info("Running simulation for n = {}".format(n))
-            ts, fn = self.single_simulation(n,
-                                            pd.unique(sim.Ne),
-                                            pd.unique(sim.length),
-                                            pd.unique(sim.recombination_rate),
-                                            pd.unique(sim.mutation_rate),
-                                            pd.unique(sim.seed),
-                                            pd.unique(sim.seed)) #same mutation_seed as genealogy_seed
-            self.save_variant_matrices(ts, fn, pd.unique(sim.error_rate))
-
     def generate(self):
-        """
-        This runs the inference methods. It will be the most time consuming bit.
-        The final files saved will be nexus files containing multiple trees.
-        In the case of fastARG and msinfer methods, we could also save hdf5 files for reference
+        # This is effectively not implemented.
+        raise NotImplementedError()
 
-        Note that we should be able to kill a python instance after 'generate()' has run,
-        and fire up another instance in which we run 'process()'.
 
-        """
-        results = ['sourceNrecords','inferredNrecords','CPUtime','memory']
-        tool_cols = {t:["_".join([t,rc]) for rc in results] for t in self.tools}
-        for tool in self.tools:
-            add_columns(self.data, tool_cols[tool])
-        for i in self.data.index:
-            d = self.data.iloc[i]
-            sim_fn = msprime_name(d.sample_size, d.Ne, d.length, d.recombination_rate,
-                                  d.mutation_rate, d.seed, d.seed, self.simulations_dir)
-            err_fn = add_error_param_to_name(sim_fn, d.error_rate)
-            ts = msprime.load(sim_fn+".hdf5")
-            assert ts.sample_size == d.sample_size
-            for tool, result_cols in tool_cols.items():
-                if tool == 'msinfer':
-                    infile = err_fn + ".npy"
-                    out_fn = construct_msinfer_name(err_fn)
-                    logging.info("generating msinfer inference for n = {}, err = {}".format(
-                        d.sample_size, d.error_rate))
-                    logging.debug("reading: {} for msprime inference".format(infile))
-                    S = np.load(infile)
-                    assert S.shape == (ts.sample_size, ts.num_mutations)
-                    inferred_ts, time, memory = self.run_tsinf(S, 4*d.recombination_rate*d.Ne)
-                elif tool == 'fastARG':
-                    infile = err_fn + ".hap"
-                    out_fn = construct_fastarg_name(err_fn, d.seed)
-                    logging.info("generating fastARG inference for n = {}, err = {}".format(
-                        d.sample_size, d.error_rate))
-                    logging.debug("reading: {} for msprime inference".format(infile))
-                    inferred_ts, time, memory = self.run_fastarg(infile, d.length, d.seed)
-                else:
-                    raise KeyError
-                inferred_ts.dump(out_fn +".hdf5", zlib_compression=True)
-                self.data.loc[i, result_cols] = (
-                    ts.get_num_records(), inferred_ts.get_num_records(),time, memory)
 
-            # Save each row so we can use the information while it's being built
-            self.data.to_csv(self.data_file)
 
 class MetricsByMutationRateDataset(Dataset):
     """
@@ -562,92 +596,6 @@ class MetricsByMutationRateDataset(Dataset):
             #set unique seeds for each sim
             self.data['seed'] = get_seeds(max(self.data.sim)+1, self.seed)[self.data.sim]
             #now save it for future ref
-            self.data.to_csv(self.data_file)
-
-    def setup(self):
-        # clear out any old simulations to avoid confusion.
-        if os.path.exists(self.simulations_dir):
-            shutil.rmtree(self.simulations_dir)
-        os.makedirs(self.simulations_dir)
-        for s in range(max(self.data.sim)+1):
-            sim = self.data[self.data.sim == s]
-            logging.info("Running simulation for n = {}".format(pd.unique(sim.sample_size)))
-            ts, fn = self.single_simulation(pd.unique(sim.sample_size),
-                                            pd.unique(sim.Ne),
-                                            pd.unique(sim.length),
-                                            pd.unique(sim.recombination_rate),
-                                            pd.unique(sim.mutation_rate),
-                                            pd.unique(sim.seed),
-                                            pd.unique(sim.seed)) #same mutation_seed as genealogy_seed
-            with open(fn +".nex", "w+") as out:
-                ts.write_nexus_trees(out)
-            self.save_variant_matrices(ts, fn, pd.unique(sim.error_rate))
-
-    def generate(self):
-        """
-        This runs the inference methods. It will be the most time consuming bit.
-        The final files saved will be nexus files containing multiple trees.
-        In the case of fastARG and msinfer methods, we could also save hdf5 files for reference
-
-        Note that we should be able to kill a python instance after 'generate()' has run,
-        and fire up another instance in which we run 'process()'.
-
-        """
-        results = ['CPUtime','memory']
-        tool_cols = {t:["_".join([t,rc]) for rc in results] for t in self.tools}
-        #we need to store more information in the case of ARGweaver, since each ARGweaver
-        #run produces a whole set of iterations. We join these together in a single column
-        if "ARGweaver" in tool_cols:
-            tool_cols["ARGweaver"].append("ARGweaver_iterations")
-        for tool in self.tools:
-            add_columns(self.data, tool_cols[tool])
-
-        for i in self.data.index:
-            d = self.data.iloc[i]
-            sim_fn = msprime_name(d.sample_size, d.Ne, d.length, d.recombination_rate,
-                                  d.mutation_rate, d.seed, d.seed, self.simulations_dir)
-            err_fn = add_error_param_to_name(sim_fn, d.error_rate)
-            inference_seed = d.seed + i
-            self.data.loc[i, 'inference_seed'] = inference_seed
-            for tool, result_cols in tool_cols.items():
-                if tool == 'msinfer':
-                    infile = err_fn + ".npy"
-                    out_fn = construct_msinfer_name(err_fn)
-                    logging.info("generating msinfer inference for mu = {}".format(d.mutation_rate))
-                    logging.debug("reading: {} for msprime inference".format(infile))
-                    S = np.load(infile)
-                    logging.debug("(variant matrix size {})".format("x".join([str(x) for x in S.shape])))
-                    inferred_ts, time, memory = self.run_tsinf(S, 4*d.recombination_rate*d.Ne)
-                    with open(out_fn +".nex", "w+") as out:
-                        inferred_ts.write_nexus_trees(out)
-                    self.data.loc[i, result_cols] = (time, memory)
-                elif tool == 'fastARG':
-                    infile = err_fn + ".hap"
-                    out_fn = construct_fastarg_name(err_fn, inference_seed)
-                    logging.info("generating fastARG inference for mu = {}".format(d.mutation_rate))
-                    logging.debug("reading: {} for fastARG inference".format(infile))
-                    inferred_ts, time, memory = self.run_fastarg(infile, d.length, inference_seed)
-                    with open(out_fn +".nex", "w+") as out:
-                        inferred_ts.write_nexus_trees(out)
-                    self.data.loc[i, result_cols] = (time, memory)
-                elif tool == 'ARGweaver':
-                    infile = err_fn + ".sites"
-                    out_fn = construct_argweaver_name(err_fn, inference_seed)
-                    logging.info("generating ARGweaver inference for mu = {}".format(d.mutation_rate))
-                    logging.debug("reading: {} for ARGweaver inference".format(infile))
-                    iteration_ids, stats_file, time, memory = self.run_argweaver(infile, d.Ne,
-                        d.recombination_rate, d.mutation_rate, out_fn, inference_seed)
-                    print(iteration_ids)
-                    #now must convert all of the .smc files to .nex format
-                    for it in iteration_ids:
-                        base = construct_argweaver_name(err_fn, inference_seed, it)
-                        with open(base+".nex", "w+") as out:
-                            msprime_ARGweaver.ARGweaver_smc_to_nexus(base+".smc", out, zero_based_tip_numbers=False)
-                    self.data.loc[i, result_cols] = (time, memory, ",".join(iteration_ids))
-                else:
-                    raise KeyError
-
-            # Save each row so we can use the information while it's being built
             self.data.to_csv(self.data_file)
 
     def process(self):
