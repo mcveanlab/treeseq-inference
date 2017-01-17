@@ -589,17 +589,17 @@ class MetricsByMutationRateDataset(Dataset):
             params['Ne']                  = 5000,
             params['length']              = 50000,
             params['recombination_rate']  = 2.5e-8,
-            params['mutation_rate']       = np.logspace(-8, -5, num=10)[2:5] * 1.5
+            params['mutation_rate']       = np.logspace(-8, -5, num=10)[:-1] * 1.5
             params['replicate']           = np.arange(int(setup_params['reps']))
             sim_params = list(params.keys())
             #now add some other params, where multiple vals exists for one simulation
-            params['error_rate']          = 0, #[0, 0.01, 0.1]
+            params['error_rate']          = [0, 0.01, 0.1]
             #RNG seed used in inference methods - will be filled out in the generate() step
             params['inference_seed']     = np.nan,
             ## argweaver params: aw_n_out_samples will be produced, every argweaver_iter_out_freq
-            params['aw_burnin_iters']    = 23,#5000,
-            params['aw_n_out_samples']   = 10, #100,
-            params['aw_iter_out_freq']   = 5, #10,
+            params['aw_burnin_iters']    = 5000,
+            params['aw_n_out_samples']   = 100,
+            params['aw_iter_out_freq']   = 10,
             ## msinfer params: number of times to randomly resolve into bifurcating (binary) trees
             params['msinfer_biforce_reps']= 20,
 
