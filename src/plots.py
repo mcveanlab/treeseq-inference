@@ -15,6 +15,7 @@ import itertools
 import tempfile
 import subprocess
 import filecmp
+import random
 
 import numpy as np
 import matplotlib
@@ -358,7 +359,7 @@ class Dataset(object):
                     logging.debug("reading: {} for ARGweaver inference".format(infile))
                     iteration_ids, stats_file, time, memory = self.run_argweaver(
                         infile, d.Ne, d.recombination_rate, d.mutation_rate,
-                        out_fn, inference_seed, d.aw_n_out_samples, 
+                        out_fn, inference_seed, d.aw_n_out_samples,
                         d.aw_iter_out_freq, d.aw_burnin_iters)
                     #now must convert all of the .smc files to .nex format
                     for it in iteration_ids:
@@ -403,11 +404,22 @@ class Dataset(object):
         # Since we want to have a finite site model, we force the recombination map
         # to have exactly l loci with a recombination rate of rho between them.
         recombination_map = msprime.RecombinationMap.uniform_map(l, rho, l)
-        ts = msprime.simulate(
-            n, Ne, recombination_map=recombination_map, mutation_rate=mu,
-            random_seed=int(seed))
+        # We need to rejection sample any instances that we can't discretise under
+        # the current model. The simplest way to do this is to have a local RNG
+        # which we seed with the specified seed.
+        rng = random.Random(seed)
         # TODO replace this with a proper finite site mutation model in msprime.
-        ts = msprime_extras.discretise_mutations(ts)
+        done = False
+        while not done:
+            sim_seed = rng.randint(1, 2**31)
+            ts = msprime.simulate(
+                n, Ne, recombination_map=recombination_map, mutation_rate=mu,
+                random_seed=sim_seed)
+            try:
+                ts = msprime_extras.discretise_mutations(ts)
+                done = True
+            except ValueError as ve:
+                logging.info("Rejecting simulation: seed={}: {}".format(seed, ve))
         # Here we might want to iterate over mutation rates for the same
         # genealogy, setting a different mut_seed so that we can see for
         # ourselves the effect of mutation rate variation on a single topology
@@ -441,7 +453,7 @@ class Dataset(object):
                 msprime_fastARG.variant_matrix_to_fastARG_in(np.transpose(S), pos, fastarg_in)
             logging.debug("writing variant matrix to {}.sites for ARGweaver".format(err_filename))
             with open(err_filename+".sites", "w+") as argweaver_in:
-                msprime_ARGweaver.variant_matrix_to_ARGweaver_in(np.transpose(S), pos, 
+                msprime_ARGweaver.variant_matrix_to_ARGweaver_in(np.transpose(S), pos,
                     ts.get_sequence_length(), argweaver_in)
 
     @staticmethod
@@ -481,16 +493,16 @@ class Dataset(object):
             return inferred_ts, cpu_time, memory_use
 
     @staticmethod
-    def run_argweaver(sites_file, Ne, recombination_rate, 
+    def run_argweaver(sites_file, Ne, recombination_rate,
         mutation_rate, path_prefix, seed,
         n_samples, sampling_freq, burnin_iterations=0):
         """
         this produces a whole load of .smc files labelled <path_prefix>i.0.smc,
         <path_prefix>i.10.smc, etc. the iteration numbers ('i.0', 'i.10', etc)
         are returned by this function
-        
+
         TO DO: if verbosity < 0 (logging level == warning) we should set quiet = TRUE
-        
+
         """
         new_prefix = path_prefix + "_i" #we append a '_i' to mark iteration number
         before = time.clock()
@@ -500,7 +512,7 @@ class Dataset(object):
             executable   = ARGweaver_executable,
             ARGweaver_in = sites_file,
             sample_step  = sampling_freq,
-            iterations   = sampling_freq * (n_samples-1), 
+            iterations   = sampling_freq * (n_samples-1),
             #e.g. for 3 samples at sampling_freq 10, run for 10*(3-1) iterations
             #which gives 3 samples: t=0, t=10, & t=20
             rand_seed    = int(seed),
