@@ -95,48 +95,62 @@ def variant_matrix_to_ARGweaver_in(var_matrix, var_positions, seq_length, ARGwea
     ARGweaver_filehandle.flush()
     ARGweaver_filehandle.seek(0)
     
-def run_ARGweaver(Ne, mut_rate, recomb_rate, executable, ARGweaver_in, ARGweaver_out_dir=None, out_prefix="aw", iterations=None, sample_step=None, quiet=False, rand_seed=None):
+def run_ARGweaver(Ne, mut_rate, recomb_rate, executable, ARGweaver_in, ARGweaver_out_dir=None, out_prefix="aw", iterations=None, sample_step=None, quiet=False, rand_seed=None, burn_in=None):
     """
     run the ARGweaver executable on fastARG_in (which can be a filename or filehandle with .name attr)
     """
     import os
-    from subprocess import call
+    import subprocess
     if out_prefix:
         if ARGweaver_out_dir:
             ARGweaver_out_dir = os.path.join(ARGweaver_out_dir,out_prefix)
         else:
             ARGweaver_out_dir = out_prefix
-    exe = [str(executable), '--output', ARGweaver_out_dir, 
+    exe = [str(executable), '--sites', ARGweaver_in.name if hasattr(ARGweaver_in, "name") else ARGweaver_in,
                             '--popsize', str(Ne),
                             '--mutrate', str(mut_rate), 
                             '--recombrate', str(recomb_rate), 
-                            '--sites', ARGweaver_in.name if hasattr(ARGweaver_in, "name") else ARGweaver_in, 
                             '--overwrite']
     if quiet:
         exe.extend(['--quiet'])
     if rand_seed is not None:
         exe.extend(['--randseed', str(int(rand_seed))])
+    if burn_in:
+        burn_prefix = ARGweaver_out_dir[:-1]+"burn" #swap the 'i' for 'burn'
+        logging.info("== Burning in ARGweaver MCMC using {} steps ==".format(burn_in))
+        subprocess.call(exe + ['--iters', str(int(burn_in)),
+                               '--sample-step', str(int(burn_in)),
+                               '--output', burn_prefix])
+        #now read from the burn in arg file, rather than the original .sites
+        exe += ['--arg', burn_prefix+"."+str(int(burn_in))+".smc.gz"]
+    else:
+        exe += ['--sites', sites_file]
+
+    exe += ['--output', ARGweaver_out_dir]
     if iterations is not None:
         exe.extend(['--iters', str(int(iterations))])
     if sample_step is not None:
         exe.extend(['--sample-step', str(int(sample_step))])
-    logging.info("== Running ARGweaver as `{}` ==".format(" ".join(exe)))
-    call(exe)
+    logging.info("== Running ARGweaver for {} steps to collect {} samples ==".format( \
+        iterations, int(iterations/sample_step)+1))
+    logging.debug("== ARGweaver command is {} ==".format(" ".join(exe)))
+    subprocess.call(exe)
     
     
-def ARGweaver_smc_to_msprime_txts(smc2bin_executable, prefix, tree_filehandle, status_to=sys.stdout):
+def ARGweaver_smc_to_msprime_txts(smc2bin_executable, prefix, tree_filehandle):
     """
     convert the ARGweaver smc representation to coalescence records format
     """
-    assert False, "smc2arg is currently broken and should not be used. See https://github.com/mdrasmus/argweaver/issues/20"
+    assert False, "smc2arg is currently broken and should not be used." + \
+        "See https://github.com/mdrasmus/argweaver/issues/20"
     from subprocess import call
-    if status_to:
-        print("== Converting the ARGweaver smc output file '{}' to .arg format using '{}' ==".format(prefix + ".smc.gz", smc2bin_executable), file=status_to)
+    logging.info("== Converting the ARGweaver smc output file '{}' to .arg format using '{}' ==".format(\
+        prefix + ".smc.gz", smc2bin_executable))
     call([smc2bin_executable, prefix + ".smc.gz", prefix + ".arg"])
     with open(prefix + ".arg", "r+") as arg_fh:
-        return(ARGweaver_arg_to_msprime_txts(arg_fh, tree_filehandle, status_to))
+        return(ARGweaver_arg_to_msprime_txts(arg_fh, tree_filehandle))
 
-def ARGweaver_arg_to_msprime_txts(ARGweaver_arg_filehandle, tree_filehandle, status_to=sys.stdout):
+def ARGweaver_arg_to_msprime_txts(ARGweaver_arg_filehandle, tree_filehandle):
     """
     convert the ARGweaver arg representation to coalescence records format
     
@@ -147,8 +161,7 @@ def ARGweaver_arg_to_msprime_txts(ARGweaver_arg_filehandle, tree_filehandle, sta
     """
     import re
     import csv
-    if status_to:
-        print("== Converting .arg output to msprime ==", file=status_to)
+    logging.info("== Converting .arg output to msprime ==")
     ARG_nodes={} #cr[X] = child1:[left,right], child2:[left,right],... : serves as intermediate ARG storage 
     ARG_node_times={} #node_name => time
     node_names={} #map of ARGweaver names -> numbers
@@ -270,20 +283,18 @@ def ARGweaver_smc_to_nexus(smc_filename, outfilehandle, zero_based_tip_numbers=T
                 print(re.sub(r'^TREE\s+\d+\s+(\d+)\s+',lambda m: "TREE "+ m.group(1) + " = ", line.rstrip()), file = outfilehandle)
         print("END;", file = outfilehandle)
 
-def msprime_txts_to_hdf5(tree_filehandle, hdf5_outname=None, status_to=sys.stdout):
+def msprime_txts_to_hdf5(tree_filehandle, hdf5_outname=None):
     from warnings import warn
     import shutil
     import msprime
-    if status_to:
-        print("== Converting new msprime ARG as hdf5 ===", file = status_to)
+    logging.info("== Converting new msprime ARG as hdf5 ===")
     try:
         ts = msprime.load_txt(tree_filehandle.name)
     except:
         warn("Can't load the txt file properly. Saved a copy to 'bad.msprime' for inspection")
         shutil.copyfile(tree_filehandle.name, "bad.msprime")
         raise
-    if status_to:
-        print("== loaded {} ===".format(tree_filehandle.name), file=status_to)
+    logging.info("== loaded {} ===".format(tree_filehandle.name))
     try:
         simple_ts = ts.simplify()
     except:

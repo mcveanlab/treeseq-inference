@@ -124,7 +124,7 @@ def construct_fastarg_name(sim_name, seed, directory=None):
     d,f = os.path.split(sim_name)
     return os.path.join(d,'+'.join(['fastarg', f, "fs"+str(seed)]))
 
-def construct_argweaver_name(sim_name, seed, iteration=None):
+def construct_argweaver_name(sim_name, seed, iteration_number=None):
     """
     Returns an ARGweaver inference filename (without file extension),
     based on a simulation name. The iteration number (used in .smc and .nex output)
@@ -133,9 +133,9 @@ def construct_argweaver_name(sim_name, seed, iteration=None):
     'i.10', 'i.100', etc
     """
     d,f = os.path.split(sim_name)
-    suffix = "ws"+str(seed)
-    if iteration is not None:
-        suffix += "_"+iteration
+    suffix = "ws"+str(int(seed))
+    if iteration_number is not None:
+        suffix += "_i."+ str(int(iteration_number))
     return os.path.join(d,'+'.join(['aweaver', f, suffix]))
 
 def construct_msinfer_name(sim_name):
@@ -358,14 +358,14 @@ class Dataset(object):
                     logging.debug("reading: {} for ARGweaver inference".format(infile))
                     iteration_ids, stats_file, time, memory = self.run_argweaver(
                         infile, d.Ne, d.recombination_rate, d.mutation_rate,
-                        out_fn, inference_seed, d.aw_burnin_iters, 
-                        d.aw_n_out_samples, d.aw_iter_out_freq)
+                        out_fn, inference_seed, d.aw_n_out_samples, 
+                        d.aw_iter_out_freq, d.aw_burnin_iters)
                     #now must convert all of the .smc files to .nex format
                     for it in iteration_ids:
                         base = construct_argweaver_name(err_fn, inference_seed, it)
                         with open(base+".nex", "w+") as out:
                             msprime_ARGweaver.ARGweaver_smc_to_nexus(
-                                base+".smc", out, zero_based_tip_numbers=False)
+                                base+".smc.gz", out, zero_based_tip_numbers=False)
                     self.data.loc[i, result_cols] = (time, memory, ",".join(iteration_ids))
                 else:
                     raise KeyError
@@ -483,30 +483,39 @@ class Dataset(object):
     @staticmethod
     def run_argweaver(sites_file, Ne, recombination_rate, 
         mutation_rate, path_prefix, seed,
-        burnin_iterations, n_samples, sampling_freq):
+        n_samples, sampling_freq, burnin_iterations=0):
         """
         this produces a whole load of .smc files labelled <path_prefix>i.0.smc,
         <path_prefix>i.10.smc, etc. the iteration numbers ('i.0', 'i.10', etc)
         are returned by this function
+        
+        TO DO: if verbosity < 0 (logging level == warning) we should set quiet = TRUE
+        
         """
         new_prefix = path_prefix + "_i" #we append a '_i' to mark iteration number
         before = time.clock()
         msprime_ARGweaver.run_ARGweaver(Ne=Ne,
-                      mut_rate=mutation_rate,
-                      recomb_rate=recombination_rate,
-                      executable= ARGweaver_executable,
-                      ARGweaver_in=sites_file,
-                      rand_seed=seed,
-                      out_prefix=new_prefix)
+            mut_rate     = mutation_rate,
+            recomb_rate  = recombination_rate,
+            executable   = ARGweaver_executable,
+            ARGweaver_in = sites_file,
+            sample_step  = sampling_freq,
+            iterations   = sampling_freq * (n_samples-1), 
+            #e.g. for 3 samples at sampling_freq 10, run for 10*(3-1) iterations
+            #which gives 3 samples: t=0, t=10, & t=20
+            rand_seed    = int(seed),
+            burn_in      = int(burnin_iterations),
+            quiet        = True,
+            out_prefix   = new_prefix)
         cpu_time = time.clock() - before
         memory_use = 0 #To DO
         #here we need to look for the .smc files output by argweaver
-        iterations = [f[len(new_prefix):-4] for f in glob.glob(new_prefix + "*" + ".smc")]
+        smc_prefix = new_prefix + "." #the arg-sample program adds .iteration_num
+        iterations = [f[len(smc_prefix):-7] for f in glob.glob(smc_prefix + "*" + ".smc.gz")]
         new_stats_file_name = path_prefix+".stats"
         os.rename(new_prefix + ".stats", new_stats_file_name)
         #cannot translate these to msprime ts objects, as smc2arg does not work
         #see https://github.com/mdrasmus/argweaver/issues/20
-        print(iterations)
         return iterations, new_stats_file_name, cpu_time, memory_use
 
 class NumRecordsBySampleSizeDataset(Dataset):
@@ -588,9 +597,9 @@ class MetricsByMutationRateDataset(Dataset):
             #RNG seed used in inference methods - will be filled out in the generate() step
             params['inference_seed']     = np.nan,
             ## argweaver params: aw_n_out_samples will be produced, every argweaver_iter_out_freq
-            params['aw_burnin_iters']    = 5000,
-            params['aw_n_out_samples']   = 100,
-            params['aw_iter_out_freq']   = 10,
+            params['aw_burnin_iters']    = 23,#5000,
+            params['aw_n_out_samples']   = 10, #100,
+            params['aw_iter_out_freq']   = 5, #10,
             ## msinfer params: number of times to randomly resolve into bifurcating (binary) trees
             params['msinfer_biforce_reps']= 20,
 
