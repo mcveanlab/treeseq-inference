@@ -16,6 +16,7 @@ import tempfile
 import subprocess
 import filecmp
 import random
+import multiprocessing
 
 import numpy as np
 import matplotlib
@@ -194,9 +195,10 @@ class InferenceRunner(object):
     Class responsible for running a single inference tool and returning results for
     the dataframe.
     """
-    def __init__(self, tool, row, simulations_dir):
+    def __init__(self, tool, row, simulations_dir, num_threads):
         self.tool = tool
         self.row = row
+        self.num_threads = num_threads
         self.sim_fn = msprime_name(
             row.sample_size, row.Ne, row.length, row.recombination_rate,
             row.mutation_rate, row.seed, row.seed, simulations_dir)
@@ -225,7 +227,8 @@ class InferenceRunner(object):
             pos = np.load(infile)
             out_fn = construct_tsinf_name(err_fn)
             inferred_ts, time, memory = self.run_tsinf(
-                S, d.length, pos, 4 * d.recombination_rate * d.Ne)
+                S, d.length, pos, 4 * d.recombination_rate * d.Ne,
+                num_workers=self.num_threads)
             with open(out_fn +".nex", "w+") as out:
                 inferred_ts.write_nexus_trees(out)
             results = {
@@ -347,8 +350,9 @@ class InferenceRunner(object):
 
 
 
-def infer_worker(tool, row, simulations_dir):
-    runner = InferenceRunner(tool, row, simulations_dir)
+def infer_worker(work):
+    tool, row, simulations_dir, num_threads = work
+    runner = InferenceRunner(tool, row, simulations_dir, num_threads)
     return int(row[0]), runner.run()
 
 
@@ -406,24 +410,29 @@ class Dataset(object):
         # TODO add process columns.
         self.dump_data(write_index=True)
 
-    def infer(self):
+    def infer(self, num_processes, num_threads):
         """
         Runs the main inference processes and stores results in the dataframe.
         """
+        logging.info("running infer with {} processes and {} threads".format(
+            num_processes, num_threads))
         self.load_data()
+        work = []
         for i in self.data.index:
             for tool in self.tools:
                 # All values that are unset should be NaN, so we only run those that
                 # haven't been filled in already. This allows us to stop and start the
                 # infer processes without having to start from scratch each time.
                 if np.isnan(self.data.ix[i, cpu_time_colname(tool)]):
-                    row_id, updated = infer_worker(tool, self.data.iloc[i], self.simulations_dir)
-                    assert row_id == i
-                    for k, v in updated.items():
-                        self.data.ix[row_id, k] = v
-                    self.dump_data()
+                    work.append((tool, self.data.iloc[i], self.simulations_dir, num_threads))
                 else:
                     logging.info("Skipping row {} for {}".format(i, tool))
+        with multiprocessing.Pool(processes=num_processes) as pool:
+            for row_id, updated in pool.imap_unordered(infer_worker, work):
+                for k, v in updated.items():
+                    self.data.ix[row_id, k] = v
+                self.dump_data()
+
 
     #
     # Utilities for running simulations and saving files.
@@ -724,7 +733,7 @@ def run_setup(cls, args):
 def run_infer(cls, args):
     logging.info("Inferring {}".format(cls.name))
     f = cls()
-    f.infer()
+    f.infer(args.processes, args.threads)
 
 
 def run_process(cls, args):
@@ -754,11 +763,6 @@ def main():
     subparsers.dest = 'command'
 
     subparser = subparsers.add_parser('setup')
-    # TODO: something like this will be useful to set up smaller runs for
-    # testing purposes and to control the number of processes used.
-    # subparser.add_argument(
-    #     "--processes", '-p', help="number of processes",
-    #     type=int, default=1)
     subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
         help='the dataset identifier')
@@ -769,6 +773,12 @@ def main():
     subparser.set_defaults(func=run_setup)
 
     subparser = subparsers.add_parser('infer')
+    subparser.add_argument(
+        "--processes", '-p', type=int, default=1,
+        help="number of worker processes")
+    subparser.add_argument(
+        "--threads", '-t', type=int, default=1,
+        help="number of threads per worker process (for supporting tools)")
     subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
         help='the dataset identifier')
