@@ -122,7 +122,7 @@ def construct_fastarg_name(sim_name, seed, directory=None):
     based on a simulation name
     """
     d,f = os.path.split(sim_name)
-    return os.path.join(d,'+'.join(['fastarg', f, "fs"+str(seed)]))
+    return os.path.join(d,'+'.join(['fastarg', f, "fs"+str(int(seed))]))
 
 def construct_argweaver_name(sim_name, seed, iteration_number=None):
     """
@@ -638,7 +638,7 @@ class MetricsByMutationRateDataset(Dataset):
                            'reps':d.msinfer_biforce_reps,
                            'seed':polytomy_resolution_seed}
             }
-            logging.info("processing ARG for mu = {}, err = {}.".format(
+            logging.info("Processing ARG to extract metrics: mu = {}, err = {}.".format(
                 d.mutation_rate, d.error_rate))
             m = ARG_metrics.get_ARG_metrics(sim_fn + ".nex", **toolfiles)
             self.data.loc[i,"MSIbifu_seed"] = polytomy_resolution_seed
