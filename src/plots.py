@@ -143,7 +143,7 @@ def construct_tsinf_name(sim_name):
     d,f = os.path.split(sim_name)
     return os.path.join(d,'+'.join(['tsinf', f, ""]))
 
-def time_cmd(cmd, stdout):
+def time_cmd(cmd, stdout=sys.stdout):
     """
     Runs the specified command line (a list suitable for subprocess.call)
     and writes the stdout to the specified file object.
@@ -205,84 +205,83 @@ class InferenceRunner(object):
         self.err_fn = add_error_param_to_name(self.sim_fn, row.error_rate)
 
     def run(self):
-
-        # TODO break up this into separate methods so that we can abstract out
-        # common functionality.
-
-        logging.info("running {} on row {}".format(self.tool, int(self.row[0])))
-        d = self.row
-        err_fn = self.err_fn
-        sim_fn = self.sim_fn
-        inference_seed = self.row.seed  # TODO do we need to specify this separately?
-        if self.tool == 'tsinf':
-            infile = err_fn + ".npy"
-            # TODO abstract out these messages and put more of the parmeter values.
-            logging.info("generating tsinf inference for ".format(d.mutation_rate))
-            logging.debug(
-                "reading: variant matrix {} for msprime inference".format(infile))
-            S = np.load(infile)
-            infile = err_fn + ".pos.npy"
-            logging.debug(
-                "reading: positions {} for msprime inference".format(infile))
-            pos = np.load(infile)
-            out_fn = construct_tsinf_name(err_fn)
-            inferred_ts, time, memory = self.run_tsinf(
-                S, d.length, pos, 4 * d.recombination_rate * d.Ne,
-                num_workers=self.num_threads)
-            with open(out_fn +".nex", "w+") as out:
-                inferred_ts.write_nexus_trees(out)
-            results = {
-                cpu_time_colname(self.tool): time,
-                memory_colname(self.tool): memory
-            }
-        elif self.tool == 'fastARG':
-            infile = err_fn + ".hap"
-            out_fn = construct_fastarg_name(err_fn, inference_seed)
-            logging.info("generating fastARG inference for mu = {}".format(
-                d.mutation_rate))
-            logging.debug("reading: {} for fastARG inference".format(infile))
-            inferred_ts, time, memory = self.run_fastarg(infile, d.length, inference_seed)
-            with open(out_fn +".nex", "w+") as out:
-                inferred_ts.write_nexus_trees(out)
-            results = {
-                cpu_time_colname(self.tool): time,
-                memory_colname(self.tool): memory
-            }
-        elif self.tool == 'ARGweaver':
-            infile = err_fn + ".sites"
-            out_fn = construct_argweaver_name(err_fn, inference_seed)
-            logging.info(
-                "generating ARGweaver inference for mu = {}".format(d.mutation_rate))
-            logging.debug("reading: {} for ARGweaver inference".format(infile))
-            iteration_ids, stats_file, time, memory = self.run_argweaver(
-                infile, d.Ne, d.recombination_rate, d.mutation_rate,
-                out_fn, inference_seed, d.aw_n_out_samples,
-                d.aw_iter_out_freq, d.aw_burnin_iters)
-            #now must convert all of the .smc files to .nex format
-            for it in iteration_ids:
-                base = construct_argweaver_name(err_fn, inference_seed, it)
-                with open(base+".nex", "w+") as out:
-                    msprime_ARGweaver.ARGweaver_smc_to_nexus(
-                        base+".smc.gz", out, zero_based_tip_numbers=False)
-            results = {
-                cpu_time_colname(self.tool): time,
-                memory_colname(self.tool): memory,
-                "ARGWeaver_iterations": ",".join(iteration_ids)
-            }
+        logging.info("running {} inference on row {}".format(self.tool, int(self.row[0])))
+        logging.debug("parameters = {}".format(self.row.to_dict()))
+        if self.tool == "tsinf":
+            ret = self.__run_tsinf()
+        elif self.tool == "fastARG":
+            ret = self.__run_fastARG()
+        elif self.tool == "ARGweaver":
+            ret = self.__run_ARGweaver()
         else:
-            raise KeyError
+            raise KeyError("unknown tool {}".format(self.tool))
+        logging.debug("returning infer results for {} row {} = {}".format(
+            self.tool, int(self.row[0]), ret))
+        return ret
+
+
+    def __run_tsinf(self):
+
+        samples_fn = self.err_fn + ".npy"
+        logging.debug("reading: variant matrix {} for msprime inference".format(samples_fn))
+        positions_fn = self.err_fn + ".pos.npy"
+        logging.debug("reading: positions {} for msprime inference".format(positions_fn))
+        out_fn = construct_tsinf_name(self.err_fn)
+        scaled_recombination_rate = 4 * self.row.recombination_rate * self.row.Ne
+        inferred_ts, time, memory = self.run_tsinf(
+            samples_fn, positions_fn, self.row.length, scaled_recombination_rate,
+            num_threads=self.num_threads)
+        with open(out_fn +".nex", "w+") as out:
+            inferred_ts.write_nexus_trees(out)
+        return  {
+            cpu_time_colname(self.tool): time,
+            memory_colname(self.tool): memory
+        }
+
+    def __run_fastARG(self):
+        inference_seed = self.row.seed  # TODO do we need to specify this separately?
+        infile = self.err_fn + ".hap"
+        out_fn = construct_fastarg_name(self.err_fn, inference_seed)
+        logging.debug("reading: {} for fastARG inference".format(infile))
+        inferred_ts, time, memory = self.run_fastarg(infile, self.row.length, inference_seed)
+        with open(out_fn +".nex", "w+") as out:
+            inferred_ts.write_nexus_trees(out)
+        return {
+            cpu_time_colname(self.tool): time,
+            memory_colname(self.tool): memory
+        }
+
+    def __run_ARGweaver(self):
+        inference_seed = self.row.seed  # TODO do we need to specify this separately?
+        infile = self.err_fn + ".sites"
+        out_fn = construct_argweaver_name(self.err_fn, inference_seed)
+        logging.debug("reading: {} for ARGweaver inference".format(infile))
+        iteration_ids, stats_file, time, memory = self.run_argweaver(
+            infile, self.row.Ne, self.row.recombination_rate, self.row.mutation_rate,
+            out_fn, inference_seed, self.row.aw_n_out_samples,
+            self.row.aw_iter_out_freq, self.row.aw_burnin_iters)
+        #now must convert all of the .smc files to .nex format
+        for it in iteration_ids:
+            base = construct_argweaver_name(self.err_fn, inference_seed, it)
+            with open(base + ".nex", "w+") as out:
+                msprime_ARGweaver.ARGweaver_smc_to_nexus(
+                    base+".smc.gz", out, zero_based_tip_numbers=False)
+        results = {
+            cpu_time_colname(self.tool): time,
+            memory_colname(self.tool): memory,
+            "ARGWeaver_iterations": ",".join(iteration_ids)
+        }
         return results
 
-
     @staticmethod
-    def run_tsinf(S, sequence_length, sites, rho, num_workers=1):
-        before = time.clock()
-        panel = tsinf.ReferencePanel(S, sites, sequence_length)
-        P = panel.infer_paths(rho, num_workers=num_workers)
-        ts_new = panel.convert_records(P)
-        ts_simplified = ts_new.simplify()
-        cpu_time = time.clock() - before
-        memory_use = 0 #To DO
+    def run_tsinf(sample_fn, positions_fn, length, rho, num_threads=1):
+        with tempfile.NamedTemporaryFile("w+") as ts_out:
+            cmd = [
+                sys.executable, "src/run_tsinf.py", sample_fn, positions_fn,
+                "--length", str(int(length)), "--recombination-rate", str(rho),
+                "--threads", str(num_threads), ts_out.name]
+            cpu_time, memory_use = time_cmd(cmd)
+            ts_simplified = msprime.load(ts_out.name)
         return ts_simplified, cpu_time, memory_use
 
     @staticmethod
@@ -311,9 +310,9 @@ class InferenceRunner(object):
             return inferred_ts, cpu_time, memory_use
 
     @staticmethod
-    def run_argweaver(sites_file, Ne, recombination_rate,
-        mutation_rate, path_prefix, seed,
-        n_samples, sampling_freq, burnin_iterations=0):
+    def run_argweaver(
+            sites_file, Ne, recombination_rate, mutation_rate, path_prefix, seed,
+            n_samples, sampling_freq, burnin_iterations=0):
         """
         this produces a whole load of .smc files labelled <path_prefix>i.0.smc,
         <path_prefix>i.10.smc, etc. the iteration numbers ('i.0', 'i.10', etc)
@@ -324,6 +323,8 @@ class InferenceRunner(object):
         """
         new_prefix = path_prefix + "_i" #we append a '_i' to mark iteration number
         before = time.clock()
+        # TODO change this to get a command line for argweaver which we then run
+        # using time_cmd.
         msprime_ARGweaver.run_ARGweaver(Ne=Ne,
             mut_rate     = mutation_rate,
             recomb_rate  = recombination_rate,
@@ -351,6 +352,9 @@ class InferenceRunner(object):
 
 
 def infer_worker(work):
+    """
+    Entry point for running a single inference task in a worker process.
+    """
     tool, row, simulations_dir, num_threads = work
     runner = InferenceRunner(tool, row, simulations_dir, num_threads)
     return int(row[0]), runner.run()
@@ -427,8 +431,16 @@ class Dataset(object):
                     work.append((tool, self.data.iloc[i], self.simulations_dir, num_threads))
                 else:
                     logging.info("Skipping row {} for {}".format(i, tool))
-        with multiprocessing.Pool(processes=num_processes) as pool:
-            for row_id, updated in pool.imap_unordered(infer_worker, work):
+        if num_processes > 1:
+            with multiprocessing.Pool(processes=num_processes) as pool:
+                for row_id, updated in pool.imap_unordered(infer_worker, work):
+                    for k, v in updated.items():
+                        self.data.ix[row_id, k] = v
+                    self.dump_data()
+        else:
+            # When we have only one process it's easier to keep everything in the same
+            # process for debugging.
+            for row_id, updated in map(infer_worker, work):
                 for k, v in updated.items():
                     self.data.ix[row_id, k] = v
                 self.dump_data()
