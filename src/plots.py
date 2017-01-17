@@ -320,7 +320,7 @@ class Dataset(object):
                 d.sample_size, d.Ne, d.length, d.recombination_rate,
                 d.mutation_rate, d.seed, d.seed, self.simulations_dir)
             err_fn = add_error_param_to_name(sim_fn, d.error_rate)
-            inference_seed = d.seed + i
+            inference_seed = int(d.seed + i)
             self.data.loc[i, 'inference_seed'] = inference_seed
             for tool, result_cols in sorted(tool_cols.items()):
                 if tool == 'msinfer':
