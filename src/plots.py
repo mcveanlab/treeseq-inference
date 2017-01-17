@@ -41,13 +41,12 @@ msprime.TreeSequence.write_nexus_trees = msprime_extras.write_nexus_trees
 if sys.version_info[0] < 3:
     raise Exception("Python 3 only")
 
-def add_columns(dataframe, colnames):
-    """
-    add the named columns to a data frame unless they already exist
-    """
-    for cn in colnames:
-        if cn not in dataframe.columns:
-            dataframe[cn]=np.NaN
+
+def cpu_time_colname(tool):
+    return tool + "_cpu_time"
+
+def memory_colname(tool):
+    return tool + "_memory"
 
 def make_errors(v, p):
     """
@@ -190,9 +189,9 @@ class Figure(object):
         raise NotImplementedError()
 
 
-class ToolRunner(object):
+class InferenceRunner(object):
     """
-    Class responsible for running a single tool and returning the updated row in
+    Class responsible for running a single inference tool and returning results for
     the dataframe.
     """
     def __init__(self, tool, row, simulations_dir):
@@ -204,24 +203,73 @@ class ToolRunner(object):
         self.err_fn = add_error_param_to_name(self.sim_fn, row.error_rate)
 
     def run(self):
-        logging.info("running {}: {}".format(self.tool, self.row.index))
 
+        # TODO break up this into separate methods so that we can abstract out
+        # common functionality.
 
-    def run_tsinf(self):
-        infile = self.err_fn + ".npy"
-        logging.debug(
-            "reading: variant matrix {} for msprime inference".format(infile))
-        S = np.load(infile)
-        infile = err_fn + ".pos.npy"
-        logging.debug(
-            "reading: positions {} for msprime inference".format(infile))
-        pos = np.load(infile)
-        out_fn = construct_tsinf_name(err_fn)
-        inferred_ts, time, memory = self.run_tsinf(
-            S, d.length, pos, 4 * d.recombination_rate * d.Ne)
-        with open(out_fn +".nex", "w+") as out:
-            inferred_ts.write_nexus_trees(out)
-        self.data.loc[i, result_cols] = (time, memory)
+        logging.info("running {} on row {}".format(self.tool, int(self.row[0])))
+        d = self.row
+        err_fn = self.err_fn
+        sim_fn = self.sim_fn
+        inference_seed = self.row.seed  # TODO do we need to specify this separately?
+        if self.tool == 'tsinf':
+            infile = err_fn + ".npy"
+            # TODO abstract out these messages and put more of the parmeter values.
+            logging.info("generating tsinf inference for ".format(d.mutation_rate))
+            logging.debug(
+                "reading: variant matrix {} for msprime inference".format(infile))
+            S = np.load(infile)
+            infile = err_fn + ".pos.npy"
+            logging.debug(
+                "reading: positions {} for msprime inference".format(infile))
+            pos = np.load(infile)
+            out_fn = construct_tsinf_name(err_fn)
+            inferred_ts, time, memory = self.run_tsinf(
+                S, d.length, pos, 4 * d.recombination_rate * d.Ne)
+            with open(out_fn +".nex", "w+") as out:
+                inferred_ts.write_nexus_trees(out)
+            results = {
+                cpu_time_colname(self.tool): time,
+                memory_colname(self.tool): memory
+            }
+        elif self.tool == 'fastARG':
+            infile = err_fn + ".hap"
+            out_fn = construct_fastarg_name(err_fn, inference_seed)
+            logging.info("generating fastARG inference for mu = {}".format(
+                d.mutation_rate))
+            logging.debug("reading: {} for fastARG inference".format(infile))
+            inferred_ts, time, memory = self.run_fastarg(infile, d.length, inference_seed)
+            with open(out_fn +".nex", "w+") as out:
+                inferred_ts.write_nexus_trees(out)
+            results = {
+                cpu_time_colname(self.tool): time,
+                memory_colname(self.tool): memory
+            }
+        elif self.tool == 'ARGweaver':
+            infile = err_fn + ".sites"
+            out_fn = construct_argweaver_name(err_fn, inference_seed)
+            logging.info(
+                "generating ARGweaver inference for mu = {}".format(d.mutation_rate))
+            logging.debug("reading: {} for ARGweaver inference".format(infile))
+            iteration_ids, stats_file, time, memory = self.run_argweaver(
+                infile, d.Ne, d.recombination_rate, d.mutation_rate,
+                out_fn, inference_seed, d.aw_n_out_samples,
+                d.aw_iter_out_freq, d.aw_burnin_iters)
+            #now must convert all of the .smc files to .nex format
+            for it in iteration_ids:
+                base = construct_argweaver_name(err_fn, inference_seed, it)
+                with open(base+".nex", "w+") as out:
+                    msprime_ARGweaver.ARGweaver_smc_to_nexus(
+                        base+".smc.gz", out, zero_based_tip_numbers=False)
+            results = {
+                cpu_time_colname(self.tool): time,
+                memory_colname(self.tool): memory,
+                "ARGWeaver_iterations": ",".join(iteration_ids)
+            }
+        else:
+            raise KeyError
+        return results
+
 
     @staticmethod
     def run_tsinf(S, sequence_length, sites, rho, num_workers=1):
@@ -299,14 +347,14 @@ class ToolRunner(object):
 
 
 
+def infer_worker(tool, row, simulations_dir):
+    runner = InferenceRunner(tool, row, simulations_dir)
+    return int(row[0]), runner.run()
 
 
 class Dataset(object):
     """
-    A dataset is some collection of simulations which are run using
-    the generate() method and stored in the raw_data_path directory.
-    The process() method then processes the raw data and outputs
-    the results into the data file.
+    A dataset is some collection of simulations and associated data.
     """
     name = None
     """
@@ -323,6 +371,12 @@ class Dataset(object):
         self.raw_data_dir = os.path.join(self.data_dir, "raw__NOBACKUP__", self.name)
         self.simulations_dir = os.path.join(self.raw_data_dir, "simulations")
 
+    def load_data(self):
+        self.data = pd.read_csv(self.data_file)
+
+    def dump_data(self, write_index=False):
+        self.data.to_csv(self.data_file, index=write_index)
+
     #
     # Main entry points.
     #
@@ -337,7 +391,39 @@ class Dataset(object):
         os.makedirs(self.simulations_dir)
         logging.info("Creating dir {}".format(self.simulations_dir))
         self.data = self.run_simulations(replicates, seed)
-        self.data.to_csv(self.data_file)
+        # Add the result columns
+        tool_cols = []
+        for tool in self.tools:
+            tool_cols.append(cpu_time_colname(tool))
+            tool_cols.append(memory_colname(tool))
+        # We need to store more information in the case of ARGweaver, since
+        # each ARGweaver run produces a whole set of iterations. We join these
+        # together in a single column
+        if "ARGweaver" in self.tools:
+            tool_cols.append("ARGweaver_iterations")
+        for col in tool_cols:
+            self.data[col] = np.NaN
+        # TODO add process columns.
+        self.dump_data(write_index=True)
+
+    def infer(self):
+        """
+        Runs the main inference processes and stores results in the dataframe.
+        """
+        self.load_data()
+        for i in self.data.index:
+            for tool in self.tools:
+                # All values that are unset should be NaN, so we only run those that
+                # haven't been filled in already. This allows us to stop and start the
+                # infer processes without having to start from scratch each time.
+                if np.isnan(self.data.ix[i, cpu_time_colname(tool)]):
+                    row_id, updated = infer_worker(tool, self.data.iloc[i], self.simulations_dir)
+                    assert row_id == i
+                    for k, v in updated.items():
+                        self.data.ix[row_id, k] = v
+                    self.dump_data()
+                else:
+                    logging.info("Skipping row {} for {}".format(i, tool))
 
     #
     # Utilities for running simulations and saving files.
@@ -414,149 +500,6 @@ class Dataset(object):
         with open(err_filename+".sites", "w+") as argweaver_in:
             msprime_ARGweaver.variant_matrix_to_ARGweaver_in(np.transpose(S), pos,
                 ts.get_sequence_length(), argweaver_in)
-
-
-
-    def old__init__(self, data_file=None, reps=None, seed=None):
-        """
-        Creates initial names for a data file & data dir.
-
-        A data_file can be passed which should contain a '+'
-        followed by param1=value1_param2=value2, etc.
-        Otherwise, parameters should be passed as **params
-
-        If data file already exists, read it in to self.data,
-        otherwise set self.data to None, which flags up that
-        we need to generate one.
-
-        Return dict of params (either as set or from the data file name)
-        """
-        if data_file is None and reps is None and seed is None:
-            # look for an existing data file in the data_dir
-            potential_data_files = glob.glob(os.path.join(self.data_dir,"{}+*.csv".format(self.name)))
-            try:
-                data_file = max(potential_data_files, key = os.path.getctime)
-                if len(potential_data_files) > 1:
-                    logging.info(("More than one data file for {}. " +
-                        "Picking the most recent {}").format(self.name, data_file))
-            except:
-                sys.exit("No data file found, and no parameters specified")
-
-        if data_file is not None:
-            self.data = pd.read_csv(data_file)
-            assert data_file.endswith(".csv")
-            assert data_file.rfind("+") != -1
-            #extract params from the filename
-            param_string = data_file[(data_file.rfind("+")+1):-4]
-            run_params = {p.split("=",1)[0]:p.split("=",1)[1] for p in param_string.split("_")}
-        else:
-            self.data = None
-            run_params = {'reps':reps, 'seed':seed}
-
-        self.run_id = "_".join([k+"="+str(run_params[k]) for k in sorted(run_params.keys())])
-        self.data_file = os.path.abspath(os.path.join(self.data_dir,
-            "{}+{}.csv".format(self.name, self.run_id)))
-
-        self.raw_data_dir = os.path.join(self.data_dir, "raw__NOBACKUP__", self.name, str(self.run_id))
-        if not os.path.exists(self.raw_data_dir):
-            logging.info("Making raw data dir {}".format(self.raw_data_dir))
-        os.makedirs(self.raw_data_dir, exist_ok=True)
-
-        return run_params
-
-    @staticmethod
-    def set_default_run_params(param_dict, default_dict):
-        for key, val in default_dict.items():
-            if key in param_dict and param_dict[key] is None:
-                param_dict[key] = val
-
-
-    def generate(self):
-        """
-        TODO abstract out the common functionality across different datasets.
-        We should have a main loop here in common with all the datasets
-        and write the code to run the various tools exactly once. We can have
-        calls into specific things we need to have in subclasses, but we should
-        definitely not have duplication of big important chunks of code.
-
-        This is currently the version of generate() from the
-        MetricsByMutationRateDataset.
-        """
-        results = ['CPUtime','memory']
-        tool_cols = {t:["_".join([t,rc]) for rc in results] for t in self.tools}
-        # We need to store more information in the case of ARGweaver, since
-        # each ARGweaver run produces a whole set of iterations. We join these
-        # together in a single column
-        if "ARGweaver" in tool_cols:
-            tool_cols["ARGweaver"].append("ARGweaver_iterations")
-        for tool in self.tools:
-            add_columns(self.data, tool_cols[tool])
-
-        print(self.tools)
-        for i in self.data.index:
-            row = self.data.iloc[i]
-            for tool in self.tools:
-                runner = ToolRunner(tool, row, self.simulations_dir)
-                runner.run()
-
-            # sim_fn = msprime_name(
-            #     d.sample_size, d.Ne, d.length, d.recombination_rate,
-            #     d.mutation_rate, d.seed, d.seed, self.simulations_dir)
-            # err_fn = add_error_param_to_name(sim_fn, d.error_rate)
-            # inference_seed = int(d.seed + i)
-            # self.data.loc[i, 'inference_seed'] = inference_seed
-            # for tool, result_cols in sorted(tool_cols.items()):
-            #     print(tool, result_cols)
-                # if tool == 'tsinf':
-                #     infile = err_fn + ".npy"
-                #     logging.info("generating tsinf inference for mu = {}".format(
-                #         d.mutation_rate))
-                #     logging.debug(
-                #         "reading: variant matrix {} for msprime inference".format(infile))
-                #     S = np.load(infile)
-                #     infile = err_fn + ".pos.npy"
-                #     logging.debug(
-                #         "reading: positions {} for msprime inference".format(infile))
-                #     pos = np.load(infile)
-                #     out_fn = construct_tsinf_name(err_fn)
-                #     inferred_ts, time, memory = self.run_tsinf(
-                #         S, d.length, pos, 4 * d.recombination_rate * d.Ne)
-                #     with open(out_fn +".nex", "w+") as out:
-                #         inferred_ts.write_nexus_trees(out)
-                #     self.data.loc[i, result_cols] = (time, memory)
-                # elif tool == 'fastARG':
-                #     infile = err_fn + ".hap"
-                #     out_fn = construct_fastarg_name(err_fn, inference_seed)
-                #     logging.info("generating fastARG inference for mu = {}".format(
-                #         d.mutation_rate))
-                #     logging.debug("reading: {} for fastARG inference".format(infile))
-                #     inferred_ts, time, memory = self.run_fastarg(infile, d.length, inference_seed)
-                #     with open(out_fn +".nex", "w+") as out:
-                #         inferred_ts.write_nexus_trees(out)
-                #     self.data.loc[i, result_cols] = (time, memory)
-                # elif tool == 'ARGweaver':
-                #     infile = err_fn + ".sites"
-                #     out_fn = construct_argweaver_name(err_fn, inference_seed)
-                #     logging.info(
-                #         "generating ARGweaver inference for mu = {}".format(d.mutation_rate))
-                #     logging.debug("reading: {} for ARGweaver inference".format(infile))
-                #     iteration_ids, stats_file, time, memory = self.run_argweaver(
-                #         infile, d.Ne, d.recombination_rate, d.mutation_rate,
-                #         out_fn, inference_seed, d.aw_n_out_samples,
-                #         d.aw_iter_out_freq, d.aw_burnin_iters)
-                #     #now must convert all of the .smc files to .nex format
-                #     for it in iteration_ids:
-                #         base = construct_argweaver_name(err_fn, inference_seed, it)
-                #         with open(base+".nex", "w+") as out:
-                #             msprime_ARGweaver.ARGweaver_smc_to_nexus(
-                #                 base+".smc.gz", out, zero_based_tip_numbers=False)
-                #     self.data.loc[i, result_cols] = (time, memory, ",".join(iteration_ids))
-                # else:
-                #     raise KeyError
-
-            # Save each row so we can use the information while it's being built
-            self.data.to_csv(self.data_file)
-
 
     def process(self):
         """
@@ -659,8 +602,11 @@ class MetricsByMutationRateDataset(Dataset):
         length = 50000
         recombination_rate = 2.5e-8
         ## argweaver params: aw_n_out_samples will be produced, every argweaver_iter_out_freq
-        aw_burnin_iters = 5000
-        aw_n_out_samples = 100
+        # aw_burnin_iters = 5000
+        # aw_n_out_samples = 100
+        # TMP for development
+        aw_burnin_iters = 5
+        aw_n_out_samples = 10
         aw_iter_out_freq = 10
         ## tsinf params: number of times to randomly resolve into bifurcating (binary) trees
         tsinf_biforce_reps = 20
@@ -700,47 +646,6 @@ class MetricsByMutationRateDataset(Dataset):
                     self.save_variant_matrices(ts, fn, error_rate)
         return data
 
-
-
-    def old__init__(self, **params):
-        """
-        Everything is done via a Data Frame which contains the initial params and is
-        then used to store the output values.
-        """
-        self.set_default_run_params(params, {'seed':13, 'reps':10})
-        setup_params = super().__init__(**params)
-        self.simulations_dir = os.path.join(self.raw_data_dir, "simulations")
-        self.seed=int(setup_params['seed'])
-        if self.data is None: #need to create the data file
-            #set up a pd Data Frame containing all the params
-            params = collections.OrderedDict()
-            params['sample_size']         = 12,
-            params['Ne']                  = 5000,
-            params['length']              = 50000,
-            params['recombination_rate']  = 2.5e-8,
-            params['mutation_rate']       = np.logspace(-8, -5, num=10)[:-1] * 1.5
-            params['replicate']           = np.arange(int(setup_params['reps']))
-            sim_params = list(params.keys())
-            #now add some other params, where multiple vals exists for one simulation
-            params['error_rate']          = [0, 0.01, 0.1]
-            #RNG seed used in inference methods - will be filled out in the generate() step
-            params['inference_seed']     = np.nan,
-            ## argweaver params: aw_n_out_samples will be produced, every argweaver_iter_out_freq
-            params['aw_burnin_iters']    = 5000,
-            params['aw_n_out_samples']   = 100,
-            params['aw_iter_out_freq']   = 10,
-            ## tsinf params: number of times to randomly resolve into bifurcating (binary) trees
-            params['tsinf_biforce_reps']= 20,
-
-            #all combinations of params in a DataFrame
-            self.data = expand_grid(params)
-            #assign a unique index for each simulation
-            self.data['sim'] = pd.Categorical(self.data[sim_params].astype(str).apply("".join, 1)).codes
-            #set unique seeds for each sim
-            self.data['seed'] = get_seeds(max(self.data.sim)+1, self.seed)[self.data.sim]
-            #now save it for future ref
-            self.data.to_csv(self.data_file)
-
     def process(self):
         """
         Extracts metrics from the .nex files using R, and saves the results
@@ -751,6 +656,9 @@ class MetricsByMutationRateDataset(Dataset):
         'msibifu_RFunrooted', and the random seed used (as passed to R via
         genome_trees_dist_forcebin_b) is stored in 'msibifu_seed'
         """
+        # TODO update this to use a similar pattern the to the 'infer' method.
+        # All columns should be added to the file at setup() time, and we can
+        # run the argmetrics code in a subprocess.
 
         for i in self.data.index:
             d = self.data.iloc[i]
@@ -813,24 +721,20 @@ def run_setup(cls, args):
     f = cls()
     f.setup(args.replicates, args.seed)
 
-def run_generate(cls, extra_args):
-    set_args = {k:v for k,v in extra_args.items() if v is not None}
-    set_text = " from {}".format(set_args) if set_args else ""
-    logging.info("Generating {}".format(cls.name))
-    f = cls(**extra_args)
-    f.generate()
+def run_infer(cls, args):
+    logging.info("Inferring {}".format(cls.name))
+    f = cls()
+    f.infer()
 
 
-def run_process(cls, extra_args):
-    set_args = {k:v for k,v in extra_args.items() if v is not None}
-    set_text = " from {}".format(set_args) if set_args else ""
+def run_process(cls, args):
     logging.info("Processing {}".format(cls.name))
-    f = cls(**extra_args)
+    f = cls()
     f.process()
 
 
-def run_plot(cls, extra_args):
-    f = cls(**extra_args)
+def run_plot(cls, args):
+    f = cls()
     f.plot()
 
 
@@ -843,7 +747,7 @@ def main():
     ]
     name_map = dict([(d.name, d) for d in datasets + figures])
     parser = argparse.ArgumentParser(
-        description= "Set up base data, generate inferred datasets, process datasets and plot figures.")
+        description="Set up base data, generate inferred datasets, process datasets and plot figures.")
     parser.add_argument('--verbosity', '-v', action='count', default=0)
     subparsers = parser.add_subparsers()
     subparsers.required = True
@@ -864,14 +768,14 @@ def main():
          '--seed', '-s', type=int, help="use a non-default RNG seed")
     subparser.set_defaults(func=run_setup)
 
-    subparser = subparsers.add_parser('generate')
+    subparser = subparsers.add_parser('infer')
     subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
         help='the dataset identifier')
     subparser.add_argument(
          '--data-file', '-f', type=str,
          help="which CSV file to use for existing data, if not the default", )
-    subparser.set_defaults(func=run_generate)
+    subparser.set_defaults(func=run_infer)
 
     subparser = subparsers.add_parser('process')
     subparser.add_argument(
