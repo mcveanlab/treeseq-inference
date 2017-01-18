@@ -428,8 +428,6 @@ class Dataset(object):
         """
         Runs the main inference processes and stores results in the dataframe.
         """
-        logging.info("running infer with {} processes and {} threads".format(
-            num_processes, num_threads))
         self.load_data()
         work = []
         for i in self.data.index:
@@ -441,6 +439,8 @@ class Dataset(object):
                     work.append((tool, self.data.iloc[i], self.simulations_dir, num_threads))
                 else:
                     logging.info("Skipping row {} for {}".format(i, tool))
+        logging.info("running infer on {} rows with {} processes and {} threads".format(
+            len(work), num_processes, num_threads))
         if num_processes > 1:
             with multiprocessing.Pool(processes=num_processes) as pool:
                 for row_id, updated in pool.imap_unordered(infer_worker, work):
