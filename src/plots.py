@@ -409,9 +409,11 @@ class Dataset(object):
         # together in a single column
         if "ARGweaver" in self.tools:
             tool_cols.append("ARGweaver_iterations")
+        #add the columns for the ARG metrics
+        metric_colnames = list(ARG_metrics.get_ARG_metrics())
         for col in tool_cols:
-            self.data[col] = np.NaN
-        # TODO add process columns.
+            for metric_name in metric_colnames:
+                self.data[col] = np.NaN
         self.dump_data(write_index=True)
 
     def infer(self, num_processes, num_threads):
