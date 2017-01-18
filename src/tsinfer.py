@@ -1,5 +1,5 @@
 """
-Implemenation of the Li and Stephens algorithm for inferring a tree
+Implementation of the Li and Stephens algorithm for inferring a tree
 sequence.
 
 Python 3 only.
