@@ -17,6 +17,7 @@ import subprocess
 import filecmp
 import random
 import multiprocessing
+import json
 
 import numpy as np
 import matplotlib
@@ -375,20 +376,24 @@ class Dataset(object):
 
     def __init__(self):
         self.data_file = os.path.abspath(
-            os.path.join(self.data_dir, "{}.csv".format(self.name)))
+            os.path.join(self.data_dir, "{}".format(self.name)))
         self.raw_data_dir = os.path.join(self.data_dir, "raw__NOBACKUP__", self.name)
         self.simulations_dir = os.path.join(self.raw_data_dir, "simulations")
 
     def load_data(self):
-        self.data = pd.read_csv(self.data_file)
+        self.data = pd.read_csv(self.data_file+"_data.csv")
 
     def dump_data(self, write_index=False):
-        self.data.to_csv(self.data_file, index=write_index)
+        self.data.to_csv(self.data_file+"_data.csv", index=write_index)
+
+    def dump_setup(self, write_index=False):
+        with open(self.data_file+"_setup.json", "w+") as setup:
+            json.dump("", setup)
 
     #
     # Main entry points.
     #
-    def setup(self, replicates=None, seed=None):
+    def setup(self, **params):
         """
         Creates the dataframe and storage directories and then runs the initial
         simulations.
@@ -398,7 +403,7 @@ class Dataset(object):
             logging.info("Deleting dir {}".format(self.simulations_dir))
         os.makedirs(self.simulations_dir)
         logging.info("Creating dir {}".format(self.simulations_dir))
-        self.data = self.run_simulations(replicates, seed)
+        self.data = self.run_simulations(params['replicates'], params['seed'])
         # Add the result columns
         tool_cols = []
         for tool in self.tools:
@@ -415,6 +420,7 @@ class Dataset(object):
             for metric_name in metric_colnames:
                 self.data[col] = np.NaN
         self.dump_data(write_index=True)
+        self.dump_setup(params)
 
     def infer(self, num_processes, num_threads):
         """
@@ -709,7 +715,7 @@ class MetricsByMutationRateDataset(Dataset):
                 self.data.loc[i, colnames] = metrics.values()
 
              # Save each row so we can use the information while it's being built
-            self.data.to_csv(self.data_file)
+            self.dump_data()
 
 class SampleSizeEffectOnSubsetDataset(Dataset):
     """
@@ -742,7 +748,7 @@ class SampleSizeEffectOnSubsetDataset(Dataset):
 
 def run_setup(cls, args):
     f = cls()
-    f.setup(args.replicates, args.seed)
+    f.setup(args)
 
 def run_infer(cls, args):
     logging.info("Inferring {}".format(cls.name))
