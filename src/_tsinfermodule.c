@@ -15,7 +15,7 @@
 #endif
 
 #define MODULE_DOC \
-"Low-level tsinf interface."
+"Low-level tsinfer interface."
 
 static PyObject *TsinfLibraryError;
 
@@ -168,7 +168,7 @@ static PyMethodDef ReferencePanel_methods[] = {
 
 static PyTypeObject ReferencePanelType = {
     PyVarObject_HEAD_INIT(NULL, 0)
-    "_tsinf.ReferencePanel",             /* tp_name */
+    "_tsinfer.ReferencePanel",             /* tp_name */
     sizeof(ReferencePanel),             /* tp_basicsize */
     0,                         /* tp_itemsize */
     (destructor)ReferencePanel_dealloc, /* tp_dealloc */
@@ -338,7 +338,7 @@ static PyMethodDef Threader_methods[] = {
 
 static PyTypeObject ThreaderType = {
     PyVarObject_HEAD_INIT(NULL, 0)
-    "_tsinf.Threader",             /* tp_name */
+    "_tsinfer.Threader",             /* tp_name */
     sizeof(Threader),             /* tp_basicsize */
     0,                         /* tp_itemsize */
     (destructor)Threader_dealloc, /* tp_dealloc */
@@ -380,7 +380,7 @@ static PyTypeObject ThreaderType = {
  *===================================================================
  */
 
-static PyMethodDef tsinf_methods[] = {
+static PyMethodDef tsinfer_methods[] = {
     {NULL}        /* Sentinel */
 };
 
@@ -392,31 +392,31 @@ static PyMethodDef tsinf_methods[] = {
 
 #if PY_MAJOR_VERSION >= 3
 
-static struct PyModuleDef tsinfmodule = {
+static struct PyModuleDef tsinfermodule = {
     PyModuleDef_HEAD_INIT,
-    "_tsinf",   /* name of module */
+    "_tsinfer",   /* name of module */
     MODULE_DOC, /* module documentation, may be NULL */
     -1,
-    tsinf_methods,
+    tsinfer_methods,
     NULL, NULL, NULL, NULL
 };
 
 #define INITERROR return NULL
 
 PyObject *
-PyInit__tsinf(void)
+PyInit__tsinfer(void)
 
 #else
 #define INITERROR return
 
 void
-init_tsinf(void)
+init_tsinfer(void)
 #endif
 {
 #if PY_MAJOR_VERSION >= 3
-    PyObject *module = PyModule_Create(&tsinfmodule);
+    PyObject *module = PyModule_Create(&tsinfermodule);
 #else
-    PyObject *module = Py_InitModule3("_tsinf", tsinf_methods, MODULE_DOC);
+    PyObject *module = Py_InitModule3("_tsinfer", tsinfer_methods, MODULE_DOC);
 #endif
     if (module == NULL) {
         INITERROR;
@@ -438,7 +438,7 @@ init_tsinf(void)
     }
     Py_INCREF(&ThreaderType);
     PyModule_AddObject(module, "Threader", (PyObject *) &ThreaderType);
-    TsinfLibraryError = PyErr_NewException("_tsinf.LibraryError", NULL, NULL);
+    TsinfLibraryError = PyErr_NewException("_tsinfer.LibraryError", NULL, NULL);
     Py_INCREF(TsinfLibraryError);
     PyModule_AddObject(module, "LibraryError", TsinfLibraryError);
 
