@@ -37,6 +37,7 @@ import ARG_metrics
 
 fastARG_executable = os.path.join(curr_dir,'..','fastARG','fastARG')
 ARGweaver_executable = os.path.join(curr_dir,'..','argweaver','bin','arg-sample')
+tsinfer_executable = os.path.join(curr_dir,'run_tsinfer.py')
 #monkey-patch write.nexus into msprime
 msprime.TreeSequence.write_nexus_trees = msprime_extras.write_nexus_trees
 
@@ -278,7 +279,7 @@ class InferenceRunner(object):
     def run_tsinfer(sample_fn, positions_fn, length, rho, num_threads=1):
         with tempfile.NamedTemporaryFile("w+") as ts_out:
             cmd = [
-                sys.executable, "src/run_tsinfer.py", sample_fn, positions_fn,
+                sys.executable, tsinfer_executable, sample_fn, positions_fn,
                 "--length", str(int(length)), "--recombination-rate", str(rho),
                 "--threads", str(num_threads), ts_out.name]
             cpu_time, memory_use = time_cmd(cmd)
@@ -313,7 +314,7 @@ class InferenceRunner(object):
     @staticmethod
     def run_argweaver(
             sites_file, Ne, recombination_rate, mutation_rate, path_prefix, seed,
-            n_samples, sampling_freq, burnin_iterations=0):
+            n_samples, sampling_freq, burnin_iterations=0, quiet=True):
         """
         this produces a whole load of .smc files labelled <path_prefix>i.0.smc,
         <path_prefix>i.10.smc, etc. the iteration numbers ('i.0', 'i.10', etc)
@@ -337,7 +338,7 @@ class InferenceRunner(object):
             #which gives 3 samples: t=0, t=10, & t=20
             rand_seed    = int(seed),
             burn_in      = int(burnin_iterations),
-            quiet        = True,
+            quiet        = quiet,
             out_prefix   = new_prefix)
         cpu_time = time.clock() - before
         memory_use = 0 #To DO
@@ -388,7 +389,7 @@ class Dataset(object):
 
     def dump_setup(self, arg_dict):
         with open(self.data_file+"_setup.json", "w+") as setup:
-            json.dump(arg_dict, setup)
+            json.dump(arg_dict, setup, sort_keys=True, indent=2)
 
     #
     # Main entry points.
