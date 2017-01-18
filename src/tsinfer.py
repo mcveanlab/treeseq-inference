@@ -19,7 +19,7 @@ import numpy as np
 
 import msprime
 import _msprime
-import _tsinf
+import _tsinfer
 
 if sys.version_info[0] < 3:
     raise Exception("Python 3 you idiot!")
@@ -31,7 +31,7 @@ class ReferencePanel(object):
     from observed data.
     """
     def __init__(self, samples, sites, sequence_length):
-        self._ll_reference_panel = _tsinf.ReferencePanel(samples)
+        self._ll_reference_panel = _tsinfer.ReferencePanel(samples)
         self.sites = sites
         self.sequence_length = sequence_length
         assert len(self.sites) == self._ll_reference_panel.num_sites
@@ -53,7 +53,7 @@ class ReferencePanel(object):
 
         def worker():
             nonlocal work_index
-            threader = _tsinf.Threader(self._ll_reference_panel)
+            threader = _tsinfer.Threader(self._ll_reference_panel)
             while True:
                 with lock:
                     if work_index >= len(work):

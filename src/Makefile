@@ -5,9 +5,9 @@ CFLAGS=-std=c99 -g -O3 -march=native -funroll-loops -ffast-math \
        # -ftree-vectorizer-verbose=6 \
        # -fopt-info-vec-missed
 
-all: _tsinf.cpython-34m.so 
+all: _tsinfer.cpython-34m.so 
 
-_tsinf.cpython-34m.so: _tsinfmodule.c ls.c ls.h
+_tsinfer.cpython-34m.so: _tsinfermodule.c ls.c ls.h
 	CFLAGS="${CFLAGS}" python3 setup.py build_ext --inplace
 
 ctags:

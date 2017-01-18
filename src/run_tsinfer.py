@@ -5,7 +5,7 @@ import argparse
 
 import numpy as np
 
-import tsinf
+import tsinfer
 
 def main():
 

@@ -15,9 +15,9 @@ except ImportError:
 
 long_description = "TODO"
 
-_tsinf_module = Extension(
-    '_tsinf',
-    sources=["_tsinfmodule.c", "ls.c"],
+_tsinfer_module = Extension(
+    '_tsinfer',
+    sources=["_tsinfermodule.c", "ls.c"],
     # Enable asserts by default.
     undef_macros=["NDEBUG"],
     libraries=["m"],
@@ -25,11 +25,11 @@ _tsinf_module = Extension(
 )
 
 setup(
-    name="tsinf",
+    name="tsinfer",
     description="Infer tree sequences from genetic data.",
     long_description=long_description,
     author="Jerome Kelleher",
     author_email="jerome.kelleher@well.ox.ac.uk",
-    url="http://pypi.python.org/pypi/tsinf",
-    ext_modules=[_tsinf_module],
+    url="http://pypi.python.org/pypi/tsinfer",
+    ext_modules=[_tsinfer_module],
 )

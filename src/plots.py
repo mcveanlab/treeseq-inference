@@ -31,7 +31,7 @@ import msprime
 import msprime_extras
 import msprime_fastARG
 import msprime_ARGweaver
-import tsinf
+import tsinfer
 import ARG_metrics
 
 fastARG_executable = os.path.join(curr_dir,'..','fastARG','fastARG')
@@ -104,7 +104,7 @@ def add_error_param_to_name(sim_name, error_rate):
 def add_subsample_param_to_name(sim_name, subsample_size):
     """
     Mark a filename as containing only a subset of the samples of the full sim
-    Can be used on msprime output files but also e.g. tsinf output files
+    Can be used on msprime output files but also e.g. tsinfer output files
     """
     if sim_name.endswith("+") or sim_name.endswith("-"):
         #this is the first param
@@ -134,14 +134,14 @@ def construct_argweaver_name(sim_name, seed, iteration_number=None):
         suffix += "_i."+ str(int(iteration_number))
     return os.path.join(d,'+'.join(['aweaver', f, suffix]))
 
-def construct_tsinf_name(sim_name):
+def construct_tsinfer_name(sim_name):
     """
     Returns an MSprime Li & Stevens inference filename.
     If the file is a subset of the original, this can be added to the
     basename later using the add_subsample_param_to_name() routine.
     """
     d,f = os.path.split(sim_name)
-    return os.path.join(d,'+'.join(['tsinf', f, ""]))
+    return os.path.join(d,'+'.join(['tsinfer', f, ""]))
 
 def time_cmd(cmd, stdout=sys.stdout):
     """
@@ -207,8 +207,8 @@ class InferenceRunner(object):
     def run(self):
         logging.info("running {} inference on row {}".format(self.tool, int(self.row[0])))
         logging.debug("parameters = {}".format(self.row.to_dict()))
-        if self.tool == "tsinf":
-            ret = self.__run_tsinf()
+        if self.tool == "tsinfer":
+            ret = self.__run_tsinfer()
         elif self.tool == "fastARG":
             ret = self.__run_fastARG()
         elif self.tool == "ARGweaver":
@@ -220,15 +220,15 @@ class InferenceRunner(object):
         return ret
 
 
-    def __run_tsinf(self):
+    def __run_tsinfer(self):
 
         samples_fn = self.err_fn + ".npy"
         logging.debug("reading: variant matrix {} for msprime inference".format(samples_fn))
         positions_fn = self.err_fn + ".pos.npy"
         logging.debug("reading: positions {} for msprime inference".format(positions_fn))
-        out_fn = construct_tsinf_name(self.err_fn)
+        out_fn = construct_tsinfer_name(self.err_fn)
         scaled_recombination_rate = 4 * self.row.recombination_rate * self.row.Ne
-        inferred_ts, time, memory = self.run_tsinf(
+        inferred_ts, time, memory = self.run_tsinfer(
             samples_fn, positions_fn, self.row.length, scaled_recombination_rate,
             num_threads=self.num_threads)
         with open(out_fn +".nex", "w+") as out:
@@ -274,10 +274,10 @@ class InferenceRunner(object):
         return results
 
     @staticmethod
-    def run_tsinf(sample_fn, positions_fn, length, rho, num_threads=1):
+    def run_tsinfer(sample_fn, positions_fn, length, rho, num_threads=1):
         with tempfile.NamedTemporaryFile("w+") as ts_out:
             cmd = [
-                sys.executable, "src/run_tsinf.py", sample_fn, positions_fn,
+                sys.executable, "src/run_tsinfer.py", sample_fn, positions_fn,
                 "--length", str(int(length)), "--recombination-rate", str(rho),
                 "--threads", str(num_threads), ts_out.name]
             cpu_time, memory_use = time_cmd(cmd)
@@ -455,7 +455,7 @@ class Dataset(object):
         values. Saves the output to an .hdf5 file, and also saves variant files
         for use in fastARG (a .hap file, in the format specified by
         https://github.com/lh3/fastARG#input-format) ARGweaver (a .sites file:
-        http://mdrasmus.github.io/argweaver/doc/#sec-file-sites) tsinf
+        http://mdrasmus.github.io/argweaver/doc/#sec-file-sites) tsinfer
         (currently a numpy array containing the variant matrix)
 
         mutation_seed is not yet implemented, but should allow the same
@@ -506,11 +506,11 @@ class Dataset(object):
         S = generate_samples(ts, error_rate)
         err_filename = add_error_param_to_name(fname, error_rate)
         outfile = err_filename + ".npy"
-        logging.debug("writing variant matrix to {} for tsinf".format(outfile))
+        logging.debug("writing variant matrix to {} for tsinfer".format(outfile))
         np.save(outfile, S)
         outfile = err_filename + ".pos.npy"
         pos = np.array([v.position for v in ts.variants()])
-        logging.debug("writing variant positions to {} for tsinf".format(outfile))
+        logging.debug("writing variant positions to {} for tsinfer".format(outfile))
         np.save(outfile, pos)
         assert all(p.is_integer() for p in pos), \
             "Variant positions are not all integers in {}".format()
@@ -530,11 +530,11 @@ class Dataset(object):
 
 class NumRecordsBySampleSizeDataset(Dataset):
     """
-    Information on the number of coalescence records inferred by tsinf
+    Information on the number of coalescence records inferred by tsinfer
     and FastARG for various sample sizes, under 3 different error rates
     """
     name = "num_records_by_sample_size"
-    tools = ["fastARG", "tsinf"]
+    tools = ["fastARG", "tsinfer"]
     default_replicates = 10
     default_seed = 123
 
@@ -598,7 +598,7 @@ class MetricsByMutationRateDataset(Dataset):
     tending to fully accurate as mutation rate increases
     """
     name = "metrics_by_mutation_rate"
-    tools = ["fastARG", "tsinf", "ARGweaver"]
+    tools = ["fastARG", "tsinfer", "ARGweaver"]
     default_replicates = 10
     default_seed = 123
 
@@ -612,7 +612,7 @@ class MetricsByMutationRateDataset(Dataset):
         cols = [
             "sample_size", "Ne", "length", "recombination_rate", "mutation_rate",
             "error_rate", "replicate", "seed", "error_rate", "aw_burnin_iters",
-            "aw_n_out_samples", "aw_iter_out_freq", "tsinf_biforce_reps"]
+            "aw_n_out_samples", "aw_iter_out_freq", "tsinfer_biforce_reps"]
         # Variable parameters
         mutation_rates = np.logspace(-8, -5, num=10)[:-1] * 1.5
         error_rates = [0, 0.01, 0.1]
@@ -629,8 +629,8 @@ class MetricsByMutationRateDataset(Dataset):
         aw_burnin_iters = 5
         aw_n_out_samples = 10
         aw_iter_out_freq = 10
-        ## tsinf params: number of times to randomly resolve into bifurcating (binary) trees
-        tsinf_biforce_reps = 20
+        ## tsinfer params: number of times to randomly resolve into bifurcating (binary) trees
+        tsinfer_biforce_reps = 20
         num_rows = replicates * len(mutation_rates) * len(error_rates)
         data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
         row_id = 0
@@ -663,7 +663,7 @@ class MetricsByMutationRateDataset(Dataset):
                     row.aw_n_out_samples = aw_n_out_samples
                     row.aw_burnin_iters = aw_burnin_iters
                     row.aw_iter_out_freq = aw_iter_out_freq
-                    row.tsinf_biforce_reps = tsinf_biforce_reps
+                    row.tsinfer_biforce_reps = tsinfer_biforce_reps
                     self.save_variant_matrices(ts, fn, error_rate)
         return data
 
@@ -671,7 +671,7 @@ class MetricsByMutationRateDataset(Dataset):
         """
         Extracts metrics from the .nex files using R, and saves the results
         in the csv file under fastARG_RFunrooted, etc etc.
-        The tsinf routine has two possible sets of stats: for nonbinary trees
+        The tsinfer routine has two possible sets of stats: for nonbinary trees
         and for randomly resolved strictly bifurcating trees (with a random seed given)
         These are stored in 'msipoly_RFunrooted' and
         'msibifu_RFunrooted', and the random seed used (as passed to R via
@@ -691,9 +691,9 @@ class MetricsByMutationRateDataset(Dataset):
                 "fastARG":construct_fastarg_name(base_fn, d.inference_seed)+".nex",
                 "ARGweaver":{'nexus':construct_argweaver_name(base_fn, d.inference_seed, it)+".nex" \
                     for it in d['ARGweaver_iterations'].split(",")},
-                "MSIpoly":construct_tsinf_name(base_fn)+".nex",
-                "MSIbifu":{'nexus':construct_tsinf_name(base_fn)+".nex",
-                           'reps':d.tsinf_biforce_reps,
+                "MSIpoly":construct_tsinfer_name(base_fn)+".nex",
+                "MSIbifu":{'nexus':construct_tsinfer_name(base_fn)+".nex",
+                           'reps':d.tsinfer_biforce_reps,
                            'seed':polytomy_resolution_seed}
             }
             logging.info("Processing ARG to extract metrics: mu = {}, err = {}.".format(
@@ -714,7 +714,7 @@ class SampleSizeEffectOnSubsetDataset(Dataset):
     Dataset for Figure 3
     Dataset testing the effect on a subset of samples when extra genomes are
     added to the dataset used for inference. The hope is that the extra samples
-    allowed by our tsinfence method will more than compensate for biases in the
+    allowed by our tsinference method will more than compensate for biases in the
     inference method over more statistically rigorous methods (e.g. ARGweaver).
 
     We should expect this to be the case, as the benefit of adding more
@@ -728,11 +728,11 @@ class SampleSizeEffectOnSubsetDataset(Dataset):
     Call this subset S_n_base. Run all the inference methods on this base subset
     to get inference outputs (eventually saved as .nex files). Then take larger
     and larger subsets of the original simulation - S_N for N=20, 40, 100, etc. -
-    and run tsinf (but not the other methods) on these larger subsets, ensuring
+    and run tsinfer (but not the other methods) on these larger subsets, ensuring
     that after each inference attempt, the resulting TreeSequence is subset
     (simplify()ed) back down to cover only the first n samples. Use ARGmetrics to
     compare these secondarily-simplified ARGs with the true (original, simulated)
-    S_n subset. We would hope that the ARG accuracy metrics tend to 0 as the tsinf
+    S_n subset. We would hope that the ARG accuracy metrics tend to 0 as the tsinfer
     subset size N goes up.
     """
     name = "sample_size_effect_on_subset"
