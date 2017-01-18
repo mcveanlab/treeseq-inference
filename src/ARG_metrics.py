@@ -13,10 +13,10 @@ ARGmetrics = importr("ARGmetrics")
 #Open R and set the working dir to treeseq-inference, then do
 # > install("ARGmetrics")
 
-def get_ARG_metrics(true_nexus_fn, **inferred_nexus_fns):
+def get_ARG_metrics(true_nexus_fn=None, **inferred_nexus_fns):
     """
     Pass in a set of inferred nexus files (each of which could be an array)
-    e.g. ARG_metrics(true.nex, msinfer='ms.nex', argWeaver=['aw1.nex', 'aw2.nex'])
+    e.g. ARG_metrics(true.nex, tsinfer='ms.nex', argWeaver=['aw1.nex', 'aw2.nex'])
 
     or (more complex):
      ARG_metrics(true.nex, msinfer={'nexus':'fa.nex', 'make_bin_seed'=123, 'reps':10}
@@ -25,13 +25,19 @@ def get_ARG_metrics(true_nexus_fn, **inferred_nexus_fns):
      ARG_metrics(true.nex, aw ={'nexus':['aw1.nex', 'aw2.nex'], 'weights':[1.2,1.3]})
 
     
-    Returns a dictionary of one-line Data Frames, one for each tool passed in
+    Returns a Data Frame with rows labelled by the parameters (tool names) passed in
+    ('tsinfer', 'ARGweaver', etc), and one column for each metric.
+    
+    If called with no params, simply returns a dummy data frame with the right 
+    column names (currently this has a row of NaNs as the data)
     """
-    #make sure that the
+    if true_nexus_fn is None:
+        return ARGmetrics.genome_trees_dist()
+        
     # load the true_nexus into the R session
     orig_tree = ARGmetrics.new_read_nexus(true_nexus_fn)
     weights = 1
-    metrics ={}
+    metrics = None
     for tool, metric_params in inferred_nexus_fns.items():
         logging.info(" * calculating ARG metrics for {}.".format(tool))
         try:
@@ -59,5 +65,7 @@ def get_ARG_metrics(true_nexus_fn, **inferred_nexus_fns):
             logging.debug("calculating tree metrics to compare '{}' vs '{}'.".format(
                 true_nexus_fn, nexus_files))
             m = ARGmetrics.genome_trees_dist_multi(orig_tree, nexus_files, weights=weights)
-        metrics[tool]=dict(zip(m.names, tuple(m)))
+        if metrics is None:
+            metrics = pd.DataFrame(columns = m.names)
+        metrics.loc[tool, m.names] = tuple(m)
     return metrics
