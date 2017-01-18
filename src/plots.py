@@ -386,9 +386,9 @@ class Dataset(object):
     def dump_data(self, write_index=False):
         self.data.to_csv(self.data_file+"_data.csv", index=write_index)
 
-    def dump_setup(self, write_index=False):
+    def dump_setup(self, arg_dict):
         with open(self.data_file+"_setup.json", "w+") as setup:
-            json.dump("", setup)
+            json.dump(arg_dict, setup)
 
     #
     # Main entry points.
@@ -421,7 +421,7 @@ class Dataset(object):
             for metric_name in metric_colnames:
                 self.data[col] = np.NaN
         self.dump_data(write_index=True)
-        self.dump_setup(vars(args))
+        self.dump_setup({k:v for k,v in vars(args).items() if k != "func"})
 
     def infer(self, num_processes, num_threads):
         """
