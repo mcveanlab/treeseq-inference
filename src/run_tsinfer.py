@@ -1,10 +1,14 @@
 """
 Simple CLI to run tsinf on the command line.
 """
+import sys
+import os
 import argparse
 
 import numpy as np
 
+sys.path.insert(1,os.path.join(sys.path[0],'..','msprime')) # use the local copy of msprime in preference to the global one
+import msprime
 import tsinfer
 
 def main():
@@ -34,7 +38,7 @@ def main():
     args = parser.parse_args()
     S = np.load(args.samples)
     pos = np.load(args.positions)
-    panel = tsinf.ReferencePanel(S, pos, args.length)
+    panel = tsinfer.ReferencePanel(S, pos, args.length)
     P = panel.infer_paths(args.recombination_rate, num_workers=args.threads)
     ts_new = panel.convert_records(P)
     ts_simplified = ts_new.simplify()
