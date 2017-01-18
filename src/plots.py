@@ -393,7 +393,7 @@ class Dataset(object):
     #
     # Main entry points.
     #
-    def setup(self, **params):
+    def setup(self, args):
         """
         Creates the dataframe and storage directories and then runs the initial
         simulations.
@@ -403,7 +403,8 @@ class Dataset(object):
             logging.info("Deleting dir {}".format(self.simulations_dir))
         os.makedirs(self.simulations_dir)
         logging.info("Creating dir {}".format(self.simulations_dir))
-        self.data = self.run_simulations(params['replicates'], params['seed'])
+        self.data = self.run_simulations(args.replicates, args.seed)
+        self.verbosity = args.verbosity
         # Add the result columns
         tool_cols = []
         for tool in self.tools:
@@ -420,7 +421,7 @@ class Dataset(object):
             for metric_name in metric_colnames:
                 self.data[col] = np.NaN
         self.dump_data(write_index=True)
-        self.dump_setup(params)
+        self.dump_setup(vars(args))
 
     def infer(self, num_processes, num_threads):
         """
