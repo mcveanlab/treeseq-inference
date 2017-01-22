@@ -13,7 +13,7 @@ ARGmetrics = importr("ARGmetrics")
 #Open R and set the working dir to treeseq-inference, then do
 # > install("ARGmetrics")
 
-def get_ARG_metrics(true_nexus_fn=None, **inferred_nexus_fns):
+def get_ARG_metrics(true_nexus_fn=None, threads=1, **inferred_nexus_fns):
     """
     Pass in a set of inferred nexus files (each of which could be an array)
     e.g. ARG_metrics(true.nex, tsinfer='ms.nex', argWeaver=['aw1.nex', 'aw2.nex'])
@@ -30,6 +30,10 @@ def get_ARG_metrics(true_nexus_fn=None, **inferred_nexus_fns):
     
     If called with no params, simply returns a dummy data frame with the right 
     column names (currently this has a row of NaNs as the data)
+    
+    threads gives the number of subprocesses to fork() when doing extra random replicates
+    during polytomy resolution. This needs testing to see if it provides a speedup
+    
     """
     if true_nexus_fn is None:
         return ARGmetrics.genome_trees_dist()
@@ -52,11 +56,11 @@ def get_ARG_metrics(true_nexus_fn=None, **inferred_nexus_fns):
                 logging.debug("calculating tree metrics to compare binarised '{}' vs '{}'.".format(
                     true_nexus_fn, nexus_files))
                 if seed:
-                    m = ARGmetrics.genome.trees.dist.forcebin.b(orig_tree, nexus_files, 
-                         replicates = break_binary_reps, seed = int(seed))
+                    m = ARGmetrics.genome_trees_dist_forcebin_b(orig_tree, nexus_files, 
+                         replicates = break_binary_reps, seed = int(seed), threads=threads)
                 else:
-                    m = ARGmetrics.genome.trees.dist.forcebin.b(orig_tree, nexus_files, 
-                         replicates = break_binary_reps)
+                    m = ARGmetrics.genome_trees_dist_forcebin_b(orig_tree, nexus_files, 
+                         replicates = break_binary_reps, threads=threads)
             except:
                 logging.debug("calculating tree metrics to compare '{}' vs '{}'.".format(
                     true_nexus_fn, nexus_files))

@@ -29,20 +29,21 @@ genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FA
         require(ape)
         require(phangorn) #to use the various treedist metrics
     
-        if (randomly.resolve.a) {
-            if (is.numeric(randomly.resolve.polytomies))
-                set.seed(randomly.resolve.polytomies)
-            process.a = multi2di
-        } else {
+        if (identical(randomly.resolve.a,FALSE) {
             process.a = identity
-        }
-    
-        if (randomly.resolve.b) {
-            if (is.numeric(randomly.resolve.polytomies))
-                set.seed(randomly.resolve.polytomies)
-            process.b = multi2di
         } else {
+            if (is.numeric(randomly.resolve.a))
+                set.seed(randomly.resolve.a)
+            process.a = multi2di
+        }
+
+    
+        if (identical(randomly.resolve.b, FALSE)) {
             process.b = identity
+        } else {
+            if (is.numeric(randomly.resolve.b))
+                set.seed(randomly.resolve.b)
+            process.b = multi2di
         }
     
         #check if trees or filenames

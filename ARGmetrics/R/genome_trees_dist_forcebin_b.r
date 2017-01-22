@@ -16,13 +16,9 @@
 #' @examples
 #' genome.trees.dist.forcebin()
 
-genome.trees.dist.forcebin.b <- function(treeseq.a, treeseq.b, replicates=1, seed=NA, acceptable.length.diff.pct = 0.1, variant.positions=NULL) { 
-    metrics <- do.call(rbind,lapply(treeseq.multi, 
-                                    genome.trees.dist, 
-                                    treeseq.base,
-                                    acceptable.length.diff.pct = acceptable.length.diff.pct,
-                                    variant.positions = variant.positions))
-    if (class(treeseq.a) != "multiPhylo") {
+genome.trees.dist.forcebin.b <- function(treeseq.a, treeseq.b, replicates=1, seed=NA, acceptable.length.diff.pct = 0.1, variant.positions=NULL, threads=1) { 
+   library(parallel) #always available, as this is in R base
+   if (class(treeseq.a) != "multiPhylo") {
         a <- read.nexus(treeseq.a, force.multi=TRUE)
     } else {
         a <- treeseq.a
@@ -33,10 +29,22 @@ genome.trees.dist.forcebin.b <- function(treeseq.a, treeseq.b, replicates=1, see
          b <- treeseq.b
     }
     
-    if (!is.na(seed)) set.seed(seed)
-    
-    return(colMeans(do.call(rbind,lapply(1:replicates,
-        function(r) genome.trees.dist(treeseq.a, treeseq.b, randomly.resolve.b=TRUE,
-                             acceptable.length.diff.pct = acceptable.length.diff.pct,
-                             variant.positions = variant.positions)))))
+    if (!is.na(seed)) {
+        set.seed(seed)
+        seeds <- sample.int(2^31-1, replicates) #pick an integer seed - see ?sample.int
+   return(colMeans(do.call(rbind,mapply(
+       function(r, seed) genome.trees.dist(treeseq.a, treeseq.b, randomly.resolve.b=seed,
+                            acceptable.length.diff.pct = acceptable.length.diff.pct,
+                            variant.positions = variant.positions), 
+       1:replicates,
+       seeds))))
+    } else {
+        return(colMeans(do.call(rbind,mcmapply(
+            function(r, seed) genome.trees.dist(treeseq.a, treeseq.b, randomly.resolve.b=seed,
+                                 acceptable.length.diff.pct = acceptable.length.diff.pct,
+                                 variant.positions = variant.positions), 
+            1:replicates,
+            seeds, 
+            mc.cores=threads))))
+    }
 }
