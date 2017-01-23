@@ -42,7 +42,7 @@ def get_ARG_metrics(true_nexus_fn=None, threads=1, **inferred_nexus_fns):
         return pd.DataFrame(columns = ARGmetrics.genome_trees_dist().names)
         
     # load the true_nexus into the R session
-    orig_tree = ARGmetrics.new_read_nexus(true_nexus_fn)
+    orig_tree = ARGmetrics.read_nexus(true_nexus_fn)
     weights = 1
     metrics = None
     for tool, metric_params in inferred_nexus_fns.items():

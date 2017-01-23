@@ -51,6 +51,14 @@ def cpu_time_colname(tool):
 def memory_colname(tool):
     return tool + "_memory"
 
+def metric_colnames(metrics_for):
+    metric_names = list(ARG_metrics.get_ARG_metrics())
+    return ["{}_{}".format(f, metric) for f in metrics_for for metric in metric_names]
+
+def nanblank(val):
+    """hack around a horrible pandas syntax, which puts nan instead of blank strings"""
+    return "" if pd.isnull(val) else val
+
 def make_errors(v, p):
     """
     Flip each bit with probability p.
@@ -386,7 +394,7 @@ class MetricsRunner(object):
         self.tools=collections.OrderedDict()
         self.sim_fn=msprime_name_from_row(row, self.nexus_dir)
 
-    def add_tool(self, toolname, filenames, reps=1, seed=None):
+    def add_tool(self, toolname, filenames, reps=1, make_bin_seed=None):
         """
         Adds a tool for this simulation. Some simulations wil create
         multiple output files, results from which can be averaged.
@@ -402,7 +410,7 @@ class MetricsRunner(object):
             filenames += ".nex"
         else:
             filenames = [fn + ".nex" for fn in filenames]
-        self.tools[toolname] = {'nexus':filenames, 'reps':reps, 'make_bin_seed': seed}
+        self.tools[toolname] = {'nexus':filenames, 'reps':reps, 'make_bin_seed': make_bin_seed}
     
 
     def run(self):
@@ -425,8 +433,9 @@ def metric_worker(work):
         try:
             nexus, params = nex_params(row, simulations_dir)
         except ValueError:
-            nexus = nex_params(row, simulations_dir)
+            nexus, = nex_params(row, simulations_dir)
             params={}
+            
         runner.add_tool(tool, nexus, **params)
 
     return int(row[0]), runner.run()
@@ -476,22 +485,20 @@ class Dataset(object):
         self.data = self.run_simulations(args.replicates, args.seed)
         self.verbosity = args.verbosity
         # Add the result columns
-        tool_cols = []
+        extra_cols = collections.OrderedDict()
         for tool in self.tools:
-            tool_cols.append(cpu_time_colname(tool))
-            tool_cols.append(memory_colname(tool))
+            extra_cols[cpu_time_colname(tool)]=np.NaN
+            extra_cols[memory_colname(tool)]=np.NaN
         # We need to store more information in the case of ARGweaver, since
         # each ARGweaver run produces a whole set of iterations. We join these
         # together in a single column
         if "ARGweaver" in self.tools:
-            tool_cols.append("ARGweaver_iterations")
+            extra_cols["ARGweaver_iterations"]=""
         
         #add the columns for the ARG metrics
-        metric_names = list(ARG_metrics.get_ARG_metrics())
-        self.metric_colnames = ["{}_{}".format(metric_for, metric) \
-            for metric_for in self.metrics_for for metric in metric_names]
-        for c in tool_cols + self.metric_colnames:
-            self.data[c] = np.NaN
+        extra_cols.update([(k,np.NaN) for k in metric_colnames(self.metrics_for.keys())])
+        for col, default in extra_cols.items():
+            self.data[col] = default
         self.dump_data(write_index=True)
         self.dump_setup({k:v for k,v in vars(args).items() if k != "func"})
 
@@ -604,25 +611,25 @@ class Dataset(object):
             msprime_ARGweaver.variant_matrix_to_ARGweaver_in(np.transpose(S), pos,
                 ts.get_sequence_length(), argweaver_in)
 
-    def process(self):
+    def process(self, num_processes, num_threads):
         """
         Runs the main metric calculating processes and stores results in the dataframe.
         """
         self.load_data()
         work = []
+        metric_cols = metric_colnames(self.metrics_for.keys())
         for i in self.data.index:
             # Any row without the metrics columns unset should be NaN, so we only run those that
             # haven't been filled in already. This allows us to stop and start the
             # infer processes without having to start from scratch each time.
-            if numpy.all(np.isnan(self.data.ix[i, self.metric_colnames])):
+            if np.all(pd.isnull(self.data.ix[i, metric_cols])):
                 work.append((self.metrics_for, self.data.iloc[i], self.simulations_dir, num_threads))
             else:
                 logging.info("Data row {} has metrics (partially) filled: skipping".format(i))
         logging.info("running metrics on {} rows with {} processes and {} threads".format(
             len(work), num_processes, num_threads))
         if num_processes > 1:
-            with multiprocessing.Pool(processes=num_processes,
-                initializer=init_metric_worker) as pool:
+            with multiprocessing.Pool(processes=num_processes) as pool:
                 for row_id, dataframe in pool.imap_unordered(metric_worker, work):
                     for rowname, row in dataframe.iterrows():
                         colnames = ["{}_{}".format(rowname,col) for col in row.index]
@@ -719,20 +726,20 @@ class MetricsByMutationRateDataset(Dataset):
     metrics_for = {
         "fastARG": lambda row, sim_dir: (
             construct_fastarg_name(msprime_name_from_row(row, sim_dir, 'error_rate'),
-                                   seed=row.inference_seed),
+                                   seed=row.seed),
             ),
         "Aweaver": lambda row, sim_dir: ([
             construct_argweaver_name(msprime_name_from_row(row, sim_dir, 'error_rate'), 
-                                     seed=row.inference_seed, iteration_number=it)
-                for it in x.ARGweaver_iterations.split(",")],
+                                     seed=row.seed, iteration_number=it)
+                for it in nanblank(row.ARGweaver_iterations).split(",") if it],
             ),
         "tsipoly": lambda row, sim_dir: (
-            construct_tsinfer_name(msprime_name_from_row(row, sim_dir), 'error_rate'),
+            construct_tsinfer_name(msprime_name_from_row(row, sim_dir, 'error_rate')),
             ),
         "tsibiny": lambda row, sim_dir: (
-            construct_tsinfer_name(msprime_name_from_row(row, sim_dir), 'error_rate'),
+            construct_tsinfer_name(msprime_name_from_row(row, sim_dir, 'error_rate')),
             #hack same polytomy seed as inference seed
-            {'make_bin_seed':row.inference_seed, 'reps':row.tsinfer_biforce_reps} 
+            {'make_bin_seed':row.seed, 'reps':row.tsinfer_biforce_reps} 
             )
     }
         
@@ -851,7 +858,7 @@ def run_infer(cls, args):
 def run_process(cls, args):
     logging.info("Processing {}".format(cls.name))
     f = cls()
-    f.process()
+    f.process(args.processes, args.threads)
 
 
 def run_plot(cls, args):
@@ -900,6 +907,12 @@ def main():
     subparser.set_defaults(func=run_infer)
 
     subparser = subparsers.add_parser('process')
+    subparser.add_argument(
+        "--processes", '-p', type=int, default=1,
+        help="number of worker processes")
+    subparser.add_argument(
+        "--threads", '-t', type=int, default=1,
+        help="number of threads per worker process (for supporting tools)")
     subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
         help='the dataset identifier')
