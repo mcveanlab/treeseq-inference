@@ -15,15 +15,18 @@ ARGmetrics = importr("ARGmetrics")
 
 def get_ARG_metrics(true_nexus_fn=None, threads=1, **inferred_nexus_fns):
     """
-    Pass in a set of inferred nexus files (each of which could be an array)
-    e.g. ARG_metrics(true.nex, tsinfer='ms.nex', argWeaver=['aw1.nex', 'aw2.nex'])
+    The complicated thing here is the inferred_nexus_fns parameters.
+    Each should contain a dictionary with a 'nexus' item pointing to 
+    one or more nexus files. Optionally, this dictionary can also have 
+    keys named 'make_bin_seed' and 'reps', which specify the number
+    of times to replicate the metric and the starting seed for replicates
+    
+    e.g. ARG_metrics(true.nex, tsinfer={'nexus':'ms.nex'}, argWeaver={'nexus':['aw1.nex', 'aw2.nex']})
 
     or (more complex):
-     ARG_metrics(true.nex, msinfer={'nexus':'fa.nex', 'make_bin_seed'=123, 'reps':10}
-
-    or (even worse)
-     ARG_metrics(true.nex, aw ={'nexus':['aw1.nex', 'aw2.nex'], 'weights':[1.2,1.3]})
-
+    ARG_metrics(true.nex, 
+                tsinfer={'nexus':'fa.nex', 'make_bin_seed'=123, 'reps':10}, 
+                Aweaver={'nexus':['aw1.nex', 'aw2.nex']})
     
     Returns a Data Frame with rows labelled by the parameters (tool names) passed in
     ('tsinfer', 'ARGweaver', etc), and one column for each metric.
@@ -36,19 +39,16 @@ def get_ARG_metrics(true_nexus_fn=None, threads=1, **inferred_nexus_fns):
     
     """
     if true_nexus_fn is None:
-        return ARGmetrics.genome_trees_dist()
+        return pd.DataFrame(columns = ARGmetrics.genome_trees_dist().names)
         
     # load the true_nexus into the R session
     orig_tree = ARGmetrics.new_read_nexus(true_nexus_fn)
     weights = 1
     metrics = None
     for tool, metric_params in inferred_nexus_fns.items():
-        logging.info(" * calculating ARG metrics for {}.".format(tool))
-        try:
-            nexus_files = metric_params['nexus']
-            weights = metric_params.get('weights') or 1
-        except:
-            nexus_files = metric_params
+        logging.info(" * calculating ARG metrics for {} on R process {}.".format(tool,
+            robjects.r("Sys.getpid()")[0]))
+        nexus_files = metric_params['nexus']
         if isinstance(nexus_files, str):
             try:
                 break_binary_reps = int(metric_params['reps'])
@@ -68,7 +68,7 @@ def get_ARG_metrics(true_nexus_fn=None, threads=1, **inferred_nexus_fns):
         else:
             logging.debug("calculating tree metrics to compare '{}' vs '{}'.".format(
                 true_nexus_fn, nexus_files))
-            m = ARGmetrics.genome_trees_dist_multi(orig_tree, nexus_files, weights=weights)
+            m = ARGmetrics.genome_trees_dist_multi(orig_tree, nexus_files, weights=1)
         if metrics is None:
             metrics = pd.DataFrame(columns = m.names)
         metrics.loc[tool, m.names] = tuple(m)
