@@ -1,24 +1,24 @@
 """
-Tests for the tsinf code.
+Tests for the tsinfer code.
 """
 import unittest
 
 import numpy as np
 
 import msprime
-import tsinf
+import tsinfer
 
 
 class TestRoundTrip(unittest.TestCase):
     """
-    Test that we can round-trip data from a simulation through tsinf.
+    Test that we can round-trip data from a simulation through tsinfer.
     """
     def verify_round_trip(self, ts, rho):
         S = np.zeros((ts.sample_size, ts.num_mutations), dtype="u1")
         for variant in ts.variants():
             S[:,variant.index] = variant.genotypes
         sites = [mut.position for mut in ts.mutations()]
-        panel = tsinf.ReferencePanel(S, sites, ts.sequence_length)
+        panel = tsinfer.ReferencePanel(S, sites, ts.sequence_length)
         P = panel.infer_paths(rho, num_workers=1)
         ts_new = panel.convert_records(P)
         self.assertEqual(ts.num_mutations, ts_new.num_mutations)
