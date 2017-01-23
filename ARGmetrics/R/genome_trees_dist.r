@@ -29,7 +29,7 @@ genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FA
         require(ape)
         require(phangorn) #to use the various treedist metrics
     
-        if (identical(randomly.resolve.a,FALSE) {
+        if (identical(randomly.resolve.a,FALSE)) {
             process.a = identity
         } else {
             if (is.numeric(randomly.resolve.a))
@@ -99,7 +99,7 @@ genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FA
     if (output.full.table) {
         return(results)
     } else {
-        return(c(RFrooted=weighted.mean(results$RFrooted, (results$rgt-results$lft), na.rm = TRUE),
+        return(data.frame(RFrooted=weighted.mean(results$RFrooted, (results$rgt-results$lft), na.rm = TRUE),
                  RFunrooted=weighted.mean(results$RFunrooted, (results$rgt-results$lft), na.rm = TRUE),
                  wRFrooted=weighted.mean(results$wRFrooted, (results$rgt-results$lft), na.rm = TRUE),
                  wRFunrooted=weighted.mean(results$wRFunrooted, (results$rgt-results$lft), na.rm = TRUE),
