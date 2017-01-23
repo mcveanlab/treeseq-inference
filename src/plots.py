@@ -219,7 +219,7 @@ class InferenceRunner(object):
         self.err_fn = add_error_param_to_name(self.sim_fn, row.error_rate)
 
     def run(self):
-        logging.info("running {} inference on row {}".format(self.tool, int(self.row[0])))
+        logging.info("Row {}: running {} inference".format(int(self.row[0]),self.tool))
         logging.debug("parameters = {}".format(self.row.to_dict()))
         if self.tool == "tsinfer":
             ret = self.__run_tsinfer()
@@ -488,7 +488,6 @@ class Dataset(object):
         
         #add the columns for the ARG metrics
         metric_names = list(ARG_metrics.get_ARG_metrics())
-        print(metric_names, file=sys.stderr)
         self.metric_colnames = ["{}_{}".format(metric_for, metric) \
             for metric_for in self.metrics_for for metric in metric_names]
         for c in tool_cols + self.metric_colnames:
@@ -507,15 +506,13 @@ class Dataset(object):
                 # All values that are unset should be NaN, so we only run those that
                 # haven't been filled in already. This allows us to stop and start the
                 # infer processes without having to start from scratch each time.
-                print(cpu_time_colname(tool))
-                print(self.data)
-                print(self.data.ix[i, cpu_time_colname(tool)], file=sys.stderr)
                 if np.isnan(self.data.ix[i, cpu_time_colname(tool)]):
                     work.append((tool, self.data.iloc[i], self.simulations_dir, num_threads))
                 else:
                     logging.info("Data row {} is filled out for {} inference: skipping".format(i, tool))
-        logging.info("running infer on {} rows with {} processes and {} threads".format(
-            len(work), num_processes, num_threads))
+        logging.info("running {} inference trials ({} tools over {} of {} rows) with {} processes and {} threads".format(
+            len(work), len(self.tools), int(np.ceil(len(work)/len(self.tools))), 
+            len(self.data.index), num_processes, num_threads))
         if num_processes > 1:
             with multiprocessing.Pool(processes=num_processes) as pool:
                 for row_id, updated in pool.imap_unordered(infer_worker, work):
@@ -755,7 +752,7 @@ class MetricsByMutationRateDataset(Dataset):
             "error_rate", "replicate", "seed", "aw_burnin_iters",
             "aw_n_out_samples", "aw_iter_out_freq", "tsinfer_biforce_reps"]
         # Variable parameters
-        mutation_rates = np.logspace(-8, -5, num=10)[:-1] * 1.5
+        mutation_rates = np.logspace(-8, -5, num=5)[:-1] * 1.5
         error_rates = [0, 0.01, 0.1]
 
         # Fixed parameters
