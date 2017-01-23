@@ -46,7 +46,7 @@ if sys.version_info[0] < 3:
 
 
 def cpu_time_colname(tool):
-    return tool + "_cpu_time"
+    return tool + "_cputime"
 
 def memory_colname(tool):
     return tool + "_memory"
@@ -90,6 +90,18 @@ def msprime_name(n, Ne, l, rho, mu, genealogy_seed, mut_seed, directory=None):
         return file
     else:
         return os.path.join(directory,file)
+
+def msprime_name_from_row(row, directory=None, error_col=None):
+    """
+    If error_col=None, this is the same as msprime_name() but filled out
+    using data from a row. If error_col is a name, then add_error_param_to_name
+    is also called
+    """
+    name = msprime_name(row.sample_size, row.Ne, row.length, row.recombination_rate,
+        row.mutation_rate, row.seed, row.seed, directory)
+    if error_col is not None:
+        name = add_error_param_to_name(name, row[error_col])
+    return(name)
 
 def add_error_param_to_name(sim_name, error_rate):
     """
@@ -195,15 +207,15 @@ class Figure(object):
 class InferenceRunner(object):
     """
     Class responsible for running a single inference tool and returning results for
-    the dataframe.
+    the dataframe. Should create results files that are bespoke for each tool, and
+    also for each tool, convert these into nexus files that can be used for comparing
+    metrics.
     """
     def __init__(self, tool, row, simulations_dir, num_threads):
         self.tool = tool
         self.row = row
         self.num_threads = num_threads
-        self.sim_fn = msprime_name(
-            row.sample_size, row.Ne, row.length, row.recombination_rate,
-            row.mutation_rate, row.seed, row.seed, simulations_dir)
+        self.sim_fn = msprime_name_from_row(row, simulations_dir)
         self.err_fn = add_error_param_to_name(self.sim_fn, row.error_rate)
 
     def run(self):
@@ -361,6 +373,63 @@ def infer_worker(work):
     runner = InferenceRunner(tool, row, simulations_dir, num_threads)
     return int(row[0]), runner.run()
 
+class MetricsRunner(object):
+    """
+    Class responsible for firing off the rpy2 code to calculate metrics that
+    compare an original simulation file against the result from a set of tools.
+    Results are returned that can be incorporated into the main dataframe.
+    """
+    def __init__(self, row, nexus_dir, num_threads):
+        self.row = row
+        self.nexus_dir = nexus_dir
+        self.num_threads = num_threads
+        self.tools=collections.OrderedDict()
+        self.sim_fn=msprime_name_from_row(row, self.nexus_dir)
+
+    def add_tool(self, toolname, filenames, reps=1, seed=None):
+        """
+        Adds a tool for this simulation. Some simulations wil create
+        multiple output files, results from which can be averaged.
+        Other simulations may have a single file, but the metric calculation 
+        may need to be run multiple times (e.g. if polytomies/multifurcations
+        are resolved at random on each successive calculation of a metric.
+        If so, the 'reps' parameter gives a number of replicates, and the 
+        result returned is an average over different reps.
+        
+        Columns named `toolname`-`metric` should exist in the row
+        """
+        if isinstance(filenames, str):
+            filenames += ".nex"
+        else:
+            filenames = [fn + ".nex" for fn in filenames]
+        self.tools[toolname] = {'nexus':filenames, 'reps':reps, 'make_bin_seed': seed}
+    
+
+    def run(self):
+        return ARG_metrics.get_ARG_metrics(self.sim_fn + ".nex", threads=self.num_threads, **self.tools)
+
+
+def metric_worker(work):
+    """
+    Entry point for running a single set of metric calculations in a worker process.
+    This is called multiple times for each worker process.
+    
+    Each row of the dataset compares a single original file with the result from 
+    multiple tools. To save having to read the same original file multiple times
+    we do the calculation for all tools withing a single instance of metric_worker.
+    """
+    metrics, row, simulations_dir, num_threads = work
+    runner = MetricsRunner(row, simulations_dir, num_threads)
+
+    for tool, nex_params in metrics.items():
+        try:
+            nexus, params = nex_params(row, simulations_dir)
+        except ValueError:
+            nexus = nex_params(row, simulations_dir)
+            params={}
+        runner.add_tool(tool, nexus, **params)
+
+    return int(row[0]), runner.run()
 
 class Dataset(object):
     """
@@ -416,11 +485,14 @@ class Dataset(object):
         # together in a single column
         if "ARGweaver" in self.tools:
             tool_cols.append("ARGweaver_iterations")
+        
         #add the columns for the ARG metrics
-        metric_colnames = list(ARG_metrics.get_ARG_metrics())
-        for col in tool_cols:
-            for metric_name in metric_colnames:
-                self.data[col] = np.NaN
+        metric_names = list(ARG_metrics.get_ARG_metrics())
+        print(metric_names, file=sys.stderr)
+        self.metric_colnames = ["{}_{}".format(metric_for, metric) \
+            for metric_for in self.metrics_for for metric in metric_names]
+        for c in tool_cols + self.metric_colnames:
+            self.data[c] = np.NaN
         self.dump_data(write_index=True)
         self.dump_setup({k:v for k,v in vars(args).items() if k != "func"})
 
@@ -435,10 +507,13 @@ class Dataset(object):
                 # All values that are unset should be NaN, so we only run those that
                 # haven't been filled in already. This allows us to stop and start the
                 # infer processes without having to start from scratch each time.
+                print(cpu_time_colname(tool))
+                print(self.data)
+                print(self.data.ix[i, cpu_time_colname(tool)], file=sys.stderr)
                 if np.isnan(self.data.ix[i, cpu_time_colname(tool)]):
                     work.append((tool, self.data.iloc[i], self.simulations_dir, num_threads))
                 else:
-                    logging.info("Skipping row {} for {}".format(i, tool))
+                    logging.info("Data row {} is filled out for {} inference: skipping".format(i, tool))
         logging.info("running infer on {} rows with {} processes and {} threads".format(
             len(work), num_processes, num_threads))
         if num_processes > 1:
@@ -534,9 +609,37 @@ class Dataset(object):
 
     def process(self):
         """
-        processes the inferred ARGs
+        Runs the main metric calculating processes and stores results in the dataframe.
         """
-        raise NotImplementedError()
+        self.load_data()
+        work = []
+        for i in self.data.index:
+            # Any row without the metrics columns unset should be NaN, so we only run those that
+            # haven't been filled in already. This allows us to stop and start the
+            # infer processes without having to start from scratch each time.
+            if numpy.all(np.isnan(self.data.ix[i, self.metric_colnames])):
+                work.append((self.metrics_for, self.data.iloc[i], self.simulations_dir, num_threads))
+            else:
+                logging.info("Data row {} has metrics (partially) filled: skipping".format(i))
+        logging.info("running metrics on {} rows with {} processes and {} threads".format(
+            len(work), num_processes, num_threads))
+        if num_processes > 1:
+            with multiprocessing.Pool(processes=num_processes,
+                initializer=init_metric_worker) as pool:
+                for row_id, dataframe in pool.imap_unordered(metric_worker, work):
+                    for rowname, row in dataframe.iterrows():
+                        colnames = ["{}_{}".format(rowname,col) for col in row.index]
+                        self.data.ix[row_id, colnames] = tuple(row)
+                    self.dump_data()
+        else:
+            # When we have only one process it's easier to keep everything in the same
+            # process for debugging.
+            for row_id, dataframe in map(metric_worker, work):
+                for rowname, row in dataframe.iterrows():
+                    colnames = ["{}_{}".format(rowname,col) for col in row.index]
+                    self.data.ix[row_id, colnames] = tuple(row)
+                self.dump_data()
+
 
 class NumRecordsBySampleSizeDataset(Dataset):
     """
@@ -608,7 +711,35 @@ class MetricsByMutationRateDataset(Dataset):
     tending to fully accurate as mutation rate increases
     """
     name = "metrics_by_mutation_rate"
-    tools = ["fastARG", "tsinfer", "ARGweaver"]
+    tools = ["fastARG", "ARGweaver", "tsinfer"]
+    #the metrics_for dict defines what metrics we calculate
+    #and how to calculate them, given a row in a df
+    #it is assumed that each will be a function that
+    # is called with a row of data and a simulation dir 
+    #The function should output a tuple whose first value 
+    #is the interence file name, and whose (optional) second 
+    #value give further parameters to the metrics function
+    metrics_for = {
+        "fastARG": lambda row, sim_dir: (
+            construct_fastarg_name(msprime_name_from_row(row, sim_dir, 'error_rate'),
+                                   seed=row.inference_seed),
+            ),
+        "Aweaver": lambda row, sim_dir: ([
+            construct_argweaver_name(msprime_name_from_row(row, sim_dir, 'error_rate'), 
+                                     seed=row.inference_seed, iteration_number=it)
+                for it in x.ARGweaver_iterations.split(",")],
+            ),
+        "tsipoly": lambda row, sim_dir: (
+            construct_tsinfer_name(msprime_name_from_row(row, sim_dir), 'error_rate'),
+            ),
+        "tsibiny": lambda row, sim_dir: (
+            construct_tsinfer_name(msprime_name_from_row(row, sim_dir), 'error_rate'),
+            #hack same polytomy seed as inference seed
+            {'make_bin_seed':row.inference_seed, 'reps':row.tsinfer_biforce_reps} 
+            )
+    }
+        
+            
     default_replicates = 10
     default_seed = 123
 
@@ -621,7 +752,7 @@ class MetricsByMutationRateDataset(Dataset):
         seeds = set()
         cols = [
             "sample_size", "Ne", "length", "recombination_rate", "mutation_rate",
-            "error_rate", "replicate", "seed", "error_rate", "aw_burnin_iters",
+            "error_rate", "replicate", "seed", "aw_burnin_iters",
             "aw_n_out_samples", "aw_iter_out_freq", "tsinfer_biforce_reps"]
         # Variable parameters
         mutation_rates = np.logspace(-8, -5, num=10)[:-1] * 1.5
@@ -677,48 +808,6 @@ class MetricsByMutationRateDataset(Dataset):
                     self.save_variant_matrices(ts, fn, error_rate)
         return data
 
-    def process(self):
-        """
-        Extracts metrics from the .nex files using R, and saves the results
-        in the csv file under fastARG_RFunrooted, etc etc.
-        The tsinfer routine has two possible sets of stats: for nonbinary trees
-        and for randomly resolved strictly bifurcating trees (with a random seed given)
-        These are stored in 'msipoly_RFunrooted' and
-        'msibifu_RFunrooted', and the random seed used (as passed to R via
-        genome_trees_dist_forcebin_b) is stored in 'msibifu_seed'
-        """
-        # TODO update this to use a similar pattern the to the 'infer' method.
-        # All columns should be added to the file at setup() time, and we can
-        # run the argmetrics code in a subprocess.
-
-        for i in self.data.index:
-            d = self.data.iloc[i]
-            sim_fn=msprime_name(d.sample_size, d.Ne, d.length, d.recombination_rate,
-                                d.mutation_rate, d.seed, d.seed, self.simulations_dir)
-            base_fn=add_error_param_to_name(sim_fn, d.error_rate)
-            polytomy_resolution_seed = d.inference_seed #hack: use same seed as in inference step
-            toolfiles = {
-                "fastARG":construct_fastarg_name(base_fn, d.inference_seed)+".nex",
-                "ARGweaver":{'nexus':construct_argweaver_name(base_fn, d.inference_seed, it)+".nex" \
-                    for it in d['ARGweaver_iterations'].split(",")},
-                "MSIpoly":construct_tsinfer_name(base_fn)+".nex",
-                "MSIbifu":{'nexus':construct_tsinfer_name(base_fn)+".nex",
-                           'reps':d.tsinfer_biforce_reps,
-                           'seed':polytomy_resolution_seed}
-            }
-            logging.info("Processing ARG to extract metrics: mu = {}, err = {}.".format(
-                d.mutation_rate, d.error_rate))
-            m = ARG_metrics.get_ARG_metrics(sim_fn + ".nex", **toolfiles)
-            self.data.loc[i,"MSIbifu_seed"] = polytomy_resolution_seed
-            #Now add all the metrics to the data file
-            for prefix, metrics in m.items():
-                colnames = ["_".join([prefix,k]) for k in sorted(metrics.keys())]
-                add_columns(self.data, colnames)
-                self.data.loc[i, colnames] = metrics.values()
-
-             # Save each row so we can use the information while it's being built
-            self.dump_data()
-
 class SampleSizeEffectOnSubsetDataset(Dataset):
     """
     Dataset for Figure 3
@@ -746,6 +835,10 @@ class SampleSizeEffectOnSubsetDataset(Dataset):
     subset size N goes up.
     """
     name = "sample_size_effect_on_subset"
+    inference_tools = ["fastARG", "tsinfer"]
+    metric_tools = ["fastARG", "tsinfer"]
+    default_replicates = 10
+    default_seed = 123
 
 
 def run_setup(cls, args):
