@@ -40,8 +40,8 @@ def get_ARG_metrics(true_nexus_fn=None, threads=1, **inferred_nexus_fns):
     """
     if true_nexus_fn is None:
         return pd.DataFrame(columns = ARGmetrics.genome_trees_dist().names)
-    logging.debug("running get_ARG_metrics({},{},{})".format(true_nexus_fn,
-        threads, inferred_nexus_fns))
+    logging.debug("get_ARG_metrics() is comparing {} against inferred trees for the following tools (with file numbers) {}".format(
+        true_nexus_fn, threads, {k: len(v['nexus']) for k,v in inferred_nexus_fns.items()}))
     # load the true_nexus into the R session (but don't convert it to a python obj)
     orig_tree = ape.read_nexus(true_nexus_fn, force_multi=True)
     weights = 1
@@ -72,8 +72,8 @@ def get_ARG_metrics(true_nexus_fn=None, threads=1, **inferred_nexus_fns):
                 logging.debug("No inference files give to compare")
                 m = ARGmetrics.genome_trees_dist()
             else:
-                logging.debug("calculating tree metrics to compare '{}' vs '{}'.".format(
-                    true_nexus_fn, nexus_files))
+                logging.debug("calculating tree metrics to compare '{}' vs {} other files.".format(
+                    true_nexus_fn, len(nexus_files)))
                 m = ARGmetrics.genome_trees_dist_multi(orig_tree, nexus_files, weights=1)
         if metrics is None:
             metrics = pd.DataFrame(columns = m.names)
