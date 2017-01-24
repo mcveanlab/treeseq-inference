@@ -23,7 +23,7 @@ genome.trees.dist.multi <- function(treeseq.base, treeseq.multi, weights=NULL, a
                                     acceptable.length.diff.pct = acceptable.length.diff.pct,
                                     variant.positions = variant.positions))
     if (is.numeric(weights)) {
-        return(colSums(metrics * weights)/sum(weights))
+        return(apply(metrics, 2, weighted.mean,  rep_len(weights, nrow(metrics))))
     } else {
         return(metrics)
     }
