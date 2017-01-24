@@ -671,23 +671,27 @@ class Dataset(object):
         return ts, sim_fn
 
     @staticmethod
-    def save_variant_matrices(ts, fname, error_rate):
-        S = generate_samples(ts, error_rate)
-        err_filename = add_error_param_to_name(fname, error_rate)
-        outfile = err_filename + ".npy"
+    def save_variant_matrices(ts, fname, error_rate=None):
+        if error_rate is None:
+            S = generate_samples(ts, 0)
+            filename = fname
+        else:
+            S = generate_samples(ts, error_rate)
+            filename = add_error_param_to_name(fname, error_rate)
+        outfile = filename + ".npy"
         logging.debug("writing variant matrix to {} for tsinfer".format(outfile))
         np.save(outfile, S)
-        outfile = err_filename + ".pos.npy"
+        outfile = filename + ".pos.npy"
         pos = np.array([v.position for v in ts.variants()])
         logging.debug("writing variant positions to {} for tsinfer".format(outfile))
         np.save(outfile, pos)
         assert all(p.is_integer() for p in pos), \
             "Variant positions are not all integers in {}".format()
-        logging.debug("writing variant matrix to {}.hap for fastARG".format(err_filename))
-        with open(err_filename+".hap", "w+") as fastarg_in:
+        logging.debug("writing variant matrix to {}.hap for fastARG".format(filename))
+        with open(filename+".hap", "w+") as fastarg_in:
             msprime_fastARG.variant_matrix_to_fastARG_in(np.transpose(S), pos, fastarg_in)
-        logging.debug("writing variant matrix to {}.sites for ARGweaver".format(err_filename))
-        with open(err_filename+".sites", "w+") as argweaver_in:
+        logging.debug("writing variant matrix to {}.sites for ARGweaver".format(filename))
+        with open(filename+".sites", "w+") as argweaver_in:
             msprime_ARGweaver.variant_matrix_to_ARGweaver_in(np.transpose(S), pos,
                 ts.get_sequence_length(), argweaver_in)
 
@@ -734,20 +738,25 @@ class Dataset(object):
                     logging.debug("No dataframe returned from metric calculation")
 
 
-class NumRecordsBySampleSizeDataset(Dataset):
+class BasicTestDataset(Dataset):
     """
-    Information on the number of coalescence records inferred by tsinfer
-    and FastARG for various sample sizes, under 3 different error rates
+    This attempts to replicate the simulations and inferences previously carried out
+    in test_treecmp.py - plotting fastarg against argweaver inference
     """
-    name = "num_records_by_sample_size"
-    #the tools dict contains functions that are called on each row
-    #that define when to use each tool
+    name = "basic_test"
     tools = {
         "fastARG":always_true,
-        "tsinfer":always_true}
+        "ARGweaver":always_true}
     default_replicates = 10
     default_seed = 123
 
+    def __init__(self):
+        super().__init__()
+        #remove ts inferences
+        for k in list(self.metrics_for.keys()):
+            if k.startswith('ts'):
+                del self.metrics_for[k]
+        
     def run_simulations(self, replicates, seed):
         # TODO there is a fair amount of shared code here between this and the
         # MetricsByMutationRateDataset. Factor these out once a few more datasets
@@ -760,7 +769,76 @@ class NumRecordsBySampleSizeDataset(Dataset):
         seeds = set()
         cols = [
             "sample_size", "Ne", "length", "recombination_rate", "mutation_rate",
-            "error_rate", "replicate", "seed", "error_rate"]
+            "replicate", "seed", "aw_burnin_iters", "aw_n_out_samples", "aw_iter_out_freq"]
+        sample_size= 8
+        Ne = 1e4
+        length=int(1e4)
+        recombination_rate = 2e-8
+        mutation_rates = [2e-8, 5e-8, 1e-7, 5e-7, 1e-6, 3e-6, 5e-6]
+        aw_burnin_iters = 100
+        aw_n_out_samples = 20
+        aw_iter_out_freq = 10
+        num_rows = replicates * len(mutation_rates)
+        data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
+        row_id = 0
+        for mutation_rate in mutation_rates:
+            for replicate in range(replicates):
+                done = False
+                while not done:
+                    replicate_seed = rng.randint(1, 2**31)
+                    if replicate_seed not in seeds:
+                        seeds.add(replicate_seed)
+                        done = True
+                # Run the simulation
+                ts, fn = self.single_simulation(
+                    sample_size, Ne, length, recombination_rate, mutation_rate,
+                    replicate_seed, replicate_seed)
+                with open(fn +".nex", "w+") as out:
+                    ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+                # Add the rows for each of the error rates in this replicate
+                row = data.iloc[row_id]
+                row_id += 1
+                row.sample_size = sample_size
+                row.recombination_rate = recombination_rate
+                row.mutation_rate = mutation_rate
+                row.length = length
+                row.Ne = Ne
+                row.seed = replicate_seed
+                row.replicate = replicate
+                row.aw_n_out_samples = aw_n_out_samples
+                row.aw_burnin_iters = aw_burnin_iters
+                row.aw_iter_out_freq = aw_iter_out_freq
+                self.save_variant_matrices(ts, fn)
+        return data
+
+class NumRecordsBySampleSizeDataset(Dataset):
+    """
+    Information on the number of coalescence records inferred by tsinfer
+    and FastARG for various sample sizes, under 3 different error rates
+    """
+    name = "num_records_by_sample_size"
+    #the tools dict contains functions that are called on each row
+    #that define when to use each tool
+    tools = {
+        "fastARG":always_true,
+        "tsinfer":always_true}
+    
+    default_replicates = 10
+    default_seed = 123
+        
+    def run_simulations(self, replicates, seed):
+        # TODO there is a fair amount of shared code here between this and the
+        # MetricsByMutationRateDataset. Factor these out once a few more datasets
+        # have been added and the common patterns are clear.
+        if replicates is None:
+            replicates = self.default_replicates
+        if seed is None:
+            seed = self.default_seed
+        rng = random.Random(seed)
+        seeds = set()
+        cols = [
+            "sample_size", "Ne", "length", "recombination_rate", "mutation_rate",
+            "error_rate", "replicate", "seed"]
         sample_sizes = np.linspace(10, 500, num=10).astype(int)
         error_rates = [0, 0.1, 0.01]
         recombination_rate = 2.5e-8
@@ -1020,6 +1098,7 @@ def run_plot(cls, args):
 
 def main():
     datasets = [
+        BasicTestDataset,
         NumRecordsBySampleSizeDataset,
         MetricsByMutationRateDataset,
         SampleSizeEffectOnSubsetDataset,
