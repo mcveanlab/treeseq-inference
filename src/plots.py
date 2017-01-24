@@ -62,6 +62,12 @@ def nanblank(val):
     """hack around a horrible pandas syntax, which puts nan instead of blank strings"""
     return "" if pd.isnull(val) else val
 
+def always_true(*pargs):
+    """
+    A func that returns True for any input value
+    """
+    return True
+    
 def make_errors(v, p):
     """
     Flip each bit with probability p.
@@ -102,17 +108,41 @@ def msprime_name(n, Ne, l, rho, mu, genealogy_seed, mut_seed, directory=None):
     else:
         return os.path.join(directory,file)
 
-def msprime_name_from_row(row, directory=None, error_col=None):
+def msprime_name_from_row(row, directory=None, error_col=None, subsample_col=None):
     """
-    If error_col=None, this is the same as msprime_name() but filled out
-    using data from a row. If error_col is a name, then add_error_param_to_name
-    is also called
+    If error_col and subsample_col are None, this is the same as msprime_name() 
+    but filled out using data from a row. If error_col is a string which exists as
+    a column name in the row then add_error_param_to_name() is also called, using 
+    the error rate specified in that column. Alternatively (e.g. if error_col is a 
+    number) then it is treated as the error rate to add via add_error_param_to_name(). 
+    The same goes for subsample_col.
     """
     name = msprime_name(row.sample_size, row.Ne, row.length, row.recombination_rate,
         row.mutation_rate, row.seed, row.seed, directory)
+    if subsample_col is not None:
+        if isinstance(subsample_col, str):
+            if subsample_col in row:
+                name = add_subsample_param_to_name(name, row[subsample_col])
+        else:
+            name = add_subsample_param_to_name(name, subsample_col)
     if error_col is not None:
-        name = add_error_param_to_name(name, row[error_col])
+        if isinstance(error_col, str):
+            if error_col in row:
+                name = add_error_param_to_name(name, row[error_col])
+        else:
+            name = add_error_param_to_name(name, error_col)
     return(name)
+
+def add_subsample_param_to_name(sim_name, subsample_size):
+    """
+    Mark a filename as containing only a subset of the samples of the full sim
+    Can be used on msprime output files but also e.g. tsinfer output files
+    """
+    if sim_name.endswith("+") or sim_name.endswith("-"):
+        #this is the first param
+        return sim_name + "max{}".format(int(subsample_size))
+    else:
+        return sim_name + "_max{}".format(int(subsample_size))
 
 def add_error_param_to_name(sim_name, error_rate):
     """
@@ -126,16 +156,6 @@ def add_error_param_to_name(sim_name, error_rate):
         #this is the first param
         return sim_name + "err{}".format(float(error_rate))
 
-def add_subsample_param_to_name(sim_name, subsample_size):
-    """
-    Mark a filename as containing only a subset of the samples of the full sim
-    Can be used on msprime output files but also e.g. tsinfer output files
-    """
-    if sim_name.endswith("+") or sim_name.endswith("-"):
-        #this is the first param
-        return sim_basename + "max{}".format(int(subsample_size))
-    else:
-        return sim_basename + "_max{}".format(int(subsample_size))
 
 def construct_fastarg_name(sim_name, seed, directory=None):
     """
@@ -159,14 +179,18 @@ def construct_argweaver_name(sim_name, seed, iteration_number=None):
         suffix += "_i."+ str(int(iteration_number))
     return os.path.join(d,'+'.join(['aweaver', f, suffix]))
 
-def construct_tsinfer_name(sim_name):
+def construct_tsinfer_name(sim_name, subsample_size=None):
     """
     Returns an MSprime Li & Stevens inference filename.
     If the file is a subset of the original, this can be added to the
-    basename later using the add_subsample_param_to_name() routine.
+    basename in this function, or later using the 
+    add_subsample_param_to_name() routine.
     """
     d,f = os.path.split(sim_name)
-    return os.path.join(d,'+'.join(['tsinfer', f, ""]))
+    name = os.path.join(d,'+'.join(['tsinfer', f, ""]))
+    if subsample_size is not None:
+        name = add_subsample_param_to_name(name, subsample_size)
+    return name
 
 def time_cmd(cmd, stdout=sys.stdout):
     """
@@ -226,8 +250,8 @@ class InferenceRunner(object):
         self.tool = tool
         self.row = row
         self.num_threads = num_threads
-        self.sim_fn = msprime_name_from_row(row, simulations_dir)
-        self.err_fn = add_error_param_to_name(self.sim_fn, row.error_rate)
+        self.base_fn = msprime_name_from_row(row, simulations_dir, 
+            'error_rate', 'subsample')
 
     def run(self):
         logging.info("Row {}: running {} inference".format(int(self.row[0]),self.tool))
@@ -247,15 +271,20 @@ class InferenceRunner(object):
 
     def __run_tsinfer(self):
 
-        samples_fn = self.err_fn + ".npy"
+        samples_fn = self.base_fn + ".npy"
         logging.debug("reading: variant matrix {} for msprime inference".format(samples_fn))
-        positions_fn = self.err_fn + ".pos.npy"
+        positions_fn = self.base_fn + ".pos.npy"
         logging.debug("reading: positions {} for msprime inference".format(positions_fn))
-        out_fn = construct_tsinfer_name(self.err_fn)
         scaled_recombination_rate = 4 * self.row.recombination_rate * self.row.Ne
         inferred_ts, time, memory = self.run_tsinfer(
             samples_fn, positions_fn, self.row.length, scaled_recombination_rate,
             num_threads=self.num_threads)
+        if 'tsinfer_subset' in self.row:
+            inferred_ts = inferred_ts.simplify(list(range(self.row.tsinfer_subset)))
+            out_fn = construct_tsinfer_name(self.base_fn, self.row.tsinfer_subset)
+        else:
+            out_fn = construct_tsinfer_name(self.base_fn)
+            
         with open(out_fn +".nex", "w+") as out:
             #tree metrics assume tips are numbered from 1 not 0
             inferred_ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
@@ -266,8 +295,8 @@ class InferenceRunner(object):
 
     def __run_fastARG(self):
         inference_seed = self.row.seed  # TODO do we need to specify this separately?
-        infile = self.err_fn + ".hap"
-        out_fn = construct_fastarg_name(self.err_fn, inference_seed)
+        infile = self.base_fn + ".hap"
+        out_fn = construct_fastarg_name(self.base_fn, inference_seed)
         logging.debug("reading: {} for fastARG inference".format(infile))
         inferred_ts, time, memory = self.run_fastarg(infile, self.row.length, inference_seed)
         with open(out_fn +".nex", "w+") as out:
@@ -279,8 +308,8 @@ class InferenceRunner(object):
 
     def __run_ARGweaver(self):
         inference_seed = self.row.seed  # TODO do we need to specify this separately?
-        infile = self.err_fn + ".sites"
-        out_fn = construct_argweaver_name(self.err_fn, inference_seed)
+        infile = self.base_fn + ".sites"
+        out_fn = construct_argweaver_name(self.base_fn, inference_seed)
         logging.debug("reading: {} for ARGweaver inference".format(infile))
         iteration_ids, stats_file, time, memory = self.run_argweaver(
             infile, self.row.Ne, self.row.recombination_rate, self.row.mutation_rate,
@@ -288,7 +317,7 @@ class InferenceRunner(object):
             self.row.aw_iter_out_freq, self.row.aw_burnin_iters)
         #now must convert all of the .smc files to .nex format
         for it in iteration_ids:
-            base = construct_argweaver_name(self.err_fn, inference_seed, it)
+            base = construct_argweaver_name(self.base_fn, inference_seed, it)
             with open(base + ".nex", "w+") as out:
                 msprime_ARGweaver.ARGweaver_smc_to_nexus(
                     base+".smc.gz", out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
@@ -388,7 +417,8 @@ def infer_worker(work):
 class MetricsRunner(object):
     """
     Class responsible for firing off the rpy2 code to calculate metrics that
-    compare an original simulation file against the result from a set of tools.
+    compare an original simulation file against the result from a set of tools
+    (one class instantiated per row).
     Results are returned that can be incorporated into the main dataframe.
     """
     def __init__(self, row, nexus_dir, num_threads):
@@ -396,7 +426,8 @@ class MetricsRunner(object):
         self.nexus_dir = nexus_dir
         self.num_threads = num_threads
         self.tools=collections.OrderedDict()
-        self.sim_fn=msprime_name_from_row(row, self.nexus_dir)
+        self.sim_fn=msprime_name_from_row(row, self.nexus_dir, 
+            'error_rate', 'subsample')
 
     def add_tool(self, toolname, filenames, reps=None, make_bin_seed=None):
         """
@@ -410,10 +441,6 @@ class MetricsRunner(object):
         
         Columns named `toolname`-`metric` should exist in the row
         """
-        if isinstance(filenames, str):
-            filenames += ".nex"
-        else:
-            filenames = [fn + ".nex" for fn in filenames]
         self.tools[toolname] = {'nexus':filenames, 'reps':reps, 'make_bin_seed': make_bin_seed}
     
 
@@ -439,9 +466,19 @@ def metric_worker(work):
         except ValueError:
             nexus, = nex_params(row, simulations_dir)
             params={}
-            
-        runner.add_tool(tool, nexus, **params)
-
+        #now add the .nex extension
+        if isinstance(nexus, str):
+            nexus += ".nex"
+            if not os.file.exists(nexus):
+                nexus = None   
+        else:
+            nexus = [fn + ".nex" for fn in nexus if os.file.exists(fn + ".nex")]
+        if nexus:
+            runner.add_tool(tool, nexus, **params)
+        else:
+            logging.debug("Skipping metrics for " + tool +
+                " (row " + row[0] + ") " +
+                "because of missing nexus file(s)")
     return int(row[0]), runner.run()
 
 class Dataset(object):
@@ -456,6 +493,42 @@ class Dataset(object):
     """
 
     data_dir = "data"
+
+    #the tools dict contains functions that are called on each row
+    #that define when to use each tool. This allows us to run only
+    #some tools for some of the simulations. The defaults here can 
+    #be overridden in each dataset class, to run only a subset
+    tools = {
+        "ARGweaver": always_true,
+        "fastARG"  : always_true,
+        "tsinfer"  : always_true}
+    #the metrics_for dict defines what metrics we calculate
+    #and how to calculate them, given a row in a df
+    #it is assumed that each will be a function that
+    # is called with a row of data and a simulation dir 
+    #The function should output a tuple whose first value 
+    #is the interence file name, and whose (optional) second 
+    #value give further parameters to the metrics function
+    metrics_for = {
+        "fastARG": lambda row, sim_dir: (
+            construct_fastarg_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'),
+                                   seed=row.seed),
+            ),
+        "Aweaver": lambda row, sim_dir: ([
+            construct_argweaver_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'), 
+                                     seed=row.seed, iteration_number=it)
+                for it in nanblank(row.ARGweaver_iterations).split(",") if it],
+            ),
+        "tsipoly": lambda row, sim_dir: (
+            construct_tsinfer_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample')),
+            ),
+        "tsibiny": lambda row, sim_dir: (
+            construct_tsinfer_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample')),
+            #hack same polytomy seed as inference seed
+            {'make_bin_seed':row.seed, 'reps':row.tsinfer_biforce_reps} 
+            )
+    }
+
 
     def __init__(self):
         self.data_file = os.path.abspath(
@@ -490,7 +563,7 @@ class Dataset(object):
         self.verbosity = args.verbosity
         # Add the result columns
         extra_cols = collections.OrderedDict()
-        for tool in self.tools:
+        for tool in sorted(self.tools.keys()):
             extra_cols[cpu_time_colname(tool)]=np.NaN
             extra_cols[memory_colname(tool)]=np.NaN
         # We need to store more information in the case of ARGweaver, since
@@ -513,15 +586,16 @@ class Dataset(object):
         self.load_data()
         work = []
         for i in self.data.index:
-            for tool in self.tools:
+            row = self.data.iloc[i]
+            for tool in [tool for tool,func in self.tools.items() if func(self, row)]:
                 # All values that are unset should be NaN, so we only run those that
                 # haven't been filled in already. This allows us to stop and start the
                 # infer processes without having to start from scratch each time.
-                if force or np.isnan(self.data.ix[i, cpu_time_colname(tool)]):
-                    work.append((tool, self.data.iloc[i], self.simulations_dir, num_threads))
+                if force or pd.isnull(row[cpu_time_colname(tool)]):
+                    work.append((tool, row, self.simulations_dir, num_threads))
                 else:
                     logging.info("Data row {} is filled out for {} inference: skipping".format(i, tool))
-        logging.info("running {} inference trials ({} tools over {} of {} rows) with {} processes and {} threads".format(
+        logging.info("running {} inference trials (max {} tools over {} of {} rows) with {} processes and {} threads".format(
             len(work), len(self.tools), int(np.ceil(len(work)/len(self.tools))), 
             len(self.data.index), num_processes, num_threads))
         if num_processes > 1:
@@ -542,7 +616,7 @@ class Dataset(object):
     #
     # Utilities for running simulations and saving files.
     #
-    def single_simulation(self, n, Ne, l, rho, mu, seed, mut_seed=None, subsample=None):
+    def single_simulation(self, n, Ne, l, rho, mu, seed, mut_seed=None):
         """
         The standard way to run one msprime simulation for a set of parameter
         values. Saves the output to an .hdf5 file, and also saves variant files
@@ -588,10 +662,6 @@ class Dataset(object):
         sim_fn = msprime_name(n, Ne, l, rho, mu, seed, seed, self.simulations_dir)
         logging.debug("writing {}.hdf5".format(sim_fn))
         ts.dump(sim_fn+".hdf5", zlib_compression=True)
-        if subsample is not None:
-            ts = ts.simplify(list(range(subsample)))
-            sim_fn = add_subsample_param_to_name(sim_fn, subsample)
-            ts.dump(sim_fn +".hdf5", zlib_compression=True)
         return ts, sim_fn
 
     @staticmethod
@@ -618,6 +688,8 @@ class Dataset(object):
     def process(self, num_processes, num_threads, force=False):
         """
         Runs the main metric calculating processes and stores results in the dataframe.
+        Should be able to cope with missing nexus files, e.g. if inference only run
+        for a subset of tools
         """
         self.load_data()
         work = []
@@ -657,7 +729,11 @@ class NumRecordsBySampleSizeDataset(Dataset):
     and FastARG for various sample sizes, under 3 different error rates
     """
     name = "num_records_by_sample_size"
-    tools = ["fastARG", "tsinfer"]
+    #the tools dict contains functions that are called on each row
+    #that define when to use each tool
+    tools = {
+        "fastARG":always_true,
+        "tsinfer":always_true}
     default_replicates = 10
     default_seed = 123
 
@@ -721,38 +797,11 @@ class MetricsByMutationRateDataset(Dataset):
     tending to fully accurate as mutation rate increases
     """
     name = "metrics_by_mutation_rate"
-    tools = ["fastARG", "ARGweaver", "tsinfer"]
-    #the metrics_for dict defines what metrics we calculate
-    #and how to calculate them, given a row in a df
-    #it is assumed that each will be a function that
-    # is called with a row of data and a simulation dir 
-    #The function should output a tuple whose first value 
-    #is the interence file name, and whose (optional) second 
-    #value give further parameters to the metrics function
-    metrics_for = {
-        "fastARG": lambda row, sim_dir: (
-            construct_fastarg_name(msprime_name_from_row(row, sim_dir, 'error_rate'),
-                                   seed=row.seed),
-            ),
-        "Aweaver": lambda row, sim_dir: ([
-            construct_argweaver_name(msprime_name_from_row(row, sim_dir, 'error_rate'), 
-                                     seed=row.seed, iteration_number=it)
-                for it in nanblank(row.ARGweaver_iterations).split(",") if it],
-            ),
-        "tsipoly": lambda row, sim_dir: (
-            construct_tsinfer_name(msprime_name_from_row(row, sim_dir, 'error_rate')),
-            ),
-        "tsibiny": lambda row, sim_dir: (
-            construct_tsinfer_name(msprime_name_from_row(row, sim_dir, 'error_rate')),
-            #hack same polytomy seed as inference seed
-            {'make_bin_seed':row.seed, 'reps':row.tsinfer_biforce_reps} 
-            )
-    }
-        
-            
+    
     default_replicates = 10
     default_seed = 123
 
+    
     def run_simulations(self, replicates, seed):
         if replicates is None:
             replicates = self.default_replicates
@@ -765,7 +814,7 @@ class MetricsByMutationRateDataset(Dataset):
             "error_rate", "replicate", "seed", "aw_burnin_iters",
             "aw_n_out_samples", "aw_iter_out_freq", "tsinfer_biforce_reps"]
         # Variable parameters
-        mutation_rates = np.logspace(-8, -5, num=5)[:-1] * 1.5
+        mutation_rates = np.logspace(-8, -5, num=6)[:-2] * 1.5
         error_rates = [0, 0.01, 0.1]
 
         # Fixed parameters
@@ -774,12 +823,10 @@ class MetricsByMutationRateDataset(Dataset):
         length = 50000
         recombination_rate = 2.5e-8
         ## argweaver params: aw_n_out_samples will be produced, every argweaver_iter_out_freq
-        # aw_burnin_iters = 5000
-        # aw_n_out_samples = 100
-        # TMP for development
-        aw_burnin_iters = 5
-        aw_n_out_samples = 10
+        aw_burnin_iters = 5000
+        aw_n_out_samples = 100
         aw_iter_out_freq = 10
+        # TMP for development
         ## tsinfer params: number of times to randomly resolve into bifurcating (binary) trees
         tsinfer_biforce_reps = 20
         num_rows = replicates * len(mutation_rates) * len(error_rates)
@@ -838,17 +885,105 @@ class SampleSizeEffectOnSubsetDataset(Dataset):
     to get inference outputs (eventually saved as .nex files). Then take larger
     and larger subsets of the original simulation - S_N for N=20, 40, 100, etc. -
     and run tsinfer (but not the other methods) on these larger subsets, ensuring
-    that after each inference attempt, the resulting TreeSequence is subset
+    that after each ts inference attempt, the resulting TreeSequence is subset
     (simplify()ed) back down to cover only the first n samples. Use ARGmetrics to
     compare these secondarily-simplified ARGs with the true (original, simulated)
     S_n subset. We would hope that the ARG accuracy metrics tend to 0 as the tsinfer
     subset size N goes up.
     """
     name = "sample_size_effect_on_subset"
-    inference_tools = ["fastARG", "tsinfer"]
-    metric_tools = ["fastARG", "tsinfer"]
+    base_subsample_size = 10
+    tools = {
+        "tsinfer":   always_true,
+        #only use fastARG & ARGweaver tools on small subsamples
+        "fastARG":   lambda self, row: row.subsample==self.base_subsample_size, 
+        "ARGweaver": lambda self, row: row.subsample==self.base_subsample_size
+        }
     default_replicates = 10
     default_seed = 123
+
+    def __init__(self):
+        super().__init__()
+        #override the built-in tsinference metrics, so that we use the subsetted files
+        self.metrics_for["tsipoly"] = lambda row, sim_dir: (
+            construct_tsinfer_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'),
+                                   self.base_subsample_size),
+            )
+        self.metrics_for["tsibiny"] = lambda row, sim_dir: (
+            construct_tsinfer_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'),
+                                   self.base_subsample_size),
+            #hack same polytomy seed as inference seed
+            {'make_bin_seed':row.seed, 'reps':row.tsinfer_biforce_reps} 
+            )
+        
+    def run_simulations(self, replicates, seed):
+        if replicates is None:
+            replicates = self.default_replicates
+        if seed is None:
+            seed = self.default_seed
+        rng = random.Random(seed)
+        seeds = set()
+        cols = [
+            "sample_size", "subsample", "Ne", "length", "recombination_rate", "mutation_rate",
+            "error_rate", "replicate", "seed", "base_subsample_size", "aw_burnin_iters",
+            "aw_n_out_samples", "aw_iter_out_freq", "tsinfer_biforce_reps"]
+        # Variable parameters
+        error_rates = [0, 0.01, 0.1]
+        subsamples  = [self.base_subsample_size, 20, 50, 100, 200, 500, 1000]
+        # Fixed parameters
+        mutation_rate = 1.5e-8
+        sample_size = 1000
+        Ne = 5000
+        length = 50000
+        recombination_rate = 2.5e-8
+        ## argweaver params: aw_n_out_samples will be produced, every argweaver_iter_out_freq
+        aw_burnin_iters = 5000
+        aw_n_out_samples = 100
+        aw_iter_out_freq = 10
+        # TMP for development
+        ## tsinfer params: number of times to randomly resolve into bifurcating (binary) trees
+        tsinfer_biforce_reps = 20
+        num_rows = replicates * len(error_rates) * len(subsamples)
+        data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
+        row_id = 0
+        for replicate in range(replicates):
+            done = False
+            while not done:
+                replicate_seed = rng.randint(1, 2**31)
+                if replicate_seed not in seeds:
+                    seeds.add(replicate_seed)
+                    done = True
+            # Run the simulation
+            ts, fn = self.single_simulation(
+                sample_size, Ne, length, recombination_rate, mutation_rate,
+                replicate_seed, replicate_seed)
+            with open(fn +".nex", "w+") as out:
+                ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+            # Add the rows for each of the error rates in this replicate
+            for subsample in subsamples:
+                subfn = add_subsample_param_to_name(fn, subsample)
+                ts_sub = ts.simplify(list(range(subsample)))
+                with open(subfn +".nex", "w+") as out:
+                    ts_sub.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+                for error_rate in error_rates:
+                    row = data.iloc[row_id]
+                    row_id += 1
+                    row.sample_size = sample_size
+                    row.subsample = subsample
+                    row.recombination_rate = recombination_rate
+                    row.mutation_rate = mutation_rate
+                    row.length = length
+                    row.Ne = Ne
+                    row.seed = replicate_seed
+                    row.error_rate = error_rate
+                    row.replicate = replicate
+                    row.tsinfer_subset = self.base_subsample_size
+                    row.aw_n_out_samples = aw_n_out_samples
+                    row.aw_burnin_iters = aw_burnin_iters
+                    row.aw_iter_out_freq = aw_iter_out_freq
+                    row.tsinfer_biforce_reps = tsinfer_biforce_reps
+                    self.save_variant_matrices(ts_sub, subfn, error_rate)
+        return data
 
 
 def run_setup(cls, args):
@@ -876,6 +1011,7 @@ def main():
     datasets = [
         NumRecordsBySampleSizeDataset,
         MetricsByMutationRateDataset,
+        SampleSizeEffectOnSubsetDataset,
     ]
     figures = [
     ]
