@@ -99,7 +99,7 @@ genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FA
     if (output.full.table) {
         return(results)
     } else {
-        return(data.frame(RFrooted=weighted.mean(results$RFrooted, (results$rgt-results$lft), na.rm = TRUE),
+        return(c(RFrooted=weighted.mean(results$RFrooted, (results$rgt-results$lft), na.rm = TRUE),
                  RFunrooted=weighted.mean(results$RFunrooted, (results$rgt-results$lft), na.rm = TRUE),
                  wRFrooted=weighted.mean(results$wRFrooted, (results$rgt-results$lft), na.rm = TRUE),
                  wRFunrooted=weighted.mean(results$wRFunrooted, (results$rgt-results$lft), na.rm = TRUE),

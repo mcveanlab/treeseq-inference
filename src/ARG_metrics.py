@@ -3,7 +3,7 @@ import pandas as pd
 import rpy2.robjects as robjects
 from rpy2.robjects.packages import importr
 
-importr("ape")
+ape=importr("ape")
 assert robjects.r('packageVersion("ape") >= "4.0.0.2"')[0], \
     "You must install an 'ape' version in R > 4.0.0.2, e.g. by running" + \
     'install.packages("ape", repos = "http://ape-package.ird.fr/", type="source")'
@@ -40,9 +40,10 @@ def get_ARG_metrics(true_nexus_fn=None, threads=1, **inferred_nexus_fns):
     """
     if true_nexus_fn is None:
         return pd.DataFrame(columns = ARGmetrics.genome_trees_dist().names)
-        
-    # load the true_nexus into the R session
-    orig_tree = ARGmetrics.read_nexus(true_nexus_fn)
+    logging.debug("running get_ARG_metrics({},{},{})".format(true_nexus_fn,
+        threads, inferred_nexus_fns))
+    # load the true_nexus into the R session (but don't convert it to a python obj)
+    orig_tree = ape.read_nexus(true_nexus_fn, force_multi=True)
     weights = 1
     metrics = None
     for tool, metric_params in inferred_nexus_fns.items():
@@ -56,6 +57,7 @@ def get_ARG_metrics(true_nexus_fn=None, threads=1, **inferred_nexus_fns):
                 logging.debug("calculating tree metrics to compare binarised '{}' vs '{}'.".format(
                     true_nexus_fn, nexus_files))
                 if seed:
+                
                     m = ARGmetrics.genome_trees_dist_forcebin_b(orig_tree, nexus_files, 
                          replicates = break_binary_reps, seed = int(seed), threads=threads)
                 else:
@@ -66,10 +68,14 @@ def get_ARG_metrics(true_nexus_fn=None, threads=1, **inferred_nexus_fns):
                     true_nexus_fn, nexus_files))
                 m = ARGmetrics.genome_trees_dist(orig_tree, nexus_files)
         else:
-            logging.debug("calculating tree metrics to compare '{}' vs '{}'.".format(
-                true_nexus_fn, nexus_files))
-            m = ARGmetrics.genome_trees_dist_multi(orig_tree, nexus_files, weights=1)
+            if len(nexus_files) == 0:
+                logging.debug("No inference files give to compare")
+                m = ARGmetrics.genome_trees_dist()
+            else:
+                logging.debug("calculating tree metrics to compare '{}' vs '{}'.".format(
+                    true_nexus_fn, nexus_files))
+                m = ARGmetrics.genome_trees_dist_multi(orig_tree, nexus_files, weights=1)
         if metrics is None:
             metrics = pd.DataFrame(columns = m.names)
-        metrics.loc[tool, m.names] = tuple(m)
+        metrics.loc[tool, tuple(m.names)] = tuple(m)
     return metrics
