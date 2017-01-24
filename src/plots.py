@@ -41,6 +41,9 @@ tsinfer_executable = os.path.join(curr_dir,'run_tsinfer.py')
 #monkey-patch write.nexus into msprime
 msprime.TreeSequence.write_nexus_trees = msprime_extras.write_nexus_trees
 
+#R tree metrics assume tips are numbered from 1 not 0
+tree_tip_labels_start_at_0 = False
+
 if sys.version_info[0] < 3:
     raise Exception("Python 3 only")
 
@@ -254,7 +257,8 @@ class InferenceRunner(object):
             samples_fn, positions_fn, self.row.length, scaled_recombination_rate,
             num_threads=self.num_threads)
         with open(out_fn +".nex", "w+") as out:
-            inferred_ts.write_nexus_trees(out)
+            #tree metrics assume tips are numbered from 1 not 0
+            inferred_ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
         return  {
             cpu_time_colname(self.tool): time,
             memory_colname(self.tool): memory
@@ -267,7 +271,7 @@ class InferenceRunner(object):
         logging.debug("reading: {} for fastARG inference".format(infile))
         inferred_ts, time, memory = self.run_fastarg(infile, self.row.length, inference_seed)
         with open(out_fn +".nex", "w+") as out:
-            inferred_ts.write_nexus_trees(out)
+            inferred_ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
         return {
             cpu_time_colname(self.tool): time,
             memory_colname(self.tool): memory
@@ -287,11 +291,11 @@ class InferenceRunner(object):
             base = construct_argweaver_name(self.err_fn, inference_seed, it)
             with open(base + ".nex", "w+") as out:
                 msprime_ARGweaver.ARGweaver_smc_to_nexus(
-                    base+".smc.gz", out, zero_based_tip_numbers=False)
+                    base+".smc.gz", out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
         results = {
             cpu_time_colname(self.tool): time,
             memory_colname(self.tool): memory,
-            "ARGWeaver_iterations": ",".join(iteration_ids)
+            "ARGweaver_iterations": ",".join(iteration_ids)
         }
         return results
 
@@ -394,7 +398,7 @@ class MetricsRunner(object):
         self.tools=collections.OrderedDict()
         self.sim_fn=msprime_name_from_row(row, self.nexus_dir)
 
-    def add_tool(self, toolname, filenames, reps=1, make_bin_seed=None):
+    def add_tool(self, toolname, filenames, reps=None, make_bin_seed=None):
         """
         Adds a tool for this simulation. Some simulations wil create
         multiple output files, results from which can be averaged.
@@ -502,7 +506,7 @@ class Dataset(object):
         self.dump_data(write_index=True)
         self.dump_setup({k:v for k,v in vars(args).items() if k != "func"})
 
-    def infer(self, num_processes, num_threads):
+    def infer(self, num_processes, num_threads, force=False):
         """
         Runs the main inference processes and stores results in the dataframe.
         """
@@ -513,7 +517,7 @@ class Dataset(object):
                 # All values that are unset should be NaN, so we only run those that
                 # haven't been filled in already. This allows us to stop and start the
                 # infer processes without having to start from scratch each time.
-                if np.isnan(self.data.ix[i, cpu_time_colname(tool)]):
+                if force or np.isnan(self.data.ix[i, cpu_time_colname(tool)]):
                     work.append((tool, self.data.iloc[i], self.simulations_dir, num_threads))
                 else:
                     logging.info("Data row {} is filled out for {} inference: skipping".format(i, tool))
@@ -611,7 +615,7 @@ class Dataset(object):
             msprime_ARGweaver.variant_matrix_to_ARGweaver_in(np.transpose(S), pos,
                 ts.get_sequence_length(), argweaver_in)
 
-    def process(self, num_processes, num_threads):
+    def process(self, num_processes, num_threads, force=False):
         """
         Runs the main metric calculating processes and stores results in the dataframe.
         """
@@ -622,7 +626,7 @@ class Dataset(object):
             # Any row without the metrics columns unset should be NaN, so we only run those that
             # haven't been filled in already. This allows us to stop and start the
             # infer processes without having to start from scratch each time.
-            if np.all(pd.isnull(self.data.ix[i, metric_cols])):
+            if force or np.all(pd.isnull(self.data.ix[i, metric_cols])):
                 work.append((self.metrics_for, self.data.iloc[i], self.simulations_dir, num_threads))
             else:
                 logging.info("Data row {} has metrics (partially) filled: skipping".format(i))
@@ -639,7 +643,9 @@ class Dataset(object):
             # When we have only one process it's easier to keep everything in the same
             # process for debugging.
             for row_id, dataframe in map(metric_worker, work):
+                
                 for rowname, row in dataframe.iterrows():
+                    logging.debug("got {} for {}".format(tuple(row), rowname))
                     colnames = ["{}_{}".format(rowname,col) for col in row.index]
                     self.data.ix[row_id, colnames] = tuple(row)
                 self.dump_data()
@@ -690,7 +696,7 @@ class NumRecordsBySampleSizeDataset(Dataset):
                     sample_size, Ne, length, recombination_rate, mutation_rate,
                     replicate_seed, replicate_seed)
                 with open(fn +".nex", "w+") as out:
-                    ts.write_nexus_trees(out)
+                    ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
                 # Add the rows for each of the error rates in this replicate
                 for error_rate in error_rates:
                     row = data.iloc[row_id]
@@ -792,7 +798,7 @@ class MetricsByMutationRateDataset(Dataset):
                     sample_size, Ne, length, recombination_rate, mutation_rate,
                     replicate_seed, replicate_seed)
                 with open(fn +".nex", "w+") as out:
-                    ts.write_nexus_trees(out)
+                    ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
                 # Add the rows for each of the error rates in this replicate
                 for error_rate in error_rates:
                     row = data.iloc[row_id]
@@ -852,13 +858,13 @@ def run_setup(cls, args):
 def run_infer(cls, args):
     logging.info("Inferring {}".format(cls.name))
     f = cls()
-    f.infer(args.processes, args.threads)
+    f.infer(args.processes, args.threads, args.force)
 
 
 def run_process(cls, args):
     logging.info("Processing {}".format(cls.name))
     f = cls()
-    f.process(args.processes, args.threads)
+    f.process(args.processes, args.threads, args.force)
 
 
 def run_plot(cls, args):
@@ -904,6 +910,9 @@ def main():
     subparser.add_argument(
          '--data-file', '-f', type=str,
          help="which CSV file to use for existing data, if not the default", )
+    subparser.add_argument(
+         '--force',  action='store_true', 
+         help="redo all the inferences, even if we have already filled out some", )
     subparser.set_defaults(func=run_infer)
 
     subparser = subparsers.add_parser('process')
@@ -919,6 +928,9 @@ def main():
     subparser.add_argument(
          '--data-file', '-f', type=str,
          help="which CSV file to use for existing data, if not the default")
+    subparser.add_argument(
+         '--force',  action='store_true', 
+         help="redo all the metrics, even if we have already filled out some", )
     subparser.set_defaults(func=run_process)
 
     subparser = subparsers.add_parser('figure')
