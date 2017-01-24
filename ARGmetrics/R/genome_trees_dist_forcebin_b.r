@@ -17,7 +17,8 @@
 #' genome.trees.dist.forcebin()
 
 genome.trees.dist.forcebin.b <- function(treeseq.a, treeseq.b, replicates=1, seed=NA, acceptable.length.diff.pct = 0.1, variant.positions=NULL, threads=1) { 
-   library(parallel) #always available, as this is in R base
+   require(ape)
+   require(parallel) #always available, as this is in R base
    if (class(treeseq.a) != "multiPhylo") {
         a <- read.nexus(treeseq.a, force.multi=TRUE)
     } else {
@@ -32,19 +33,14 @@ genome.trees.dist.forcebin.b <- function(treeseq.a, treeseq.b, replicates=1, see
     if (!is.na(seed)) {
         set.seed(seed)
         seeds <- sample.int(2^31-1, replicates) #pick an integer seed - see ?sample.int
-   return(colMeans(do.call(rbind,mapply(
-       function(r, seed) genome.trees.dist(treeseq.a, treeseq.b, randomly.resolve.b=seed,
-                            acceptable.length.diff.pct = acceptable.length.diff.pct,
-                            variant.positions = variant.positions), 
-       1:replicates,
-       seeds))))
     } else {
-        return(colMeans(do.call(rbind,mcmapply(
-            function(r, seed) genome.trees.dist(treeseq.a, treeseq.b, randomly.resolve.b=seed,
-                                 acceptable.length.diff.pct = acceptable.length.diff.pct,
-                                 variant.positions = variant.positions), 
-            1:replicates,
-            seeds, 
-            mc.cores=threads))))
+        seeds <- TRUE
     }
+    return(colMeans(do.call(rbind,mcmapply(
+        function(r, seed) genome.trees.dist(treeseq.a, treeseq.b, randomly.resolve.b=seed,
+                             acceptable.length.diff.pct = acceptable.length.diff.pct,
+                             variant.positions = variant.positions), 
+        1:replicates,
+        seeds, 
+        SIMPLIFY = FALSE, mc.cores=threads))))
 }
