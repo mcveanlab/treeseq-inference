@@ -132,7 +132,7 @@ def run_ARGweaver(Ne, mut_rate, recomb_rate, executable, ARGweaver_in, ARGweaver
     if sample_step is not None:
         exe.extend(['--sample-step', str(int(sample_step))])
     logging.info("== Running ARGweaver for {} steps to collect {} samples ==".format( \
-        iterations, int(iterations/sample_step)+1))
+        int(iterations), int(iterations/sample_step)+1))
     logging.debug("== ARGweaver command is {} ==".format(" ".join(exe)))
     subprocess.call(exe)
     
