@@ -469,10 +469,10 @@ def metric_worker(work):
         #now add the .nex extension
         if isinstance(nexus, str):
             nexus += ".nex"
-            if not os.file.exists(nexus):
+            if not os.path.isfile(nexus):
                 nexus = None   
         else:
-            nexus = [fn + ".nex" for fn in nexus if os.file.exists(fn + ".nex")]
+            nexus = [fn + ".nex" for fn in nexus if os.path.isfile(fn + ".nex")]
         if nexus:
             runner.add_tool(tool, nexus, **params)
         else:
