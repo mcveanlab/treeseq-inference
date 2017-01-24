@@ -17,10 +17,6 @@ genome.trees.dist.multi <- function(treeseq.base, treeseq.multi, weights=NULL, a
     if (class(treeseq.multi) == "multiPhylo") {
         stop("treeseq.multi should contain a *list* of multiPhylo objects, not simply a single multiPhylo object.")
     }
-    if (randomly.resolve.polytomies != FALSE) {
-        set.seed(randomly.resolve.polytomies)
-        randomly.resolve.polytomies = TRUE
-    }
     metrics <- do.call(rbind,lapply(treeseq.multi, 
                                     genome.trees.dist, 
                                     treeseq.base,
