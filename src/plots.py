@@ -426,8 +426,10 @@ class MetricsRunner(object):
         self.nexus_dir = nexus_dir
         self.num_threads = num_threads
         self.tools=collections.OrderedDict()
-        self.sim_fn=msprime_name_from_row(row, self.nexus_dir, 
-            'error_rate', 'subsample')
+        # the original file against which others should be compared is the one 
+        # without errors injected, but could potentially be a subsetted one
+        self.simulation_comparison_fn=msprime_name_from_row(row, self.nexus_dir, 
+            error_col=None, subsample_col='base_subsample_size')
 
     def add_tool(self, toolname, filenames, reps=None, make_bin_seed=None):
         """
@@ -445,8 +447,12 @@ class MetricsRunner(object):
     
 
     def run(self):
-        return ARG_metrics.get_ARG_metrics(self.sim_fn + ".nex", threads=self.num_threads, **self.tools)
-
+        if self.tools:
+            return ARG_metrics.get_ARG_metrics(self.simulation_comparison_fn + ".nex", 
+                threads=self.num_threads, **self.tools)
+        else:
+            #called with nothing to compare!
+            return None
 
 def metric_worker(work):
     """
@@ -459,7 +465,7 @@ def metric_worker(work):
     """
     metrics, row, simulations_dir, num_threads = work
     runner = MetricsRunner(row, simulations_dir, num_threads)
-
+    #logging.debug("Running metrics on row")
     for tool, nex_params in metrics.items():
         try:
             nexus, params = nex_params(row, simulations_dir)
@@ -470,14 +476,14 @@ def metric_worker(work):
         if isinstance(nexus, str):
             nexus += ".nex"
             if not os.path.isfile(nexus):
-                nexus = None   
+                nexus = None
         else:
             nexus = [fn + ".nex" for fn in nexus if os.path.isfile(fn + ".nex")]
         if nexus:
             runner.add_tool(tool, nexus, **params)
         else:
             logging.debug("Skipping metrics for " + tool +
-                " (row " + row[0] + ") " +
+                " (row " + str(row[0]) + ") " +
                 "because of missing nexus file(s)")
     return int(row[0]), runner.run()
 
@@ -707,20 +713,25 @@ class Dataset(object):
         if num_processes > 1:
             with multiprocessing.Pool(processes=num_processes) as pool:
                 for row_id, dataframe in pool.imap_unordered(metric_worker, work):
-                    for rowname, row in dataframe.iterrows():
-                        colnames = ["{}_{}".format(rowname,col) for col in row.index]
-                        self.data.ix[row_id, colnames] = tuple(row)
-                    self.dump_data()
+                    try:
+                        for rowname, row in dataframe.iterrows():
+                            colnames = ["{}_{}".format(rowname,col) for col in row.index]
+                            self.data.ix[row_id, colnames] = tuple(row)
+                        self.dump_data()
+                    except AttributeError:
+                        logging.debug("No dataframe returned from metric calculation")
         else:
             # When we have only one process it's easier to keep everything in the same
             # process for debugging.
             for row_id, dataframe in map(metric_worker, work):
-                
-                for rowname, row in dataframe.iterrows():
-                    logging.debug("got {} for {}".format(tuple(row), rowname))
-                    colnames = ["{}_{}".format(rowname,col) for col in row.index]
-                    self.data.ix[row_id, colnames] = tuple(row)
-                self.dump_data()
+                try:
+                    for rowname, row in dataframe.iterrows():
+                        logging.debug("got {} for {}".format(tuple(row), rowname))
+                        colnames = ["{}_{}".format(rowname,col) for col in row.index]
+                        self.data.ix[row_id, colnames] = tuple(row)
+                    self.dump_data()
+                except AttributeError:
+                    logging.debug("No dataframe returned from metric calculation")
 
 
 class NumRecordsBySampleSizeDataset(Dataset):
