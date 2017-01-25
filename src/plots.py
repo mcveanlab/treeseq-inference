@@ -1090,10 +1090,37 @@ class Figure(object):
 
     def __init__(self):
         self.filepath = self.dataset.data_path + "+" + self.name
-        self.Rplotstart = "if (!interactive()) pdf('{}',width={}, height={})".format(
-            self.filepath + ".pdf", self.pdf_width_inches, self.pdf_height_inches)
-        self.Rplotend = "if (!interactive()) dev.off()"
 
+    def R_plot(self, Rcmds):
+        """
+        Take the R commands used to generate a plot (as a single string
+        or an array of lines) and evaluate them in R, saving the result 
+        to a pdf file.
+        """
+        if isinstance(Rcmds, str):
+            Rcmds = [Rcmds]
+        Rcmds.insert(0, "if (!interactive()) pdf('{}',width={}, height={})".format(
+            self.filepath + ".pdf", self.pdf_width_inches, self.pdf_height_inches))
+        Rcmds.append("if (!interactive()) dev.off()")
+        script = self.filepath + ".R"
+        with open(script, "w+") as source:
+            for line in Rcmds:
+                print(line, file=source)
+        subprocess.call(['R', 'CMD', 'BATCH', '--no-save', '--no-restore', script])
+        logging.info("Plot file saved to {}. Code for generating plots interactively at {}".format(
+            self.filepath + ".pdf", script))
+
+    def R_plot_data(self, Rcmds, Rdata_cmd = None):
+        """
+        Rdata_cmd is an R command to create a 'data' object in the R
+        session - if None, it defaults to reading the dataset csv file
+        """
+        if isinstance(Rcmds, str):
+            Rcmds = [Rcmds]
+        if Rdata_cmd is None:
+            Rdata_cmd = "data <- read.csv('%s')".format(self.dataset.data_file)
+        self.R_plot([Rdata_cmd] + Rcmds)
+        
     def plot(self):
         raise NotImplementedError()
 
@@ -1101,10 +1128,9 @@ class BasicARGweaverVSfastARG(Figure):
     dataset = BasicTestDataset()
     name = "aw_vs_fa"
     
-    def __init__(self):
-        super().__init__()
-        self.Rcmd = \
-"""data <- read.csv('%s')
+    def plot(self):
+        self.R_plot_data(\
+"""
 datamean <- aggregate(subset(data, select=-ARGweaver_iterations), list(data$mutation_rate), mean)
 tools <- c('fastARG', 'Aweaver')
 metrics <- c('RFrooted', 'RFunrooted', 'wRFrooted', 'wRFunrooted', 'SPRunrooted', 'pathunrooted')
@@ -1115,18 +1141,10 @@ sapply(metrics, function(m) {
     matplot(data$mutation_rate, data[, colnames], type='p', pch=c(1,2), col=cols[tools], main=m, log='x')
     matlines(datamean$mutation_rate, datamean[, colnames], type='l', lty=1, col=cols[tools])
     mtext(names(cols), line=c(-1.2,-2), adj=1, cex=0.7, col=cols)
-})""" % self.dataset.data_file
-    def plot(self):
-        """Also should save the plot command"""
-        script = self.filepath + ".R"
-        with open(script, "w+") as source:
-            print(self.Rplotstart, file=source)
-            print(self.Rcmd,       file=source)
-            print(self.Rplotend,   file=source)
-        subprocess.call(['R', 'CMD', 'BATCH', '--no-save', '--no-restore', script])
-        logging.info("Plot file saved to {}. Code for generating plots interactively at {}".format(
-            self.filepath + ".pdf", script))
-            
+})
+"""
+            )
+                
 def run_setup(cls, args):
     f = cls()
     f.setup(args)
