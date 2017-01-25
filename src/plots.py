@@ -1138,6 +1138,7 @@ class Figure(object):
             #values are probably numeric
             s = "c(" + ",".join(["'" + k + "'=" + str(v) for k,v in vec.items()]) + ")"
         except AttributeError:
+            #vec is an array, not a dict with an items() method
             try:
                 s = "c(" + ",".join(["'" + v + "'" for v in vec]) + ")"
             except TypeError:
@@ -1165,9 +1166,9 @@ layout(matrix(1:6,2,3))
 sapply(metrics, function(m) {
     colnames = paste(names(toolcols), m, sep='_')
     matplot(data$mutation_rate, data[, colnames], type='p', pch=c(1,2), col=toolcols, main=m, 
-        log='x', ylim = c(0,max(d[, colnames])))
+        log='x', ylim = c(0,max(data[, colnames], na.rm=TRUE)))
     matlines(datamean$mutation_rate, datamean[, colnames], type='l', lty=1, col=toolcols)
-    mtext(names(toolcols), line=seq(-1.2, by=-0.8, along.with=cols), adj=0.95,
+    mtext(names(toolcols), line=seq(-1.2, by=-0.8, along.with=toolcols), adj=0.95,
         cex=0.7, col=toolcols)
 })
 """ % (self.to_Rvec(metric_colours), self.to_Rvec(metrics))
@@ -1192,7 +1193,7 @@ sapply(metrics, function(m) {
     colnames = paste(names(toolcols), m, sep='_')
     d <- subset(data, error_rate==error.rates[3])
     matplot(d$mutation_rate, d[, colnames], type='l', lty=3, col=toolcols, main=m, 
-        log='x', ylim = c(0,max(d[, colnames])))
+        log='x', ylim = c(0,max(d[, colnames], na.rm=TRUE)))
     
     d <- subset(data, error_rate==error.rates[2])
     matlines(d$mutation_rate, d[, colnames], type='l', lty=2, col=toolcols)
