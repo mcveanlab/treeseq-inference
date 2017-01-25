@@ -234,11 +234,35 @@ class Figure(object):
     Each figure has a unique name. This is used as the identifier and the
     file name for the output plots.
     """
-
+    Rpdf_start = "pdf(, )"
     def plot(self):
         raise NotImplementedError()
 
+class BasicARGweaverVSfastARG(Figure):
+    name = "aw_vs_fa"
+    
+    def __init__():
+        dataset = BasicTestDataset()
+        self.Rcmd = \
+"""data <- read.csv('%s')
+datamean <- aggregate(subset(data, select=-ARGweaver_iterations), list(data$mutation_rate), mean)
+tools <- c('fastARG', 'Aweaver')
+metrics <- c('RFrooted', 'RFunrooted', 'wRFrooted', 'wRFunrooted', 'SPRunrooted', 'pathunrooted')
+cols <- c(fastARG='red', Aweaver='green')
+layout(matrix(1:6,2,3))
+sapply(metrics, function(m) {
+    colnames = paste(tools, m, sep='_')
+    matplot(data$mutation_rate, data[, colnames], type='p', pch=c(1,2), col=cols[tools], main=m, log='x')
+    matlines(datamean$mutation_rate, datamean[, colnames], type='l', lty=1, col=cols[tools])
+    mtext(names(cols), line=c(-1.2,-2), adj=1, cex=0.7, col=cols)
+})""" % dataset.data_file
 
+    def plot(self):
+        """Also should save the plot command"""
+        with open(dataset.data_path + "+" + self.name + ".R", "w+") as source:
+            print(self.Rcmd, file=source)
+            
+            
 class InferenceRunner(object):
     """
     Class responsible for running a single inference tool and returning results for
@@ -537,19 +561,21 @@ class Dataset(object):
 
 
     def __init__(self):
-        self.data_file = os.path.abspath(
+        self.data_path = os.path.abspath(
             os.path.join(self.data_dir, "{}".format(self.name)))
+        self.data_file = self.data_path + "_data.csv"
+        self.param_file = self.data_path + "_setup.json"
         self.raw_data_dir = os.path.join(self.data_dir, "raw__NOBACKUP__", self.name)
         self.simulations_dir = os.path.join(self.raw_data_dir, "simulations")
 
     def load_data(self):
-        self.data = pd.read_csv(self.data_file+"_data.csv")
+        self.data = pd.read_csv(self.data_file)
 
     def dump_data(self, write_index=False):
-        self.data.to_csv(self.data_file+"_data.csv", index=write_index)
+        self.data.to_csv(self.data_file, index=write_index)
 
     def dump_setup(self, arg_dict):
-        with open(self.data_file+"_setup.json", "w+") as setup:
+        with open(self.param_file , "w+") as setup:
             json.dump(arg_dict, setup, sort_keys=True, indent=2)
 
     #
@@ -622,7 +648,8 @@ class Dataset(object):
     #
     # Utilities for running simulations and saving files.
     #
-    def single_simulation(self, n, Ne, l, rho, mu, seed, mut_seed=None):
+    def single_simulation(self, n, Ne, l, rho, mu, seed, mut_seed=None, 
+        discretise_mutations=True):
         """
         The standard way to run one msprime simulation for a set of parameter
         values. Saves the output to an .hdf5 file, and also saves variant files
@@ -655,11 +682,14 @@ class Dataset(object):
             ts = msprime.simulate(
                 n, Ne, recombination_map=recombination_map, mutation_rate=mu,
                 random_seed=sim_seed)
-            try:
-                ts = msprime_extras.discretise_mutations(ts)
-                done = True
-            except ValueError as ve:
-                logging.info("Rejecting simulation: seed={}: {}".format(sim_seed, ve))
+            if discretise_mutations:
+                try:
+                    ts = msprime_extras.discretise_mutations(ts)
+                    done = True
+                except ValueError as ve:
+                    logging.info("Rejecting simulation: seed={}: {}".format(sim_seed, ve))
+            else:
+                done=True
         # Here we might want to iterate over mutation rates for the same
         # genealogy, setting a different mut_seed so that we can see for
         # ourselves the effect of mutation rate variation on a single topology
@@ -671,7 +701,7 @@ class Dataset(object):
         return ts, sim_fn
 
     @staticmethod
-    def save_variant_matrices(ts, fname, error_rate=None):
+    def save_variant_matrices(ts, fname, error_rate=None, integer_positions=True):
         if error_rate is None:
             S = generate_samples(ts, 0)
             filename = fname
@@ -685,15 +715,19 @@ class Dataset(object):
         pos = np.array([v.position for v in ts.variants()])
         logging.debug("writing variant positions to {} for tsinfer".format(outfile))
         np.save(outfile, pos)
-        assert all(p.is_integer() for p in pos), \
-            "Variant positions are not all integers in {}".format()
+        if integer_positions:
+            assert all(p.is_integer() for p in pos), \
+                "Variant positions are not all integers in {}".format()
         logging.debug("writing variant matrix to {}.hap for fastARG".format(filename))
         with open(filename+".hap", "w+") as fastarg_in:
             msprime_fastARG.variant_matrix_to_fastARG_in(np.transpose(S), pos, fastarg_in)
         logging.debug("writing variant matrix to {}.sites for ARGweaver".format(filename))
         with open(filename+".sites", "w+") as argweaver_in:
-            msprime_ARGweaver.variant_matrix_to_ARGweaver_in(np.transpose(S), pos,
-                ts.get_sequence_length(), argweaver_in)
+            if error_rate is None and integer_positions == False:
+                msprime_ARGweaver.msprime_to_ARGweaver_in(ts, argweaver_in)
+            else:
+                msprime_ARGweaver.variant_matrix_to_ARGweaver_in(np.transpose(S), pos,
+                    ts.get_sequence_length(), argweaver_in)
 
     def process(self, num_processes, num_threads, force=False):
         """
@@ -747,7 +781,7 @@ class BasicTestDataset(Dataset):
     tools = {
         "fastARG":always_true,
         "ARGweaver":always_true}
-    default_replicates = 10
+    default_replicates = 20
     default_seed = 123
 
     def __init__(self):
@@ -757,6 +791,10 @@ class BasicTestDataset(Dataset):
             if k.startswith('ts'):
                 del self.metrics_for[k]
         
+    def setup(self, args):
+        self.JeromesDiscretise = not args.hack_finite_sites
+        super().__init__(args)
+    
     def run_simulations(self, replicates, seed):
         # TODO there is a fair amount of shared code here between this and the
         # MetricsByMutationRateDataset. Factor these out once a few more datasets
@@ -792,7 +830,7 @@ class BasicTestDataset(Dataset):
                 # Run the simulation
                 ts, fn = self.single_simulation(
                     sample_size, Ne, length, recombination_rate, mutation_rate,
-                    replicate_seed, replicate_seed)
+                    replicate_seed, replicate_seed, discretise_mutations=self.JeromesDiscretise)
                 with open(fn +".nex", "w+") as out:
                     ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
                 # Add the rows for each of the error rates in this replicate
@@ -808,7 +846,8 @@ class BasicTestDataset(Dataset):
                 row.aw_n_out_samples = aw_n_out_samples
                 row.aw_burnin_iters = aw_burnin_iters
                 row.aw_iter_out_freq = aw_iter_out_freq
-                self.save_variant_matrices(ts, fn)
+                self.save_variant_matrices(ts, fn, error_rate=None, 
+                    integer_positions=self.JeromesDiscretise)
         return data
 
 class NumRecordsBySampleSizeDataset(Dataset):
@@ -1104,6 +1143,7 @@ def main():
         SampleSizeEffectOnSubsetDataset,
     ]
     figures = [
+    
     ]
     name_map = dict([(d.name, d) for d in datasets + figures])
     parser = argparse.ArgumentParser(
@@ -1121,6 +1161,9 @@ def main():
          '--replicates', '-r', type=int, help="number of replicates")
     subparser.add_argument(
          '--seed', '-s', type=int, help="use a non-default RNG seed")
+    subparser.add_argument(
+         '--hack_finite_sites', action='store_true',
+         help="Mutations at the same (integer) location are superimposed, not shifted along")
     subparser.set_defaults(func=run_setup)
 
     subparser = subparsers.add_parser('infer')
