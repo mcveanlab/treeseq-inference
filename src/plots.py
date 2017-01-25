@@ -225,44 +225,6 @@ def time_cmd(cmd, stdout=sys.stdout):
     return user_time + system_time, max_memory
 
 
-class Figure(object):
-    """
-    Superclass of all figures. Each figure depends on a dataset.
-    """
-    name = None
-    """
-    Each figure has a unique name. This is used as the identifier and the
-    file name for the output plots.
-    """
-    Rpdf_start = "pdf(, )"
-    def plot(self):
-        raise NotImplementedError()
-
-class BasicARGweaverVSfastARG(Figure):
-    name = "aw_vs_fa"
-    
-    def __init__():
-        dataset = BasicTestDataset()
-        self.Rcmd = \
-"""data <- read.csv('%s')
-datamean <- aggregate(subset(data, select=-ARGweaver_iterations), list(data$mutation_rate), mean)
-tools <- c('fastARG', 'Aweaver')
-metrics <- c('RFrooted', 'RFunrooted', 'wRFrooted', 'wRFunrooted', 'SPRunrooted', 'pathunrooted')
-cols <- c(fastARG='red', Aweaver='green')
-layout(matrix(1:6,2,3))
-sapply(metrics, function(m) {
-    colnames = paste(tools, m, sep='_')
-    matplot(data$mutation_rate, data[, colnames], type='p', pch=c(1,2), col=cols[tools], main=m, log='x')
-    matlines(datamean$mutation_rate, datamean[, colnames], type='l', lty=1, col=cols[tools])
-    mtext(names(cols), line=c(-1.2,-2), adj=1, cex=0.7, col=cols)
-})""" % dataset.data_file
-
-    def plot(self):
-        """Also should save the plot command"""
-        with open(dataset.data_path + "+" + self.name + ".R", "w+") as source:
-            print(self.Rcmd, file=source)
-            
-            
 class InferenceRunner(object):
     """
     Class responsible for running a single inference tool and returning results for
@@ -793,7 +755,7 @@ class BasicTestDataset(Dataset):
         
     def setup(self, args):
         self.JeromesDiscretise = not args.hack_finite_sites
-        super().__init__(args)
+        super().setup(args)
     
     def run_simulations(self, replicates, seed):
         # TODO there is a fair amount of shared code here between this and the
@@ -1113,7 +1075,44 @@ class SampleSizeEffectOnSubsetDataset(Dataset):
                     self.save_variant_matrices(ts_sub, subfn, error_rate)
         return data
 
+class Figure(object):
+    """
+    Superclass of all figures. Each figure depends on a dataset.
+    """
+    dataset = None
+    name = None
+    """
+    Each figure has a unique name. This is used as the identifier and the
+    file name for the output plots.
+    """
+    pdf_width_inches = 10
+    pdf_height_inches = 7
+    def plot(self):
+        raise NotImplementedError()
 
+class BasicARGweaverVSfastARG(Figure):
+    dataset = BasicTestDataset()
+    name = "aw_vs_fa"
+    Rcmd = \
+"""data <- read.csv('%s')
+datamean <- aggregate(subset(data, select=-ARGweaver_iterations), list(data$mutation_rate), mean)
+tools <- c('fastARG', 'Aweaver')
+metrics <- c('RFrooted', 'RFunrooted', 'wRFrooted', 'wRFunrooted', 'SPRunrooted', 'pathunrooted')
+cols <- c(fastARG='red', Aweaver='green')
+layout(matrix(1:6,2,3))
+sapply(metrics, function(m) {
+    colnames = paste(tools, m, sep='_')
+    matplot(data$mutation_rate, data[, colnames], type='p', pch=c(1,2), col=cols[tools], main=m, log='x')
+    matlines(datamean$mutation_rate, datamean[, colnames], type='l', lty=1, col=cols[tools])
+    mtext(names(cols), line=c(-1.2,-2), adj=1, cex=0.7, col=cols)
+})""" % dataset.data_file
+
+    def plot(self):
+        """Also should save the plot command"""
+        with open(dataset.data_path + "+" + self.name + ".R", "w+") as source:
+            print(self.Rcmd, file=source)
+            
+            
 def run_setup(cls, args):
     f = cls()
     f.setup(args)
