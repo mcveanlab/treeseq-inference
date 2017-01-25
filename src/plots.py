@@ -891,6 +891,8 @@ class MetricsByMutationRateDataset(Dataset):
     default_replicates = 10
     default_seed = 123
 
+    def __init__(self):
+        super().__init__()
     
     def run_simulations(self, replicates, seed):
         if replicates is None:
@@ -1079,8 +1081,14 @@ class Figure(object):
     """
     Superclass of all figures. Each figure depends on a dataset.
     """
-    dataset = None
+    datasetClass = None
     name = None
+    default_metric_colours = collections.OrderedDict([
+        ('tsibiny','blue'),
+        ('tsipoly','cyan'),
+        ('fastARG','red'),
+        ('Aweaver','green'),
+    ])
     """
     Each figure has a unique name. This is used as the identifier and the
     file name for the output plots.
@@ -1089,8 +1097,9 @@ class Figure(object):
     pdf_height_inches = 7
 
     def __init__(self):
+        self.dataset = self.datasetClass()
         self.filepath = self.dataset.data_path + "+" + self.name
-
+        
     def R_plot(self, Rcmds):
         """
         Take the R commands used to generate a plot (as a single string
@@ -1118,32 +1127,84 @@ class Figure(object):
         if isinstance(Rcmds, str):
             Rcmds = [Rcmds]
         if Rdata_cmd is None:
-            Rdata_cmd = "data <- read.csv('%s')".format(self.dataset.data_file)
+            Rdata_cmd = "data <- read.csv('{}')".format(self.dataset.data_file)
         self.R_plot([Rdata_cmd] + Rcmds)
+    
+    @staticmethod
+    def to_Rvec(vec):
+        try:
+            s = "c(" + ",".join(["'" + k + "'='" + v + "'" for k,v in vec.items()]) + ")"
+        except TypeError:
+            #values are probably numeric
+            s = "c(" + ",".join(["'" + k + "'=" + str(v) for k,v in vec.items()]) + ")"
+        except AttributeError:
+            try:
+                s = "c(" + ",".join(["'" + v + "'" for v in vec]) + ")"
+            except TypeError:
+                #values are probably numeric
+                s = "c(" + ",".join([str(v) for v in vec]) + ")"
+        return s
         
     def plot(self):
         raise NotImplementedError()
 
-class BasicARGweaverVSfastARG(Figure):
-    dataset = BasicTestDataset()
+class BasicARGweaverVSfastARGFigure(Figure):
+    datasetClass = BasicTestDataset
     name = "aw_vs_fa"
     
     def plot(self):
+        metric_colours = collections.OrderedDict(
+            [(k,v) for k,v in self.default_metric_colours.items() if k in self.dataset.metrics_for])
+        metrics  = list(ARG_metrics.get_ARG_metrics())
         self.R_plot_data(\
 """
 datamean <- aggregate(subset(data, select=-ARGweaver_iterations), list(data$mutation_rate), mean)
-tools <- c('fastARG', 'Aweaver')
-metrics <- c('RFrooted', 'RFunrooted', 'wRFrooted', 'wRFunrooted', 'SPRunrooted', 'pathunrooted')
-cols <- c(fastARG='red', Aweaver='green')
+toolcols <- %s
+metrics <- %s
 layout(matrix(1:6,2,3))
 sapply(metrics, function(m) {
-    colnames = paste(tools, m, sep='_')
-    matplot(data$mutation_rate, data[, colnames], type='p', pch=c(1,2), col=cols[tools], main=m, log='x')
-    matlines(datamean$mutation_rate, datamean[, colnames], type='l', lty=1, col=cols[tools])
-    mtext(names(cols), line=c(-1.2,-2), adj=1, cex=0.7, col=cols)
+    colnames = paste(names(toolcols), m, sep='_')
+    matplot(data$mutation_rate, data[, colnames], type='p', pch=c(1,2), col=toolcols, main=m, 
+        log='x', ylim = c(0,max(d[, colnames])))
+    matlines(datamean$mutation_rate, datamean[, colnames], type='l', lty=1, col=toolcols)
+    mtext(names(toolcols), line=seq(-1.2, by=-0.8, along.with=cols), adj=0.95,
+        cex=0.7, col=toolcols)
 })
-"""
+""" % (self.to_Rvec(metric_colours), self.to_Rvec(metrics))
             )
+
+
+class MetricsAgainstMutationRateFigure(Figure):
+    datasetClass = MetricsByMutationRateDataset
+    name = "metrics_vs_mutrate"
+    
+    def plot(self):
+        metric_colours = collections.OrderedDict(
+            [(k,v) for k,v in self.default_metric_colours.items() if k in self.dataset.metrics_for])
+        metrics  = list(ARG_metrics.get_ARG_metrics())
+        self.R_plot_data(\
+"""
+toolcols <- %s
+metrics <- %s
+error.rates <- unique(data$error_rate)
+layout(matrix(1:6,2,3))
+sapply(metrics, function(m) {
+    colnames = paste(names(toolcols), m, sep='_')
+    d <- subset(data, error_rate==error.rates[3])
+    matplot(d$mutation_rate, d[, colnames], type='l', lty=3, col=toolcols, main=m, 
+        log='x', ylim = c(0,max(d[, colnames])))
+    
+    d <- subset(data, error_rate==error.rates[2])
+    matlines(d$mutation_rate, d[, colnames], type='l', lty=2, col=toolcols)
+        
+    d <- subset(data, error_rate==error.rates[1])
+    matlines(d$mutation_rate, d[, colnames], type='l', lty=1, col=toolcols)
+    mtext(names(toolcols), line=seq(-1.2, by=-0.8, along.with=toolcols), adj=0.95,
+        cex=0.7, col=toolcols)
+})
+""" % (self.to_Rvec(metric_colours), self.to_Rvec(metrics))
+            )
+
                 
 def run_setup(cls, args):
     f = cls()
@@ -1174,7 +1235,8 @@ def main():
         SampleSizeEffectOnSubsetDataset,
     ]
     figures = [
-        BasicARGweaverVSfastARG
+        BasicARGweaverVSfastARGFigure,
+        MetricsAgainstMutationRateFigure,
     ]
     name_map = dict([(d.name, d) for d in datasets + figures])
     parser = argparse.ArgumentParser(
