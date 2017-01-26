@@ -1,5 +1,5 @@
-if (!interactive()) pdf('/home/yan/treeseq-inference/data/basic_test+aw_vs_fa.pdf',width=10, height=7)
-data <- read.csv('/home/yan/treeseq-inference/data/basic_test_data.csv')
+if (!interactive()) pdf('/home/yan/treeseq-inference/data/basic_test+aw_vs_fa-JK-200.pdf',width=10, height=7)
+data <- read.csv('/home/yan/treeseq-inference/data/basic_test_data-JK-200.csv')
 
 datamean <- aggregate(subset(data, select=-ARGweaver_iterations), list(data$mutation_rate), mean)
 toolcols <- c('fastARG'='red','Aweaver'='green')
