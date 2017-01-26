@@ -387,11 +387,12 @@ class InferenceRunner(object):
             exe += ['--sites', sites_file]
     
         new_prefix = path_prefix + "_i" #we append a '_i' to mark iteration number
+        iterations = int(sample_step * (MSMC_samples-1))
         exe += ['--output', new_prefix]
-        exe += ['--iters', str(int(sample_step * (MSMC_samples-1)))]
+        exe += ['--iters', str(iterations)]
         exe += ['--sample-step', str(int(sample_step))]
         logging.info("== Running ARGweaver for {} steps to collect {} samples ==".format( \
-            int(iterations), int(iterations/sample_step)+1))
+            int(iterations), MSMC_samples))
         logging.debug("== ARGweaver command is {} ==".format(" ".join(exe)))
         c, m = time_cmd(exe)
         cpu_time += c
