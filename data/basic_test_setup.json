@@ -1,0 +1,10 @@
+{
+  "command": "setup",
+  "hack_finite_sites": false,
+  "name": [
+    "basic_test"
+  ],
+  "replicates": 20,
+  "seed": null,
+  "verbosity": 1
+}
