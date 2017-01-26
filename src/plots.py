@@ -572,9 +572,17 @@ class Dataset(object):
     }
 
 
-    def __init__(self):
-        self.data_path = os.path.abspath(
-            os.path.join(self.data_dir, "{}".format(self.name)))
+    def __init__(self, data_file):
+        if data_file == None:
+            self.data_path = os.path.abspath(
+                os.path.join(self.data_dir, "{}".format(self.name)))
+        else:
+            if data_file.endswith("_data.csv"):
+                self.data_path = data_file[:-len("_data.csv")]
+            elif data_file.endswith(".csv"):
+                self.data_path = data_file[:-len(".csv")]
+            else:
+                self.data_path = data_file
         self.data_file = self.data_path + "_data.csv"
         self.param_file = self.data_path + "_setup.json"
         self.raw_data_dir = os.path.join(self.data_dir, "raw__NOBACKUP__", self.name)
@@ -799,8 +807,8 @@ class BasicTestDataset(Dataset):
     default_replicates = 20
     default_seed = 123
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, data_file):
+        super().__init__(data_file)
         #remove ts inferences
         for k in list(self.metrics_for.keys()):
             if k.startswith('ts'):
@@ -946,8 +954,8 @@ class MetricsByMutationRateDataset(Dataset):
     default_replicates = 10
     default_seed = 123
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, data_file):
+        super().__init__(data_file)
     
     def run_simulations(self, replicates, seed):
         if replicates is None:
@@ -1049,8 +1057,8 @@ class SampleSizeEffectOnSubsetDataset(Dataset):
     default_replicates = 10
     default_seed = 123
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, data_file):
+        super().__init__(data_file)
         #override the built-in tsinference metrics, so that we use the subsetted files
         self.metrics_for["tsipoly"] = {'files_func':tsinfer_name_from_msprime_row,
                                        'files_func_params':{'subsample_size':self.base_subsample_size}}
@@ -1146,8 +1154,8 @@ class Figure(object):
     pdf_width_inches = 10
     pdf_height_inches = 7
 
-    def __init__(self):
-        self.dataset = self.datasetClass()
+    def __init__(self, data_file):
+        self.dataset = self.datasetClass(data_file)
         self.filepath = self.dataset.data_path + "+" + self.name
         
     def R_plot(self, Rcmds):
@@ -1258,23 +1266,23 @@ sapply(metrics, function(m) {
 
                 
 def run_setup(cls, args):
-    f = cls()
+    f = cls(args.data_file)
     f.setup(args)
 
 def run_infer(cls, args):
     logging.info("Inferring {}".format(cls.name))
-    f = cls()
+    f = cls(args.data_file)
     f.infer(args.processes, args.threads, args.force)
 
 
 def run_process(cls, args):
     logging.info("Processing {}".format(cls.name))
-    f = cls()
+    f = cls(args.data_file)
     f.process(args.processes, args.threads, args.force)
 
 
 def run_plot(cls, args):
-    f = cls()
+    f = cls(args.data_file)
     f.plot()
 
 
@@ -1302,6 +1310,9 @@ def main():
         'name', metavar='NAME', type=str, nargs=1,
         help='the dataset identifier')
     subparser.add_argument(
+         '--data_file', '-f', type=str,
+         help="which CSV file to save data in, if not the default", )
+    subparser.add_argument(
          '--replicates', '-r', type=int, help="number of replicates")
     subparser.add_argument(
          '--seed', '-s', type=int, help="use a non-default RNG seed")
@@ -1321,7 +1332,7 @@ def main():
         'name', metavar='NAME', type=str, nargs=1,
         help='the dataset identifier')
     subparser.add_argument(
-         '--data-file', '-f', type=str,
+         '--data_file', '-f', type=str,
          help="which CSV file to use for existing data, if not the default", )
     subparser.add_argument(
          '--force',  action='store_true', 
@@ -1339,7 +1350,7 @@ def main():
         'name', metavar='NAME', type=str, nargs=1,
         help='the dataset identifier')
     subparser.add_argument(
-         '--data-file', '-f', type=str,
+         '--data_file', '-f', type=str,
          help="which CSV file to use for existing data, if not the default")
     subparser.add_argument(
          '--force',  action='store_true', 
@@ -1347,6 +1358,9 @@ def main():
     subparser.set_defaults(func=run_process)
 
     subparser = subparsers.add_parser('figure')
+    subparser.add_argument(
+         '--data_file', '-f', type=str,
+         help="which CSV file to use for existing data, if not the default")
     subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
         help='the figure identifier')
