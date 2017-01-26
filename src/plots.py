@@ -376,7 +376,7 @@ class InferenceRunner(object):
             burn_in = str(int(burnin_iterations))
             burn_prefix = path_prefix+"_burn"
             logging.info("== Burning in ARGweaver MCMC using {} steps ==".format(burn_in))
-            c, m = time_cmd(exe + ['--iters', burn_in),
+            c, m = time_cmd(exe + ['--iters', burn_in,
                                    '--sample-step', burn_in,
                                    '--output', burn_prefix])
             cpu_time += c
