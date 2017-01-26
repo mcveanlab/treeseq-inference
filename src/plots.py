@@ -165,6 +165,14 @@ def construct_fastarg_name(sim_name, seed, directory=None):
     d,f = os.path.split(sim_name)
     return os.path.join(d,'+'.join(['fastarg', f, "fs"+str(int(seed))]))
 
+def fastarg_name_from_msprime_row(row, sim_dir):
+    """
+    return the fa name based on an msprime sim specified by row 
+    """
+    return construct_fastarg_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'),
+                                  seed=row.seed)
+                                  
+                                  
 def construct_argweaver_name(sim_name, seed, iteration_number=None):
     """
     Returns an ARGweaver inference filename (without file extension),
@@ -179,6 +187,15 @@ def construct_argweaver_name(sim_name, seed, iteration_number=None):
         suffix += "_i."+ str(int(iteration_number))
     return os.path.join(d,'+'.join(['aweaver', f, suffix]))
 
+def argweaver_names_from_msprime_row(row, sim_dir):
+    """
+    return the argweaver names based on an msprime sim specified by row
+    there is one name per argweaver iteration listed in row.ARGweaver_iterations
+    """
+    return [construct_argweaver_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'),
+                                     seed=row.seed, iteration_number=it)
+                for it in nanblank(row.ARGweaver_iterations).split(",") if it]
+
 def construct_tsinfer_name(sim_name, subsample_size=None):
     """
     Returns an MSprime Li & Stevens inference filename.
@@ -191,6 +208,17 @@ def construct_tsinfer_name(sim_name, subsample_size=None):
     if subsample_size is not None:
         name = add_subsample_param_to_name(name, subsample_size)
     return name
+
+def tsinfer_name_from_msprime_row(row, sim_dir, subsample_size=None):
+    """
+    return the tsinfer name based on an msprime sim specified by row 
+    """
+    if subsample_size is None:
+        return construct_tsinfer_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'))
+    else:
+        return construct_tsinfer_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'),
+            subsample_size = subsample_size)
+    
 
 def time_cmd(cmd, stdout=sys.stdout):
     """
@@ -464,6 +492,15 @@ class MetricsRunner(object):
             #called with nothing to compare!
             return None
 
+    @staticmethod
+    def ARGmetric_params_from_row(row):
+        """
+        Create some ARGmetric params (see ARGmetrics.py) from a row
+        We hack the same polytomy seed as inference seed
+        """
+        return {'make_bin_seed':row.seed, 'reps':row.tsinfer_biforce_reps}
+
+
 def metric_worker(work):
     """
     Entry point for running a single set of metric calculations in a worker process.
@@ -476,21 +513,22 @@ def metric_worker(work):
     metrics, row, simulations_dir, num_threads = work
     runner = MetricsRunner(row, simulations_dir, num_threads)
     #logging.debug("Running metrics on row")
-    for tool, nex_params in metrics.items():
-        try:
-            nexus, params = nex_params(row, simulations_dir)
-        except ValueError:
-            nexus, = nex_params(row, simulations_dir)
+    for tool, target in metrics.items():
+        files_func_params = target.get('files_func_params') or {}
+        files = target['files_func'](row, simulations_dir, **files_func_params)
+        if 'params_func' in target:
+            params=target['params_func'](row)
+        else:
             params={}
         #now add the .nex extension
-        if isinstance(nexus, str):
-            nexus += ".nex"
-            if not os.path.isfile(nexus):
-                nexus = None
+        if isinstance(files, str):
+            files += ".nex"
+            if not os.path.isfile(files):
+                files = None
         else:
-            nexus = [fn + ".nex" for fn in nexus if os.path.isfile(fn + ".nex")]
-        if nexus:
-            runner.add_tool(tool, nexus, **params)
+            files = [fn + ".nex" for fn in files if os.path.isfile(fn + ".nex")]
+        if files:
+            runner.add_tool(tool, files, **params)
         else:
             logging.debug("Skipping metrics for " + tool +
                 " (row " + str(row[0]) + ") " +
@@ -526,23 +564,11 @@ class Dataset(object):
     #is the interence file name, and whose (optional) second 
     #value give further parameters to the metrics function
     metrics_for = {
-        "fastARG": lambda row, sim_dir: (
-            construct_fastarg_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'),
-                                   seed=row.seed),
-            ),
-        "Aweaver": lambda row, sim_dir: ([
-            construct_argweaver_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'), 
-                                     seed=row.seed, iteration_number=it)
-                for it in nanblank(row.ARGweaver_iterations).split(",") if it],
-            ),
-        "tsipoly": lambda row, sim_dir: (
-            construct_tsinfer_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample')),
-            ),
-        "tsibiny": lambda row, sim_dir: (
-            construct_tsinfer_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample')),
-            #hack same polytomy seed as inference seed
-            {'make_bin_seed':row.seed, 'reps':row.tsinfer_biforce_reps} 
-            )
+        "fastARG": {'files_func':fastarg_name_from_msprime_row},
+        "Aweaver": {'files_func':argweaver_names_from_msprime_row},
+        "tsipoly": {'files_func': tsinfer_name_from_msprime_row},
+        "tsibiny": {'files_func': tsinfer_name_from_msprime_row, 
+                    'param_func': MetricsRunner.ARGmetric_params_from_row}
     }
 
 
@@ -1026,16 +1052,11 @@ class SampleSizeEffectOnSubsetDataset(Dataset):
     def __init__(self):
         super().__init__()
         #override the built-in tsinference metrics, so that we use the subsetted files
-        self.metrics_for["tsipoly"] = lambda row, sim_dir: (
-            construct_tsinfer_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'),
-                                   self.base_subsample_size),
-            )
-        self.metrics_for["tsibiny"] = lambda row, sim_dir: (
-            construct_tsinfer_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'),
-                                   self.base_subsample_size),
-            #hack same polytomy seed as inference seed
-            {'make_bin_seed':row.seed, 'reps':row.tsinfer_biforce_reps} 
-            )
+        self.metrics_for["tsipoly"] = {'files_func':tsinfer_name_from_msprime_row,
+                                       'files_func_params':{'subsample_size':self.base_subsample_size}}
+        self.metrics_for["tsibiny"] = {'files_func':tsinfer_name_from_msprime_row,
+                                       'files_func_params':{'subsample_size':self.base_subsample_size},
+                                       'param_func': MetricsRunner.ARGmetric_params_from_row}
         
     def run_simulations(self, replicates, seed):
         if replicates is None:
