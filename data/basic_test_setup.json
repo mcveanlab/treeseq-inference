@@ -4,7 +4,7 @@
   "name": [
     "basic_test"
   ],
-  "replicates": 20,
+  "replicates": 200,
   "seed": null,
   "verbosity": 1
 }
