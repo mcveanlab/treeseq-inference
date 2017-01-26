@@ -577,6 +577,7 @@ class Dataset(object):
             self.data_path = os.path.abspath(
                 os.path.join(self.data_dir, "{}".format(self.name)))
         else:
+            data_file = os.path.abspath(data_file)
             if data_file.endswith("_data.csv"):
                 self.data_path = data_file[:-len("_data.csv")]
             elif data_file.endswith(".csv"):
