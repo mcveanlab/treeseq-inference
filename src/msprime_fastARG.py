@@ -10,7 +10,7 @@ import sys
 import os.path
 sys.path.insert(1,os.path.join(sys.path[0],'..','msprime')) # use the local copy of msprime in preference to the global one
 import msprime
-from warnings import warn
+import warnings
 import logging
 
 def msprime_hdf5_to_fastARG_in(msprime_hdf5, fastARG_filehandle):
@@ -53,7 +53,7 @@ def variant_positions_from_fastARGin(fastARG_in_filehandle):
             pos = line.split()[0]
             vp.append(float(pos))
         except:
-            warn("Could not convert the title on the following line to a floating point value:\n {}".format(line))
+            warnings.warn("Could not convert the title on the following line to a floating point value:\n {}".format(line))
     return(np.array(vp))
 
 def fastARG_out_to_msprime_txts(
@@ -94,25 +94,26 @@ def fastARG_out_to_msprime_txts(
             #format is curr_node, child_node, seq_start_inclusive, seq_end_noninclusive, num_mutations, mut_loc1, mut_loc2, ....
             curr_node, child_node, left, right, n_mutations = [int(i) for i in fields[1:6]]
             if curr_node<child_node:
-                warn("Line {} has an ancestor node_id less than the id of its children, so node ID cannot be used as a proxy for age".format(line_num))
+                warnings.warn("Line " + str() + 
+                    " has an ancestor node_id less than the id of its children, so node ID cannot be used as a proxy for age")
                 sys.exit()
             #one record for each node
             if curr_node not in ARG_nodes:
                 ARG_nodes[curr_node] = {}
             if child_node in ARG_nodes[curr_node]:
-                warn("Child node {} already exists for node {} (line {})".format(child_node, curr_node, line_num))
+                warnings.warn("Child node {} already exists for node {} (line {})".format(child_node, curr_node, line_num))
             ARG_nodes[curr_node][child_node]=[breakpoints[left], breakpoints[right]]
             #mutations in msprime are placed as ancestral to a target node, rather than descending from a child node (as in fastARG)
             #we should check that (a) mutation at the same locus does not occur twice
             # (b) the same child node is not used more than once (NB this should be a fastARG restriction)
             if n_mutations:
                 if child_node in mutation_nodes:
-                    warn("Node {} already has some mutations: some more are being added from line {}.".format(child_node, line_num))
+                    warnings.warn("Node {} already has some mutations: some more are being added from line {}.".format(child_node, line_num))
                 mutation_nodes.add(child_node)
                 for pos in fields[6:(6+n_mutations)]:
                     m = variant_positions[int(pos)]
                     if m in mutations:
-                        warn("Duplicate mutations at a single locus: {}. One is from node {}.".format(m, child_node))
+                        warnings.warn("Duplicate mutations at a single locus: {}. One is from node {}.".format(m, child_node))
                     else:
                         mutations[m]=child_node
 
@@ -122,12 +123,13 @@ def fastARG_out_to_msprime_txts(
             root_node = int(fields[1])
             base_sequence = fields[2]
         else:
-            warn("Bad line format - the fastARG file has a line that does not begin with E, N, C, R, or S:\n{}".format("\t".join(fields)))
+            warnings.warn("Bad line format - the fastARG file has a line that does not begin with E, N, C, R, or S:\n{}".format("\t".join(fields)))
 
     #Done reading in
 
     if min(ARG_nodes.keys()) != haplotypes:
-            warn("The smallest internal node id is expected to be the same as the number of haplotypes, but it is not ({} vs {})".format(min(ARG_nodes.keys()), haplotypes))
+            warnings.warn("The smallest internal node id is expected to be the same as the number of haplotypes, " + 
+                "but it is not ({} vs {})".format(min(ARG_nodes.keys()), haplotypes))
 
     for node,children in sorted(ARG_nodes.items()): #sort by node number == time
         #look at the break points for all the child sequences, and break up into that number of records
@@ -158,7 +160,7 @@ def fastARG_root_seq(fastARG_out_filehandle):
             root_seq = spl[2]
             fastARG_out_filehandle.seek(0)
             return([seq!="0" for seq in root_seq])
-    warn("No root sequence found in '{}'".format(fastARG_out_filehandle.name))
+    warnings.warn("No root sequence found in '{}'".format(fastARG_out_filehandle.name))
     return([])
 
 def msprime_txts_to_fastARG_in_revised(
@@ -213,11 +215,11 @@ def main(sim, fastARG_executable, fa_in, fa_out, tree, muts, fa_revised, hdf5_ou
     logging.debug("These numbers are expected to be in ascending order ")
     if ts.get_num_records() > simple_ts.get_num_records() \
             or simple_ts.get_num_records() > new_ts.get_num_records():
-        warn("Numbers not in ascending order!")
+        warnings.warn("Numbers not in ascending order!")
     if os.stat(fa_in.name).st_size == 0:
-        warn("Initial fastARG input file is empty")
+        warnings.warn("Initial fastARG input file is empty")
     elif filecmp.cmp(fa_in.name, fa_revised.name, shallow=False) == False:
-        warn("Initial fastARG input file differs from processed fastARG file")
+        warnings.warn("Initial fastARG input file differs from processed fastARG file")
     else:
         print("Conversion via fastARG has worked! Input and output files are identical")
 

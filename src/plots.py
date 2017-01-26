@@ -18,6 +18,7 @@ import filecmp
 import random
 import multiprocessing
 import json
+import warnings
 
 import numpy as np
 import matplotlib
@@ -373,7 +374,7 @@ class InferenceRunner(object):
                 assert filecmp.cmp(file_name, fa_revised.name, shallow=False), \
                     "{} and {} differ".format(file_name, fa_revised.name)
             except AssertionError:
-                warn("File '{}' copied to 'bad.hap' for debugging".format(
+                warnings.warn("File '{}' copied to 'bad.hap' for debugging".format(
                     fa_revised.name), file=sys.stderr)
                 shutil.copyfile(fa_revised.name, os.path.join('bad.hap'))
                 raise
