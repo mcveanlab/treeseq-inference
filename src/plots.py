@@ -1165,7 +1165,7 @@ class Figure(object):
         with open(script, "w+") as source:
             for line in Rcmds:
                 print(line, file=source)
-        subprocess.call(['R', 'CMD', 'BATCH', '--no-save', '--no-restore', script])
+        subprocess.call(['R', 'CMD', 'BATCH', '--no-save', '--no-restore', script, '/dev/null'])
         logging.info("Plot file saved to {}. Code for generating plots interactively at {}".format(
             self.filepath + ".pdf", script))
 
