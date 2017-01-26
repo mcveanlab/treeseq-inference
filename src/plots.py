@@ -789,7 +789,7 @@ class BasicTestDataset(Dataset):
         Ne = 1e4
         length=int(5e4)
         recombination_rate = 2e-8
-        mutation_rates = [2e-8, 5e-8, 1e-7, 5e-7, 1e-6, 2e-6]
+        mutation_rates = [2e-8, 5e-8, 1e-7, 2e-7, 5e-7, 1e-6, 2e-6, 5e-6]
         aw_burnin_iters = 100
         aw_n_out_samples = 20
         aw_iter_out_freq = 10
