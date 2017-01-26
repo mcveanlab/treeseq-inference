@@ -407,9 +407,9 @@ class InferenceRunner(object):
         #concatenate all the stats together
         with open(new_stats_file_name, "w+") as stats:
             if burn_prefix:
-                shutil.copyfileobj(open(burn_prefix + ".stats"), destination)
-                print("\n", file= destination)
-            shutil.copyfileobj(open(new_prefix + ".stats"), destination)
+                shutil.copyfileobj(open(burn_prefix + ".stats"), stats)
+                print("\n", file=stats)
+            shutil.copyfileobj(open(new_prefix + ".stats"), stats)
         #cannot translate these to msprime ts objects, as smc2arg does not work
         #see https://github.com/mdrasmus/argweaver/issues/20
         return iterations, new_stats_file_name, cpu_time, memory_use
