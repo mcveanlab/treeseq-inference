@@ -362,7 +362,6 @@ class InferenceRunner(object):
         TO DO: if verbosity < 0 (logging level == warning) we should set quiet = TRUE
 
         """
-        new_prefix = path_prefix + "_i" #we append a '_i' to mark iteration number
         cpu_time = memory_use = 0
         exe = [ARGweaver_executable, '--sites', sites_file.name if hasattr(sites_file, "name") else sites_file,
                '--popsize', str(Ne),
@@ -374,7 +373,7 @@ class InferenceRunner(object):
         if seed is not None:
             exe += ['--randseed', str(int(seed))]
         if burnin_iterations > 0:
-            burn_prefix = ARGweaver_out_dir[:-1]+"burn" #swap the 'i' for 'burn'
+            burn_prefix = path_prefix+"_burn"
             logging.info("== Burning in ARGweaver MCMC using {} steps ==".format(burn_in))
             c, m = time_cmd(exe + ['--iters', str(int(burn_in)),
                                    '--sample-step', str(int(burn_in)),
@@ -386,7 +385,8 @@ class InferenceRunner(object):
         else:
             exe += ['--sites', sites_file]
     
-        exe += ['--output', ARGweaver_out_dir]
+        new_prefix = path_prefix + "_i" #we append a '_i' to mark iteration number
+        exe += ['--output', new_prefix]
         exe += ['--iters', str(int(sample_step * (MSMC_samples-1)))]
         exe += ['--sample-step', str(int(sample_step))]
         logging.info("== Running ARGweaver for {} steps to collect {} samples ==".format( \
