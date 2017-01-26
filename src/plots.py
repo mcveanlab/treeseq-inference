@@ -353,7 +353,7 @@ class InferenceRunner(object):
     @staticmethod
     def run_argweaver(
             sites_file, Ne, recombination_rate, mutation_rate, path_prefix, seed,
-            n_samples, sampling_freq, burnin_iterations=0, quiet=True):
+            MSMC_samples, sample_step, burnin_iterations=0, quiet=True):
         """
         this produces a whole load of .smc files labelled <path_prefix>i.0.smc,
         <path_prefix>i.10.smc, etc. the iteration numbers ('i.0', 'i.10', etc)
@@ -363,29 +363,42 @@ class InferenceRunner(object):
 
         """
         new_prefix = path_prefix + "_i" #we append a '_i' to mark iteration number
-        before = time.clock()
-        # TODO change this to get a command line for argweaver which we then run
-        # using time_cmd.
-        msprime_ARGweaver.run_ARGweaver(Ne=Ne,
-            mut_rate     = mutation_rate,
-            recomb_rate  = recombination_rate,
-            executable   = ARGweaver_executable,
-            ARGweaver_in = sites_file,
-            sample_step  = sampling_freq,
-            iterations   = sampling_freq * (n_samples-1),
-            #e.g. for 3 samples at sampling_freq 10, run for 10*(3-1) iterations
-            #which gives 3 samples: t=0, t=10, & t=20
-            rand_seed    = int(seed),
-            burn_in      = int(burnin_iterations),
-            quiet        = quiet,
-            out_prefix   = new_prefix)
-        cpu_time = time.clock() - before
-        memory_use = 0 #To DO
-        #here we need to look for the .smc files output by argweaver
+        cpu_time = memory_use = 0
+        exe = [ARGweaver_executable, '--sites', sites_file.name if hasattr(sites_file, "name") else sites_file,
+               '--popsize', str(Ne),
+               '--recombrate', str(recombination_rate), 
+               '--mutrate', str(mutation_rate), 
+               '--overwrite']
+        if quiet:
+            exe += ['--quiet']
+        if seed is not None:
+            exe += ['--randseed', str(int(seed))]
+        if burnin_iterations > 0:
+            burn_prefix = ARGweaver_out_dir[:-1]+"burn" #swap the 'i' for 'burn'
+            logging.info("== Burning in ARGweaver MCMC using {} steps ==".format(burn_in))
+            c, m = time_cmd(exe + ['--iters', str(int(burn_in)),
+                                   '--sample-step', str(int(burn_in)),
+                                   '--output', burn_prefix])
+            cpu_time += c
+            memory_use += m
+            #if burn_in, read from the burn in arg file, rather than the original .sites
+            exe += ['--arg', burn_prefix+"."+str(int(burn_in))+".smc.gz"]
+        else:
+            exe += ['--sites', sites_file]
+    
+        exe += ['--output', ARGweaver_out_dir]
+        exe += ['--iters', str(int(sample_step * (MSMC_samples-1)))]
+        exe += ['--sample-step', str(int(sample_step))]
+        logging.info("== Running ARGweaver for {} steps to collect {} samples ==".format( \
+            int(iterations), int(iterations/sample_step)+1))
+        logging.debug("== ARGweaver command is {} ==".format(" ".join(exe)))
+        c, m = time_cmd(exe)
+        cpu_time += c
+        memory_use += m
+
         smc_prefix = new_prefix + "." #the arg-sample program adds .iteration_num
         iterations = [f[len(smc_prefix):-7] for f in glob.glob(smc_prefix + "*" + ".smc.gz")]
-        new_stats_file_name = path_prefix+".stats"
-        os.rename(new_prefix + ".stats", new_stats_file_name)
+        os.rename(new_prefix + ".stats", path_prefix+".stats")
         #cannot translate these to msprime ts objects, as smc2arg does not work
         #see https://github.com/mdrasmus/argweaver/issues/20
         return iterations, new_stats_file_name, cpu_time, memory_use
@@ -581,7 +594,9 @@ class Dataset(object):
         work = []
         for i in self.data.index:
             row = self.data.iloc[i]
-            for tool in [tool for tool,func in self.tools.items() if func(self, row)]:
+            tools_to_use = [tool for tool,func in self.tools.items() if func(self, row)]
+            random.shuffle(tools_to_use) #helps to avoid stalling on long-running tools
+            for tool in tools_to_use:
                 # All values that are unset should be NaN, so we only run those that
                 # haven't been filled in already. This allows us to stop and start the
                 # infer processes without having to start from scratch each time.
@@ -772,17 +787,19 @@ class BasicTestDataset(Dataset):
             "replicate", "seed", "aw_burnin_iters", "aw_n_out_samples", "aw_iter_out_freq"]
         sample_size= 8
         Ne = 1e4
-        length=int(1e4)
+        length=int(1e6)
         recombination_rate = 2e-8
-        mutation_rates = [2e-8, 5e-8, 1e-7, 5e-7, 1e-6, 3e-6, 5e-6]
+        mutation_rates = [2e-8, 5e-8, 1e-7, 5e-7, 1e-6, 2e-6]
         aw_burnin_iters = 100
         aw_n_out_samples = 20
         aw_iter_out_freq = 10
         num_rows = replicates * len(mutation_rates)
         data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
         row_id = 0
-        for mutation_rate in mutation_rates:
-            for replicate in range(replicates):
+        #always make 'replicate' the outer loop: 
+        # allows us to look at results before all replicates have finished
+        for replicate in range(replicates): 
+            for mutation_rate in mutation_rates:
                 done = False
                 while not done:
                     replicate_seed = rng.randint(1, 2**31)
@@ -849,8 +866,8 @@ class NumRecordsBySampleSizeDataset(Dataset):
         num_rows = replicates * len(sample_sizes) * len(error_rates)
         data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
         row_id = 0
-        for sample_size in sample_sizes:
-            for replicate in range(replicates):
+        for replicate in range(replicates):
+            for sample_size in sample_sizes:
                 done = False
                 while not done:
                     replicate_seed = rng.randint(1, 2**31)
