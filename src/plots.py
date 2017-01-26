@@ -405,7 +405,7 @@ class InferenceRunner(object):
         new_stats_file_name = path_prefix+".stats"
         
         #concatenate all the stats together
-        with open(new_stats_file_name) as stats:
+        with open(new_stats_file_name, "w+") as stats:
             if burn_prefix:
                 shutil.copyfileobj(open(burn_prefix + ".stats"), destination)
                 print("\n", file= destination)
