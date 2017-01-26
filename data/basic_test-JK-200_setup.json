@@ -1,6 +1,7 @@
 {
   "command": "setup",
-  "hack_finite_sites": false,
+  "data_file": null,
+  "hack_finite_sites": true,
   "name": [
     "basic_test"
   ],
