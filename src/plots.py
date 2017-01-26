@@ -373,15 +373,16 @@ class InferenceRunner(object):
         if seed is not None:
             exe += ['--randseed', str(int(seed))]
         if burnin_iterations > 0:
+            burnin = str(int(burnin_iterations)
             burn_prefix = path_prefix+"_burn"
-            logging.info("== Burning in ARGweaver MCMC using {} steps ==".format(burn_in))
-            c, m = time_cmd(exe + ['--iters', str(int(burn_in)),
-                                   '--sample-step', str(int(burn_in)),
+            logging.info("== Burning in ARGweaver MCMC using {} steps ==".format(burnin))
+            c, m = time_cmd(exe + ['--iters', burnin),
+                                   '--sample-step', burnin,
                                    '--output', burn_prefix])
             cpu_time += c
             memory_use += m
             #if burn_in, read from the burn in arg file, rather than the original .sites
-            exe += ['--arg', burn_prefix+"."+str(int(burn_in))+".smc.gz"]
+            exe += ['--arg', burn_prefix+"."+ burnin +".smc.gz"]
         else:
             exe += ['--sites', sites_file]
     
