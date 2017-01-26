@@ -26,8 +26,11 @@ def msprime_to_fastARG_in(ts, fastARG_filehandle):
 
 def variant_matrix_to_fastARG_in(var_matrix, var_positions, fastARG_filehandle):
     assert len(var_matrix)==len(var_positions)
-    for pos, row in zip(var_positions, var_matrix):
-        print(pos, "".join((str(v) for v in row)), sep="\t", file=fastARG_filehandle)
+    iterator = zip(var_positions, var_matrix)
+    pos, row = next(iterator) #first line does not begin with newline
+    fastARG_filehandle.write(str(pos) + "\t" + "".join((str(v) for v in row)))
+    for pos, row in iterator:
+        fastARG_filehandle.write("\n" + str(pos) + "\t" + "".join((str(v) for v in row)))
     fastARG_filehandle.flush()
 
 def get_cmd(executable, fastARG_in, seed):
