@@ -375,7 +375,7 @@ class InferenceRunner(object):
                     "{} and {} differ".format(file_name, fa_revised.name)
             except AssertionError:
                 warnings.warn("File '{}' copied to 'bad.hap' for debugging".format(
-                    fa_revised.name), file=sys.stderr)
+                    fa_revised.name))
                 shutil.copyfile(fa_revised.name, os.path.join('bad.hap'))
                 raise
             return inferred_ts, cpu_time, memory_use
