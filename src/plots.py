@@ -374,8 +374,8 @@ class InferenceRunner(object):
                 assert filecmp.cmp(file_name, fa_revised.name, shallow=False), \
                     "{} and {} differ".format(file_name, fa_revised.name)
             except Exception as e:
-                e.args = e.args[0] + "File '{}' copied to 'bad.hap' for debugging".format(
-                    fa_revised.name)
+                e.args = (e.args[0] + "File '{}' copied to 'bad.hap' for debugging".format(
+                    fa_revised.name),)
                 shutil.copyfile(fa_revised.name, os.path.join('bad.hap'))
                 raise
             return inferred_ts, cpu_time, memory_use
