@@ -787,7 +787,7 @@ class BasicTestDataset(Dataset):
             "replicate", "seed", "aw_burnin_iters", "aw_n_out_samples", "aw_iter_out_freq"]
         sample_size= 8
         Ne = 1e4
-        length=int(1e6)
+        length=int(5e4)
         recombination_rate = 2e-8
         mutation_rates = [2e-8, 5e-8, 1e-7, 5e-7, 1e-6, 2e-6]
         aw_burnin_iters = 100
