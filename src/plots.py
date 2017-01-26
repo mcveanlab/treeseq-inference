@@ -299,8 +299,8 @@ class InferenceRunner(object):
         logging.debug("reading: {} for ARGweaver inference".format(infile))
         iteration_ids, stats_file, time, memory = self.run_argweaver(
             infile, self.row.Ne, self.row.recombination_rate, self.row.mutation_rate,
-            out_fn, inference_seed, self.row.aw_n_out_samples,
-            self.row.aw_iter_out_freq, self.row.aw_burnin_iters)
+            out_fn, inference_seed, int(self.row.aw_n_out_samples),
+            self.row.aw_iter_out_freq, int(self.row.aw_burnin_iters))
         #now must convert all of the .smc files to .nex format
         for it in iteration_ids:
             base = construct_argweaver_name(self.base_fn, inference_seed, it)
@@ -310,7 +310,8 @@ class InferenceRunner(object):
         results = {
             cpu_time_colname(self.tool): time,
             memory_colname(self.tool): memory,
-            "ARGweaver_iterations": ",".join(iteration_ids)
+            "ARGweaver_iterations": ",".join(iteration_ids),
+            "ARGweaver_stats_file":stats_file,
         }
         return results
 
@@ -363,6 +364,7 @@ class InferenceRunner(object):
 
         """
         cpu_time = memory_use = 0
+        burn_prefix = None
         exe = [ARGweaver_executable, '--sites', sites_file.name if hasattr(sites_file, "name") else sites_file,
                '--popsize', str(Ne),
                '--recombrate', str(recombination_rate), 
@@ -400,7 +402,14 @@ class InferenceRunner(object):
 
         smc_prefix = new_prefix + "." #the arg-sample program adds .iteration_num
         iterations = [f[len(smc_prefix):-7] for f in glob.glob(smc_prefix + "*" + ".smc.gz")]
-        os.rename(new_prefix + ".stats", path_prefix+".stats")
+        new_stats_file_name = path_prefix+".stats"
+        
+        #concatenate all the stats together
+        with open(new_stats_file_name) as stats:
+            if burn_prefix:
+                shutil.copyfileobj(open(burn_prefix + ".stats"), destination)
+                print("\n", file= destination)
+            shutil.copyfileobj(open(new_prefix + ".stats"), destination)
         #cannot translate these to msprime ts objects, as smc2arg does not work
         #see https://github.com/mdrasmus/argweaver/issues/20
         return iterations, new_stats_file_name, cpu_time, memory_use
@@ -580,6 +589,7 @@ class Dataset(object):
         # together in a single column
         if "ARGweaver" in self.tools:
             extra_cols["ARGweaver_iterations"]=""
+            extra_cols["ARGweaver_stats_file"]=""
         
         #add the columns for the ARG metrics
         extra_cols.update([(k,np.NaN) for k in metric_colnames(self.metrics_for.keys())])
