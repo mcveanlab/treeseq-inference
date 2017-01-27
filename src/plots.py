@@ -144,18 +144,20 @@ def add_subsample_param_to_name(sim_name, subsample_size):
     else:
         return sim_name + "_max{}".format(int(subsample_size))
 
-def add_error_param_to_name(sim_name, error_rate):
+def add_error_param_to_name(sim_name, error_rate=None):
     """
     Append the error param to the msprime simulation filename.
     Only relevant for files downstream of the step where sequence error is added
     """
-    if sim_name.endswith("+") or sim_name.endswith("-"):
-        #this is the first param
-        return sim_name + "_err{}".format(float(error_rate))
+    if error_rate is not None:
+        if sim_name.endswith("+") or sim_name.endswith("-"):
+            #this is the first param
+            return sim_name + "_err{}".format(float(error_rate))
+        else:
+            #this is the first param
+            return sim_name + "err{}".format(float(error_rate))
     else:
-        #this is the first param
-        return sim_name + "err{}".format(float(error_rate))
-
+        return sim_name
 
 def construct_fastarg_name(sim_name, seed, directory=None):
     """
@@ -730,13 +732,9 @@ class Dataset(object):
         return ts, sim_fn
 
     @staticmethod
-    def save_variant_matrices(ts, fname, error_rate=None, integer_positions=True):
-        if error_rate is None:
-            S = generate_samples(ts, 0)
-            filename = fname
-        else:
-            S = generate_samples(ts, error_rate)
-            filename = add_error_param_to_name(fname, error_rate)
+    def save_variant_matrices(ts, fname, error_rate=None, infinite_sites=True):
+        S = generate_samples(ts, error_rate or 0)
+        filename = add_error_param_to_name(fname, error_rate)
         outfile = filename + ".npy"
         logging.debug("writing variant matrix to {} for tsinfer".format(outfile))
         np.save(outfile, S)
@@ -744,7 +742,7 @@ class Dataset(object):
         pos = np.array([v.position for v in ts.variants()])
         logging.debug("writing variant positions to {} for tsinfer".format(outfile))
         np.save(outfile, pos)
-        if integer_positions:
+        if infinite_sites: #for infinite sites, assume we have diecretised mutations to ints
             assert all(p.is_integer() for p in pos), \
                 "Variant positions are not all integers in {}".format()
         logging.debug("writing variant matrix to {}.hap for fastARG".format(filename))
@@ -752,11 +750,8 @@ class Dataset(object):
             msprime_fastARG.variant_matrix_to_fastARG_in(np.transpose(S), pos, fastarg_in)
         logging.debug("writing variant matrix to {}.sites for ARGweaver".format(filename))
         with open(filename+".sites", "w+") as argweaver_in:
-            if error_rate is None and integer_positions == False:
-                msprime_ARGweaver.msprime_to_ARGweaver_in(ts, argweaver_in)
-            else:
-                msprime_ARGweaver.variant_matrix_to_ARGweaver_in(np.transpose(S), pos,
-                    ts.get_sequence_length(), argweaver_in)
+            msprime_ARGweaver.variant_matrix_to_ARGweaver_in(np.transpose(S), pos,
+                    ts.get_sequence_length(), argweaver_in, infinite_sites=infinite_sites)
 
     def process(self, num_processes, num_threads, force=False):
         """
@@ -878,7 +873,7 @@ class BasicTestDataset(Dataset):
                 row.aw_burnin_iters = aw_burnin_iters
                 row.aw_iter_out_freq = aw_iter_out_freq
                 self.save_variant_matrices(ts, fn, error_rate=None, 
-                    integer_positions=self.JeromesDiscretise)
+                    infinite_sites=self.JeromesDiscretise)
         return data
 
 class NumRecordsBySampleSizeDataset(Dataset):
@@ -975,13 +970,13 @@ class MetricsByMutationRateDataset(Dataset):
             "error_rate", "replicate", "seed", "aw_burnin_iters",
             "aw_n_out_samples", "aw_iter_out_freq", "tsinfer_biforce_reps"]
         # Variable parameters
-        mutation_rates = np.logspace(-8, -5, num=6)[:-2] * 1.5
+        mutation_rates = np.logspace(-8, -5, num=6)[:-1] * 1.5
         error_rates = [0, 0.01, 0.1]
 
         # Fixed parameters
         sample_size = 12
         Ne = 5000
-        length = 50000
+        length = 5000
         recombination_rate = 2.5e-8
         ## argweaver params: aw_n_out_samples will be produced, every argweaver_iter_out_freq
         aw_burnin_iters = 5000
@@ -1004,7 +999,8 @@ class MetricsByMutationRateDataset(Dataset):
                 # Run the simulation
                 ts, fn = self.single_simulation(
                     sample_size, Ne, length, recombination_rate, mutation_rate,
-                    replicate_seed, replicate_seed)
+                    replicate_seed, replicate_seed, 
+                    discretise_mutations=False) #stop doing Jerome's discretising step!
                 with open(fn +".nex", "w+") as out:
                     ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
                 # Add the rows for each of the error rates in this replicate
@@ -1023,7 +1019,7 @@ class MetricsByMutationRateDataset(Dataset):
                     row.aw_burnin_iters = aw_burnin_iters
                     row.aw_iter_out_freq = aw_iter_out_freq
                     row.tsinfer_biforce_reps = tsinfer_biforce_reps
-                    self.save_variant_matrices(ts, fn, error_rate)
+                    self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
         return data
 
 class SampleSizeEffectOnSubsetDataset(Dataset):
@@ -1314,7 +1310,7 @@ def main():
     subparser = subparsers.add_parser('setup')
     subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
-        help='the dataset identifier')
+        help='the dataset identifier (from {})'.format([d.name for d in datasets]))
     subparser.add_argument(
          '--data_file', '-f', type=str,
          help="which CSV file to save data in, if not the default", )
@@ -1336,7 +1332,7 @@ def main():
         help="number of threads per worker process (for supporting tools)")
     subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
-        help='the dataset identifier')
+        help='the dataset identifier (from {})'.format([d.name for d in datasets]))
     subparser.add_argument(
          '--data_file', '-f', type=str,
          help="which CSV file to use for existing data, if not the default", )
@@ -1354,7 +1350,7 @@ def main():
         help="number of threads per worker process (for supporting tools)")
     subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
-        help='the dataset identifier')
+        help='the dataset identifier (from {})'.format([d.name for d in datasets]))
     subparser.add_argument(
          '--data_file', '-f', type=str,
          help="which CSV file to use for existing data, if not the default")
@@ -1390,8 +1386,12 @@ def main():
             if cls in classes:
                 args.func(cls, args)
     else:
-        cls = name_map[k]
-        args.func(cls, args)
-
+        try:
+            cls = name_map[k]
+            args.func(cls, args)
+        except KeyError as e:
+            e.args = (e.args[0] + ". Select from datasets={} or figures={}".format(
+                    [d.name for d in datasets], [f.name for f in figures]),)
+            raise
 if __name__ == "__main__":
     main()
