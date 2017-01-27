@@ -52,23 +52,23 @@ def msprime_to_ARGweaver_in(ts, ARGweaver_filehandle):
     print("\t".join(["NAMES"]+[str(x) for x in range(simple_ts.get_sample_size())]), file=ARGweaver_filehandle)
     print("\t".join(["REGION", "chr", "1", str(int(simple_ts.get_sequence_length()))]), file=ARGweaver_filehandle)
     genotypes = None
-    pos = 0
+    position = 0
     for v in simple_ts.variants():
-        if int(ceil(v.position)) != pos:
+        if int(ceil(v.position)) != position:
             #this is a new position. Print the genotype at the old position, and then reset everything
-            if pos:
-                print(pos, "".join(np.where(genotypes==0,"A","T")), sep="\t", file=ARGweaver_filehandle)
+            if position:
+                print(position, "".join(np.where(genotypes==0,"A","T")), sep="\t", file=ARGweaver_filehandle)
             genotypes = v.genotypes
-            pos = int(ceil(v.position))
+            position = int(ceil(v.position))
         else:
             genotypes =  np.logical_and(genotypes, v.genotypes)
-    if pos:
-        print(pos, "".join(np.where(genotypes==0,"A","T")), sep="\t", file=ARGweaver_filehandle)
+    if position:
+        print(position, "".join(np.where(genotypes==0,"A","T")), sep="\t", file=ARGweaver_filehandle)
 
     ARGweaver_filehandle.flush()
     ARGweaver_filehandle.seek(0)
 
-def variant_matrix_to_ARGweaver_in(var_matrix, var_positions, seq_length, ARGweaver_filehandle):
+def variant_matrix_to_ARGweaver_in(var_matrix, var_positions, seq_length, ARGweaver_filehandle, infinite_sites=True):
     """
     Takes an variant matrix, and outputs a file in .sites format, suitable for input 
     into ARGweaver (see http://mdrasmus.github.io/argweaver/doc/#sec-file-sites)
@@ -77,8 +77,9 @@ def variant_matrix_to_ARGweaver_in(var_matrix, var_positions, seq_length, ARGwea
     all bases). Assuming adjacent sites are treated independently, we convert variant 
     format (0,1) to sequence format (A, T, G, C) by simply converting 0->A and 1->T
     
-    Assumes that the variant positions have been made unique (e.g. by 
-    discretise_mutations() in msprime_extras.py.
+    if infinite_sites==False, then use a basic discretising function, which simply rounds 
+    upwards to the nearest int, ANDing the results if 2 or more variants end up at the same 
+    integer position.
     
     Note that ARGweaver uses position coordinates (1,N) - i.e. [0,N). 
     That compares to msprime which uses (0..N-1) - i.e. (0,N].
@@ -88,9 +89,23 @@ def variant_matrix_to_ARGweaver_in(var_matrix, var_positions, seq_length, ARGwea
     print("\t".join(["NAMES"]+[str(x) for x in range(n_samples)]), file=ARGweaver_filehandle)
     print("\t".join(["REGION", "chr", "1", str(seq_length)]), file=ARGweaver_filehandle)
     genotypes = None
-    pos = 0
-    for pos, v in zip(var_positions, var_matrix):
-        print(pos+1, "".join(np.where(v==0,"A","T")), sep="\t", file=ARGweaver_filehandle)
+    if infinite_sites:
+        for pos, v in zip(var_positions, var_matrix):
+            print(pos+1, "".join(np.where(v==0,"A","T")), sep="\t", file=ARGweaver_filehandle)
+    else:
+        position = 0
+        for pos, genotype in zip(var_positions, var_matrix):
+            if int(ceil(pos)) != position:
+                #this is a new position. Print the genotype at the old position, and then reset everything
+                if position:
+                    print(position, "".join(np.where(ANDed_genotype==0,"A","T")), sep="\t", 
+                        file=ARGweaver_filehandle)
+                ANDed_genotype = genotype
+                position = int(ceil(pos))
+            else:
+                ANDed_genotype =  np.logical_and(ANDed_genotype, genotype)
+        if position: #always print out the last site
+            print(pos, "".join(np.where(ANDed_genotype ==0,"A","T")), sep="\t", file=ARGweaver_filehandle)
 
     ARGweaver_filehandle.flush()
     ARGweaver_filehandle.seek(0)
