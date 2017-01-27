@@ -260,15 +260,17 @@ class InferenceRunner(object):
     also for each tool, convert these into nexus files that can be used for comparing
     metrics.
     """
-    def __init__(self, tool, row, simulations_dir, num_threads):
+    def __init__(self, tool, row, simulations_dir, num_threads, n_rows=None):
         self.tool = tool
         self.row = row
+        self.n_rows = n_rows
         self.num_threads = num_threads
         self.base_fn = msprime_name_from_row(row, simulations_dir, 
             'error_rate', 'subsample')
 
     def run(self):
-        logging.info("Row {}: running {} inference".format(int(self.row[0]),self.tool))
+        logging.info("Row {}/~{}: running {} inference".format(
+            int(self.row[0]),self.n_rows,self.tool))
         logging.debug("parameters = {}".format(self.row.to_dict()))
         if self.tool == "tsinfer":
             ret = self.__run_tsinfer()
@@ -449,8 +451,8 @@ def infer_worker(work):
     """
     Entry point for running a single inference task in a worker process.
     """
-    tool, row, simulations_dir, num_threads = work
-    runner = InferenceRunner(tool, row, simulations_dir, num_threads)
+    tool, row, simulations_dir, num_threads, n_rows = work
+    runner = InferenceRunner(tool, row, simulations_dir, num_threads, n_rows)
     return int(row[0]), runner.run()
 
 class MetricsRunner(object):
@@ -640,6 +642,7 @@ class Dataset(object):
         """
         self.load_data()
         work = []
+        n_rows = len(self.data.index)
         for i in self.data.index:
             row = self.data.iloc[i]
             tools_to_use = [tool for tool,func in self.tools.items() if func(self, row)]
@@ -649,8 +652,9 @@ class Dataset(object):
                 # haven't been filled in already. This allows us to stop and start the
                 # infer processes without having to start from scratch each time.
                 if force or pd.isnull(row[cpu_time_colname(tool)]):
-                    work.append((tool, row, self.simulations_dir, num_threads))
+                    work.append((tool, row, self.simulations_dir, num_threads, n_rows))
                 else:
+                    n_rows =- 1
                     logging.info("Data row {} is filled out for {} inference: skipping".format(i, tool))
         logging.info("running {} inference trials (max {} tools over {} of {} rows) with {} processes and {} threads".format(
             len(work), len(self.tools), int(np.ceil(len(work)/len(self.tools))), 
