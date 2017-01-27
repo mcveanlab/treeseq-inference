@@ -990,8 +990,8 @@ class MetricsByMutationRateDataset(Dataset):
         num_rows = replicates * len(mutation_rates) * len(error_rates)
         data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
         row_id = 0
-        for mutation_rate in mutation_rates:
-            for replicate in range(replicates):
+        for replicate in range(replicates):
+            for mutation_rate in mutation_rates:
                 done = False
                 while not done:
                     replicate_seed = rng.randint(1, 2**31)
