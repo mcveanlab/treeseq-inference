@@ -18,7 +18,6 @@ import filecmp
 import random
 import multiprocessing
 import json
-import warnings
 
 import numpy as np
 import matplotlib
@@ -239,7 +238,7 @@ def time_cmd(cmd, stdout=sys.stdout):
             raise ValueError(
                 "Error running '{}': status={}:stderr{}".format(
                     " ".join(cmd), exit_status, stderr.read()))
-
+        
         split = stderr.readlines()[-1].split()
         # From the time man page:
         # M: Maximum resident set size of the process during its lifetime,
@@ -363,7 +362,7 @@ class InferenceRunner(object):
                 tempfile.NamedTemporaryFile("w+") as fa_revised:
             cmd = msprime_fastARG.get_cmd(fastARG_executable, file_name, seed)
             cpu_time, memory_use = time_cmd(cmd, fa_out)
-            logging.debug("ran fastarg [{} s]: '{}'".format(cpu_time, cmd))
+            logging.debug("ran fastarg for seq length {} [{} s]: '{}'".format(seq_length, cpu_time, cmd))
             var_pos = msprime_fastARG.variant_positions_from_fastARGin_name(file_name)
             root_seq = msprime_fastARG.fastARG_root_seq(fa_out)
             msprime_fastARG.fastARG_out_to_msprime_txts(
@@ -374,9 +373,9 @@ class InferenceRunner(object):
                 assert filecmp.cmp(file_name, fa_revised.name, shallow=False), \
                     "{} and {} differ".format(file_name, fa_revised.name)
             except Exception as e:
+                shutil.copyfile(fa_revised.name, 'bad.hap')
                 e.args = (e.args[0] + "File '{}' copied to 'bad.hap' for debugging".format(
                     fa_revised.name),)
-                shutil.copyfile(fa_revised.name, os.path.join('bad.hap'))
                 raise
             return inferred_ts, cpu_time, memory_use
 
