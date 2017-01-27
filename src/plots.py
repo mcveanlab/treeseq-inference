@@ -1000,7 +1000,8 @@ class MetricsByMutationRateDataset(Dataset):
                 ts, fn = self.single_simulation(
                     sample_size, Ne, length, recombination_rate, mutation_rate,
                     replicate_seed, replicate_seed, 
-                    discretise_mutations=False) #stop doing Jerome's discretising step!
+                    discretise_mutations=True) 
+                    #discretise_mutations=False) #stop doing Jerome's discretising step!
                 with open(fn +".nex", "w+") as out:
                     ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
                 # Add the rows for each of the error rates in this replicate
@@ -1019,7 +1020,9 @@ class MetricsByMutationRateDataset(Dataset):
                     row.aw_burnin_iters = aw_burnin_iters
                     row.aw_iter_out_freq = aw_iter_out_freq
                     row.tsinfer_biforce_reps = tsinfer_biforce_reps
-                    self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
+                    self.save_variant_matrices(ts, fn, error_rate, 
+                        infinite_sites=True)
+                        #infinite_sites=False)
         return data
 
 class SampleSizeEffectOnSubsetDataset(Dataset):
