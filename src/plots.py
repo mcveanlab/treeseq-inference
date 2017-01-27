@@ -497,14 +497,16 @@ class MetricsRunner(object):
             #called with nothing to compare!
             return None
 
-    @staticmethod
-    def ARGmetric_params_from_row(row):
-        """
-        Create some ARGmetric params (see ARGmetrics.py) from a row
-        We hack the same polytomy seed as inference seed
-        """
-        return {'make_bin_seed':row.seed, 'reps':row.tsinfer_biforce_reps}
-
+def ARGmetric_params_from_row(row):
+    """
+    Create some ARGmetric params (see ARGmetrics.py) from a row
+    We hack the same polytomy seed as inference seed
+    
+    This stupidly has to be defined at the top level, since it is
+    part of the function passed in to a multiprocessing Pool, and
+    hence needs to be 'pickle'able :( 
+    """
+    return {'make_bin_seed':row.seed, 'reps':row.tsinfer_biforce_reps}
 
 def metric_worker(work):
     """
@@ -573,7 +575,7 @@ class Dataset(object):
         "Aweaver": {'files_func':argweaver_names_from_msprime_row},
         "tsipoly": {'files_func': tsinfer_name_from_msprime_row},
         "tsibiny": {'files_func': tsinfer_name_from_msprime_row, 
-                    'param_func': MetricsRunner.ARGmetric_params_from_row}
+                    'param_func': ARGmetric_params_from_row}
     }
 
 
@@ -988,8 +990,8 @@ class MetricsByMutationRateDataset(Dataset):
         num_rows = replicates * len(mutation_rates) * len(error_rates)
         data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
         row_id = 0
-        for mutation_rate in mutation_rates:
-            for replicate in range(replicates):
+        for replicate in range(replicates):
+            for mutation_rate in mutation_rates:
                 done = False
                 while not done:
                     replicate_seed = rng.randint(1, 2**31)
@@ -1066,7 +1068,7 @@ class SampleSizeEffectOnSubsetDataset(Dataset):
                                        'files_func_params':{'subsample_size':self.base_subsample_size}}
         self.metrics_for["tsibiny"] = {'files_func':tsinfer_name_from_msprime_row,
                                        'files_func_params':{'subsample_size':self.base_subsample_size},
-                                       'param_func': MetricsRunner.ARGmetric_params_from_row}
+                                       'param_func': ARGmetric_params_from_row}
         
     def run_simulations(self, replicates, seed):
         if replicates is None:
