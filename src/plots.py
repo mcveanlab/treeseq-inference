@@ -47,7 +47,6 @@ tree_tip_labels_start_at_0 = False
 if sys.version_info[0] < 3:
     raise Exception("Python 3 only")
 
-
 def cpu_time_colname(tool):
     return tool + "_cputime"
 
@@ -254,6 +253,16 @@ def time_cmd(cmd, stdout=sys.stdout):
         user_time = float(split[2])
     return user_time + system_time, max_memory
 
+def ARGmetric_params_from_row(row):
+    """
+    Create some ARGmetric params (see ARGmetrics.py) from a row
+    We hack the same polytomy seed as inference seed
+    
+    This stupidly has to be defined at the top level, since it is
+    part of the function passed in to a multiprocessing Pool, and
+    hence needs to be 'pickle'able :( 
+    """
+    return {'make_bin_seed':row.seed, 'reps':row.tsinfer_biforce_reps}
 
 class InferenceRunner(object):
     """
@@ -496,17 +505,6 @@ class MetricsRunner(object):
         else:
             #called with nothing to compare!
             return None
-
-def ARGmetric_params_from_row(row):
-    """
-    Create some ARGmetric params (see ARGmetrics.py) from a row
-    We hack the same polytomy seed as inference seed
-    
-    This stupidly has to be defined at the top level, since it is
-    part of the function passed in to a multiprocessing Pool, and
-    hence needs to be 'pickle'able :( 
-    """
-    return {'make_bin_seed':row.seed, 'reps':row.tsinfer_biforce_reps}
 
 def metric_worker(work):
     """
