@@ -654,7 +654,7 @@ class Dataset(object):
                 if force or pd.isnull(row[cpu_time_colname(tool)]):
                     work.append((tool, row, self.simulations_dir, num_threads, n_rows))
                 else:
-                    n_rows =- 1
+                    n_rows -= 1
                     logging.info("Data row {} is filled out for {} inference: skipping".format(i, tool))
         logging.info("running {} inference trials (max {} tools over {} of {} rows) with {} processes and {} threads".format(
             len(work), len(self.tools), int(np.ceil(len(work)/len(self.tools))), 
