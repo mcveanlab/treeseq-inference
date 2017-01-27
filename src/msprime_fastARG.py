@@ -7,7 +7,7 @@ E.g. ./msprime_fastARG.py ../test_files/4000.hdf5 -x ../fastARG/fastARG
 
 """
 import sys
-import os.path
+import os
 sys.path.insert(1,os.path.join(sys.path[0],'..','msprime')) # use the local copy of msprime in preference to the global one
 import msprime
 import warnings
@@ -183,13 +183,18 @@ def msprime_txts_to_fastARG_in_revised(
     if hdf5_outname:
         ts.dump(hdf5_outname)
     if fastARG_filehandle:
+        prepend_newline = ""
         for j, v in enumerate(ts.variants(as_bytes=True)):
             if root_seq[j]:
                 print(
-                    v.position, v.genotypes.decode().translate(str.maketrans('01','10')),
-                    sep="\t", file=fastARG_filehandle)
+                    prepend_newline + str(v.position), 
+                    v.genotypes.decode().translate(str.maketrans('01','10')),
+                    sep="\t",  end="", file=fastARG_filehandle)
             else:
-                print(v.position, v.genotypes.decode(), sep="\t", file=fastARG_filehandle)
+                print(prepend_newline + str(v.position),
+                    v.genotypes.decode(), 
+                    sep="\t",  end="", file=fastARG_filehandle)
+            prepend_newline = os.linesep
         fastARG_filehandle.flush()
     return(ts)
 
