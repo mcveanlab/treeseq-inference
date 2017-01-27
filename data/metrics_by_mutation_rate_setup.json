@@ -1,0 +1,11 @@
+{
+  "command": "setup",
+  "data_file": null,
+  "hack_finite_sites": false,
+  "name": [
+    "metrics_by_mutation_rate"
+  ],
+  "replicates": null,
+  "seed": null,
+  "verbosity": 1
+}
