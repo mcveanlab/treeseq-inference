@@ -93,19 +93,20 @@ def variant_matrix_to_ARGweaver_in(var_matrix, var_positions, seq_length, ARGwea
         for pos, v in zip(var_positions, var_matrix):
             print(pos+1, "".join(np.where(v==0,"A","T")), sep="\t", file=ARGweaver_filehandle)
     else:
-        position = 0
+        prev_position = 0
+        ANDed_genotype = None
         for pos, genotype in zip(var_positions, var_matrix):
-            if int(ceil(pos)) != position:
+            if int(ceil(pos)) != prev_position:
                 #this is a new position. Print the genotype at the old position, and then reset everything
-                if position:
-                    print(position, "".join(np.where(ANDed_genotype==0,"A","T")), sep="\t", 
+                if prev_position:
+                    print(prev_position, "".join(np.where(ANDed_genotype==0,"A","T")), sep="\t", 
                         file=ARGweaver_filehandle)
                 ANDed_genotype = genotype
-                position = int(ceil(pos))
             else:
                 ANDed_genotype =  np.logical_and(ANDed_genotype, genotype)
-        if position: #always print out the last site
-            print(pos, "".join(np.where(ANDed_genotype ==0,"A","T")), sep="\t", file=ARGweaver_filehandle)
+            prev_position = int(ceil(pos))
+        if ANDed_genotype is not None: # print out the last site
+            print(prev_position, "".join(np.where(ANDed_genotype ==0,"A","T")), sep="\t", file=ARGweaver_filehandle)
 
     ARGweaver_filehandle.flush()
     ARGweaver_filehandle.seek(0)
