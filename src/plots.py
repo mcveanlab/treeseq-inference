@@ -1111,7 +1111,7 @@ class SampleSizeEffectOnSubsetDataset(Dataset):
             # Run the simulation
             ts, fn = self.single_simulation(
                 sample_size, Ne, length, recombination_rate, mutation_rate,
-                replicate_seed, replicate_seed
+                replicate_seed, replicate_seed,
                 discretise_mutations=False) #stop doing Jerome's discretising step!
             with open(fn +".nex", "w+") as out:
                 ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
