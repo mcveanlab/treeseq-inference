@@ -1222,9 +1222,9 @@ class BasicARGweaverVSfastARGFigure(Figure):
         metrics  = list(ARG_metrics.get_ARG_metrics())
         self.R_plot_data(\
 """
-datamean <- aggregate(subset(data, select=-ARGweaver_iterations), list(data$mutation_rate), mean)
 toolcols <- %s
 metrics <- %s
+datamean <- aggregate(subset(data, select=-ARGweaver_iterations), list(data$mutation_rate), mean)
 layout(matrix(1:6,2,3))
 sapply(metrics, function(m) {
     colnames = paste(names(toolcols), m, sep='_')
@@ -1250,13 +1250,14 @@ class MetricsAgainstMutationRateFigure(Figure):
 """
 toolcols <- %s
 metrics <- %s
+datamean <- aggregate(subset(data, select=-ARGweaver_iterations), list(data$mutation_rate, data$error_rate), mean, na.rm=TRUE)
 error.rates <- unique(data$error_rate)
 layout(matrix(1:6,2,3))
 error.rates <- sort(unique(data$error_rate))
 layout(matrix(1:6,2,3))
 sapply(metrics, function(m) {
     colnames = paste(names(toolcols), m, sep='_')
-    matplot(data$mutation_rate, data[, colnames], type='p', col=toolcols, main=paste(m, "metric"), 
+    matplot(data$mutation_rate, data[, colnames], type='p', col=toolcols, main=paste(m, 'metric'), 
         ylab='Distance between true and inferred trees', 
         xlab='mutation rate (err: dotted=0.1, dashed=0.01, solid=0.0)',
         log='x', ylim = c(0,max(data[, colnames], na.rm=TRUE)),
