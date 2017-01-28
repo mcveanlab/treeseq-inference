@@ -118,13 +118,13 @@ def msprime_name_from_row(row, directory=None, error_col=None, subsample_col=Non
     """
     name = msprime_name(row.sample_size, row.Ne, row.length, row.recombination_rate,
         row.mutation_rate, row.seed, row.seed, directory)
-    if subsample_col is not None:
+    if subsample_col is not None and not pd.isnull(subsample_col):
         if isinstance(subsample_col, str):
             if subsample_col in row:
                 name = add_subsample_param_to_name(name, row[subsample_col])
         else:
             name = add_subsample_param_to_name(name, subsample_col)
-    if error_col is not None:
+    if error_col is not None and not pd.isnull(error_col):
         if isinstance(error_col, str):
             if error_col in row:
                 name = add_error_param_to_name(name, row[error_col])
@@ -148,7 +148,7 @@ def add_error_param_to_name(sim_name, error_rate=None):
     Append the error param to the msprime simulation filename.
     Only relevant for files downstream of the step where sequence error is added
     """
-    if error_rate is not None:
+    if error_rate is not None and not pd.isnull(error_rate):
         if sim_name.endswith("+") or sim_name.endswith("-"):
             #this is the first param
             return sim_name + "_err{}".format(float(error_rate))
@@ -206,7 +206,7 @@ def construct_tsinfer_name(sim_name, subsample_size=None):
     """
     d,f = os.path.split(sim_name)
     name = os.path.join(d,'+'.join(['tsinfer', f, ""]))
-    if subsample_size is not None:
+    if subsample_size is not None and not pd.isnull(subsample_size):
         name = add_subsample_param_to_name(name, subsample_size)
     return name
 
@@ -214,7 +214,7 @@ def tsinfer_name_from_msprime_row(row, sim_dir, subsample_size=None):
     """
     return the tsinfer name based on an msprime sim specified by row 
     """
-    if subsample_size is None:
+    if subsample_size is None and not pd.isnull(subsample_size):
         return construct_tsinfer_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'))
     else:
         return construct_tsinfer_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'),
@@ -1083,7 +1083,8 @@ class SampleSizeEffectOnSubsetDataset(Dataset):
             "error_rate", "replicate", "seed", "base_subsample_size", "aw_burnin_iters",
             "aw_n_out_samples", "aw_iter_out_freq", "tsinfer_biforce_reps"]
         # Variable parameters
-        error_rates = [0, 0.01, 0.1]
+        error_rates = [0]
+        mutation_rates = np.logspace(-8, -6, num=5)[:-1] * 1.5
         subsamples  = [self.base_subsample_size, 20, 50, 100, 200, 500, 1000]
         # Fixed parameters
         mutation_rate = 1.5e-8
@@ -1098,48 +1099,49 @@ class SampleSizeEffectOnSubsetDataset(Dataset):
         # TMP for development
         ## tsinfer params: number of times to randomly resolve into bifurcating (binary) trees
         tsinfer_biforce_reps = 20
-        num_rows = replicates * len(error_rates) * len(subsamples)
+        num_rows = replicates * len(error_rates) * len(mutation_rates) * len(subsamples)
         data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
         row_id = 0
         for replicate in range(replicates):
-            done = False
-            while not done:
-                replicate_seed = rng.randint(1, 2**31)
-                if replicate_seed not in seeds:
-                    seeds.add(replicate_seed)
-                    done = True
-            # Run the simulation
-            ts, fn = self.single_simulation(
-                sample_size, Ne, length, recombination_rate, mutation_rate,
-                replicate_seed, replicate_seed,
-                discretise_mutations=False) #stop doing Jerome's discretising step!
-            with open(fn +".nex", "w+") as out:
-                ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
-            # Add the rows for each of the error rates in this replicate
-            for subsample in subsamples:
-                subfn = add_subsample_param_to_name(fn, subsample)
-                ts_sub = ts.simplify(list(range(subsample)))
-                with open(subfn +".nex", "w+") as out:
-                    ts_sub.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
-                for error_rate in error_rates:
-                    row = data.iloc[row_id]
-                    row_id += 1
-                    row.sample_size = sample_size
-                    row.subsample = subsample
-                    row.recombination_rate = recombination_rate
-                    row.mutation_rate = mutation_rate
-                    row.length = length
-                    row.Ne = Ne
-                    row.seed = replicate_seed
-                    row.error_rate = error_rate
-                    row.replicate = replicate
-                    row.tsinfer_subset = self.base_subsample_size
-                    row.aw_n_out_samples = aw_n_out_samples
-                    row.aw_burnin_iters = aw_burnin_iters
-                    row.aw_iter_out_freq = aw_iter_out_freq
-                    row.tsinfer_biforce_reps = tsinfer_biforce_reps
-                    self.save_variant_matrices(ts_sub, subfn, error_rate, 
-                        infinite_sites=False)
+            for mutation_rate in mutation_rates:
+                done = False
+                while not done:
+                    replicate_seed = rng.randint(1, 2**31)
+                    if replicate_seed not in seeds:
+                        seeds.add(replicate_seed)
+                        done = True
+                # Run the simulation
+                ts, fn = self.single_simulation(
+                    sample_size, Ne, length, recombination_rate, mutation_rate,
+                    replicate_seed, replicate_seed,
+                    discretise_mutations=False) #stop doing Jerome's discretising step!
+                with open(fn +".nex", "w+") as out:
+                    ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+                # Add the rows for each of the error rates in this replicate
+                for subsample in subsamples:
+                    subfn = add_subsample_param_to_name(fn, subsample)
+                    ts_sub = ts.simplify(list(range(subsample)))
+                    with open(subfn +".nex", "w+") as out:
+                        ts_sub.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+                    for error_rate in error_rates:
+                        row = data.iloc[row_id]
+                        row_id += 1
+                        row.sample_size = sample_size
+                        row.subsample = subsample
+                        row.recombination_rate = recombination_rate
+                        row.mutation_rate = mutation_rate
+                        row.length = length
+                        row.Ne = Ne
+                        row.seed = replicate_seed
+                        row.error_rate = error_rate
+                        row.replicate = replicate
+                        row.tsinfer_subset = self.base_subsample_size
+                        row.aw_n_out_samples = aw_n_out_samples
+                        row.aw_burnin_iters = aw_burnin_iters
+                        row.aw_iter_out_freq = aw_iter_out_freq
+                        row.tsinfer_biforce_reps = tsinfer_biforce_reps
+                        self.save_variant_matrices(ts_sub, subfn, error_rate, 
+                            infinite_sites=False)
         return data
 
 class Figure(object):
