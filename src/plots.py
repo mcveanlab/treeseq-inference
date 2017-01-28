@@ -132,17 +132,19 @@ def msprime_name_from_row(row, directory=None, error_col=None, subsample_col=Non
             name = add_error_param_to_name(name, error_col)
     return(name)
 
-def add_subsample_param_to_name(sim_name, subsample_size):
+def add_subsample_param_to_name(sim_name, subsample_size=None):
     """
     Mark a filename as containing only a subset of the samples of the full sim
     Can be used on msprime output files but also e.g. tsinfer output files
     """
-    if sim_name.endswith("+") or sim_name.endswith("-"):
-        #this is the first param
-        return sim_name + "max{}".format(int(subsample_size))
+    if subsample_size is not None and not pd.isnull(subsample_size):
+        if sim_name.endswith("+") or sim_name.endswith("-"):
+            #this is the first param
+            return sim_name + "max{}".format(int(subsample_size))
+        else:
+            return sim_name + "_max{}".format(int(subsample_size))
     else:
-        return sim_name + "_max{}".format(int(subsample_size))
-
+        return sim_name
 def add_error_param_to_name(sim_name, error_rate=None):
     """
     Append the error param to the msprime simulation filename.
@@ -307,6 +309,8 @@ class InferenceRunner(object):
             samples_fn, positions_fn, self.row.length, scaled_recombination_rate,
             num_threads=self.num_threads)
         if 'tsinfer_subset' in self.row:
+            logging.debug("writing trees for only a subset of {} / {} tips".format(
+                self.row.tsinfer_subset, inferred_ts.sample_size))
             inferred_ts = inferred_ts.simplify(list(range(self.row.tsinfer_subset)))
             out_fn = construct_tsinfer_name(self.base_fn, self.row.tsinfer_subset)
         else:
