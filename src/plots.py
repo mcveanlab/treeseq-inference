@@ -745,7 +745,8 @@ class Dataset(object):
         S = generate_samples(ts, error_rate or 0)
         filename = add_error_param_to_name(fname, error_rate)
         outfile = filename + ".npy"
-        logging.debug("writing variant matrix to {} for tsinfer".format(outfile))
+        logging.debug("writing variant matrix ({} variants) to {} for tsinfer".format(
+            ts.get_num_mutations(), outfile))
         np.save(outfile, S)
         outfile = filename + ".pos.npy"
         pos = np.array([v.position for v in ts.variants()])
