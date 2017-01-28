@@ -742,26 +742,30 @@ class Dataset(object):
 
     @staticmethod
     def save_variant_matrices(ts, fname, error_rate=None, infinite_sites=True):
-        S = generate_samples(ts, error_rate or 0)
-        filename = add_error_param_to_name(fname, error_rate)
-        outfile = filename + ".npy"
-        logging.debug("writing variant matrix ({} variants) to {} for tsinfer".format(
-            ts.get_num_mutations(), outfile))
-        np.save(outfile, S)
-        outfile = filename + ".pos.npy"
-        pos = np.array([v.position for v in ts.variants()])
-        logging.debug("writing variant positions to {} for tsinfer".format(outfile))
-        np.save(outfile, pos)
-        if infinite_sites: #for infinite sites, assume we have diecretised mutations to ints
-            assert all(p.is_integer() for p in pos), \
-                "Variant positions are not all integers in {}".format()
-        logging.debug("writing variant matrix to {}.hap for fastARG".format(filename))
-        with open(filename+".hap", "w+") as fastarg_in:
-            msprime_fastARG.variant_matrix_to_fastARG_in(np.transpose(S), pos, fastarg_in)
-        logging.debug("writing variant matrix to {}.sites for ARGweaver".format(filename))
-        with open(filename+".sites", "w+") as argweaver_in:
-            msprime_ARGweaver.variant_matrix_to_ARGweaver_in(np.transpose(S), pos,
-                    ts.get_sequence_length(), argweaver_in, infinite_sites=infinite_sites)
+        if ts.get_num_mutations()>0:
+            S = generate_samples(ts, error_rate or 0)
+            filename = add_error_param_to_name(fname, error_rate)
+            outfile = filename + ".npy"
+            logging.debug("writing variant matrix to {} for tsinfer".format(outfile))
+            np.save(outfile, S)
+            outfile = filename + ".pos.npy"
+            pos = np.array([v.position for v in ts.variants()])
+            logging.debug("writing variant positions to {} for tsinfer".format(outfile))
+            np.save(outfile, pos)
+            if infinite_sites: #for infinite sites, assume we have diecretised mutations to ints
+                assert all(p.is_integer() for p in pos), \
+                    "Variant positions are not all integers in {}".format()
+            logging.debug("writing variant matrix to {}.hap for fastARG".format(filename))
+            with open(filename+".hap", "w+") as fastarg_in:
+                msprime_fastARG.variant_matrix_to_fastARG_in(np.transpose(S), pos, fastarg_in)
+            logging.debug("writing variant matrix to {}.sites for ARGweaver".format(filename))
+            with open(filename+".sites", "w+") as argweaver_in:
+                msprime_ARGweaver.variant_matrix_to_ARGweaver_in(np.transpose(S), pos,
+                        ts.get_sequence_length(), argweaver_in, infinite_sites=infinite_sites)
+        else:
+            #No variants. We should be able to get away with not creating any files
+            #and the infer step will simply skip this simulation
+            logging.info("No variants in this sample, so no files created for this simulation")
 
     def process(self, num_processes, num_threads, force=False):
         """
