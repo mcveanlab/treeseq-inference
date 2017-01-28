@@ -310,9 +310,9 @@ class InferenceRunner(object):
             num_threads=self.num_threads)
         if 'tsinfer_subset' in self.row:
             logging.debug("writing trees for only a subset of {} / {} tips".format(
-                self.row.tsinfer_subset, inferred_ts.sample_size))
-            inferred_ts = inferred_ts.simplify(list(range(self.row.tsinfer_subset)))
-            out_fn = construct_tsinfer_name(self.base_fn, self.row.tsinfer_subset)
+                int(self.row.tsinfer_subset), inferred_ts.sample_size))
+            inferred_ts = inferred_ts.simplify(list(range(int(self.row.tsinfer_subset))))
+            out_fn = construct_tsinfer_name(self.base_fn, int(self.row.tsinfer_subset))
         else:
             out_fn = construct_tsinfer_name(self.base_fn)
             
@@ -485,7 +485,7 @@ class MetricsRunner(object):
         # the original file against which others should be compared is the one 
         # without errors injected, but could potentially be a subsetted one
         self.simulation_comparison_fn=msprime_name_from_row(row, self.nexus_dir, 
-            error_col=None, subsample_col='base_subsample_size')
+            error_col=None, subsample_col='tsinfer_subset')
 
     def add_tool(self, toolname, filenames, reps=None, make_bin_seed=None):
         """
@@ -531,17 +531,22 @@ def metric_worker(work):
             params={}
         #now add the .nex extension
         if isinstance(files, str):
-            files += ".nex"
-            if not os.path.isfile(files):
-                files = None
+            filenames = files + ".nex"
+            if not os.path.isfile(filenames):
+                logging.debug("Skipping metrics for {} (row {}) due to missing nexus file {}".format(
+                    tool, row[0], filenames))
+                filenames = None
         else:
-            files = [fn + ".nex" for fn in files if os.path.isfile(fn + ".nex")]
-        if files:
-            runner.add_tool(tool, files, **params)
-        else:
-            logging.debug("Skipping metrics for " + tool +
-                " (row " + str(row[0]) + ") " +
-                "because of missing nexus file(s)")
+            filenames = []
+            for fn in files:
+                filename = fn + ".nex"
+                if os.path.isfile(filename):
+                    filenames.append(filename)
+                else:
+                    logging.debug("Skipping metrics for {} (row {}) due to missing nexus file {}".format(
+                        tool, row[0], filename))
+        if filenames:
+            runner.add_tool(tool, filenames, **params)
     return int(row[0]), runner.run()
 
 class Dataset(object):
@@ -1004,8 +1009,8 @@ class MetricsByMutationRateDataset(Dataset):
                 ts, fn = self.single_simulation(
                     sample_size, Ne, length, recombination_rate, mutation_rate,
                     replicate_seed, replicate_seed, 
-                    discretise_mutations=True) 
-                    #discretise_mutations=False) #stop doing Jerome's discretising step!
+                    #discretise_mutations=True) 
+                    discretise_mutations=False) #stop doing Jerome's discretising step!
                 with open(fn +".nex", "w+") as out:
                     ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
                 # Add the rows for each of the error rates in this replicate
@@ -1025,8 +1030,8 @@ class MetricsByMutationRateDataset(Dataset):
                     row.aw_iter_out_freq = aw_iter_out_freq
                     row.tsinfer_biforce_reps = tsinfer_biforce_reps
                     self.save_variant_matrices(ts, fn, error_rate, 
-                        infinite_sites=True)
-                        #infinite_sites=False)
+                        #infinite_sites=True)
+                        infinite_sites=False)
         return data
 
 class SampleSizeEffectOnSubsetDataset(Dataset):
@@ -1084,12 +1089,12 @@ class SampleSizeEffectOnSubsetDataset(Dataset):
         seeds = set()
         cols = [
             "sample_size", "subsample", "Ne", "length", "recombination_rate", "mutation_rate",
-            "error_rate", "replicate", "seed", "base_subsample_size", "aw_burnin_iters",
+            "error_rate", "replicate", "seed", "tsinfer_subset", "aw_burnin_iters",
             "aw_n_out_samples", "aw_iter_out_freq", "tsinfer_biforce_reps"]
         # Variable parameters
         error_rates = [0]
         mutation_rates = np.logspace(-8, -6, num=5)[:-1] * 1.5
-        subsamples  = [self.base_subsample_size, 20, 50, 100, 200, 500, 1000]
+        subsamples  = [self.base_subsample_size, 20, 50] #, 100, 200, 500, 1000]
         # Fixed parameters
         mutation_rate = 1.5e-8
         sample_size = 1000
@@ -1097,9 +1102,9 @@ class SampleSizeEffectOnSubsetDataset(Dataset):
         length = 5000
         recombination_rate = 2.5e-8
         ## argweaver params: aw_n_out_samples will be produced, every argweaver_iter_out_freq
-        aw_burnin_iters = 5000
-        aw_n_out_samples = 100
-        aw_iter_out_freq = 10
+        aw_burnin_iters = 5 #5000
+        aw_n_out_samples = 10#0
+        aw_iter_out_freq = 1#0
         # TMP for development
         ## tsinfer params: number of times to randomly resolve into bifurcating (binary) trees
         tsinfer_biforce_reps = 20
@@ -1249,6 +1254,44 @@ sapply(metrics, function(m) {
 class MetricsAgainstMutationRateFigure(Figure):
     datasetClass = MetricsByMutationRateDataset
     name = "metrics_vs_mutrate"
+    
+    def plot(self):
+        metric_colours = collections.OrderedDict(
+            [(k,v) for k,v in self.default_metric_colours.items() if k in self.dataset.metrics_for])
+        metrics  = list(ARG_metrics.get_ARG_metrics())
+        self.R_plot_data(\
+"""
+toolcols <- %s
+metrics <- %s
+datamean <- aggregate(subset(data, select=-ARGweaver_iterations), list(data$mutation_rate, data$error_rate), mean, na.rm=TRUE)
+error.rates <- unique(data$error_rate)
+layout(matrix(1:6,2,3))
+error.rates <- sort(unique(data$error_rate))
+layout(matrix(1:6,2,3))
+sapply(metrics, function(m) {
+    colnames = paste(names(toolcols), m, sep='_')
+    matplot(data$mutation_rate, data[, colnames], type='p', col=toolcols, main=paste(m, 'metric'), 
+        ylab='Distance between true and inferred trees', 
+        xlab='mutation rate (err: dotted=0.1, dashed=0.01, solid=0.0)',
+        log='x', ylim = c(0,max(data[, colnames], na.rm=TRUE)),
+        pch = ifelse(data$error_rate == error.rates[1],1,ifelse(data$error_rate == error.rates[2], 2, 4)))
+    d <- subset(datamean, error_rate==error.rates[1])
+    matlines(d$mutation_rate, d[, colnames], lty=1, col=toolcols)
+    d <- subset(datamean, error_rate==error.rates[2])
+    matlines(d$mutation_rate, d[, colnames], lty=2, col=toolcols)
+    d <- subset(datamean, error_rate==error.rates[3])
+    matlines(d$mutation_rate, d[, colnames], type='l', lty=3, col=toolcols)
+
+    mtext(names(toolcols), 1, line=rev(seq(-1.2, by=-0.8, along.with=toolcols)), adj=0.05,
+        cex=0.7, col=toolcols)
+})
+""" % (self.to_Rvec(metric_colours), self.to_Rvec(metrics))
+            )
+
+
+class TSSampleSubset(Figure):
+    datasetClass = SampleSizeEffectOnSubsetDataset
+    name = "ts_sample_subset"
     
     def plot(self):
         metric_colours = collections.OrderedDict(
