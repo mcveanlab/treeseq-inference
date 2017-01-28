@@ -1089,7 +1089,7 @@ class SampleSizeEffectOnSubsetDataset(Dataset):
         mutation_rate = 1.5e-8
         sample_size = 1000
         Ne = 5000
-        length = 50000
+        length = 5000
         recombination_rate = 2.5e-8
         ## argweaver params: aw_n_out_samples will be produced, every argweaver_iter_out_freq
         aw_burnin_iters = 5000
@@ -1111,7 +1111,8 @@ class SampleSizeEffectOnSubsetDataset(Dataset):
             # Run the simulation
             ts, fn = self.single_simulation(
                 sample_size, Ne, length, recombination_rate, mutation_rate,
-                replicate_seed, replicate_seed)
+                replicate_seed, replicate_seed
+                discretise_mutations=False) #stop doing Jerome's discretising step!
             with open(fn +".nex", "w+") as out:
                 ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
             # Add the rows for each of the error rates in this replicate
@@ -1137,7 +1138,8 @@ class SampleSizeEffectOnSubsetDataset(Dataset):
                     row.aw_burnin_iters = aw_burnin_iters
                     row.aw_iter_out_freq = aw_iter_out_freq
                     row.tsinfer_biforce_reps = tsinfer_biforce_reps
-                    self.save_variant_matrices(ts_sub, subfn, error_rate)
+                    self.save_variant_matrices(ts_sub, subfn, error_rate, 
+                        infinite_sites=False)
         return data
 
 class Figure(object):
