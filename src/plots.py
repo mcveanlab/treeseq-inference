@@ -981,9 +981,9 @@ class MetricsByMutationRateDataset(Dataset):
         # Variable parameters
         mutation_rates = np.logspace(-8, -5, num=6)[:-1] * 1.5
         error_rates = [0, 0.01, 0.1]
+        sample_sizes = [10, 20]
 
         # Fixed parameters
-        sample_size = 12
         Ne = 5000
         length = 5000
         recombination_rate = 2.5e-8
@@ -994,44 +994,45 @@ class MetricsByMutationRateDataset(Dataset):
         # TMP for development
         ## tsinfer params: number of times to randomly resolve into bifurcating (binary) trees
         tsinfer_biforce_reps = 20
-        num_rows = replicates * len(mutation_rates) * len(error_rates)
+        num_rows = replicates * len(mutation_rates) * len(error_rates) * len(sample_sizes)
         data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
         row_id = 0
         for replicate in range(replicates):
             for mutation_rate in mutation_rates:
-                done = False
-                while not done:
-                    replicate_seed = rng.randint(1, 2**31)
-                    if replicate_seed not in seeds:
-                        seeds.add(replicate_seed)
-                        done = True
-                # Run the simulation
-                ts, fn = self.single_simulation(
-                    sample_size, Ne, length, recombination_rate, mutation_rate,
-                    replicate_seed, replicate_seed, 
-                    #discretise_mutations=True) 
-                    discretise_mutations=False) #stop doing Jerome's discretising step!
-                with open(fn +".nex", "w+") as out:
-                    ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
-                # Add the rows for each of the error rates in this replicate
-                for error_rate in error_rates:
-                    row = data.iloc[row_id]
-                    row_id += 1
-                    row.sample_size = sample_size
-                    row.recombination_rate = recombination_rate
-                    row.mutation_rate = mutation_rate
-                    row.length = length
-                    row.Ne = Ne
-                    row.seed = replicate_seed
-                    row.error_rate = error_rate
-                    row.replicate = replicate
-                    row.aw_n_out_samples = aw_n_out_samples
-                    row.aw_burnin_iters = aw_burnin_iters
-                    row.aw_iter_out_freq = aw_iter_out_freq
-                    row.tsinfer_biforce_reps = tsinfer_biforce_reps
-                    self.save_variant_matrices(ts, fn, error_rate, 
-                        #infinite_sites=True)
-                        infinite_sites=False)
+                for sample_size in sample_sizes:
+                    done = False
+                    while not done:
+                        replicate_seed = rng.randint(1, 2**31)
+                        if replicate_seed not in seeds:
+                            seeds.add(replicate_seed)
+                            done = True
+                    # Run the simulation
+                    ts, fn = self.single_simulation(
+                        sample_size, Ne, length, recombination_rate, mutation_rate,
+                        replicate_seed, replicate_seed, 
+                        #discretise_mutations=True) 
+                        discretise_mutations=False) #stop doing Jerome's discretising step!
+                    with open(fn +".nex", "w+") as out:
+                        ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+                    # Add the rows for each of the error rates in this replicate
+                    for error_rate in error_rates:
+                        row = data.iloc[row_id]
+                        row_id += 1
+                        row.sample_size = sample_size
+                        row.recombination_rate = recombination_rate
+                        row.mutation_rate = mutation_rate
+                        row.length = length
+                        row.Ne = Ne
+                        row.seed = replicate_seed
+                        row.error_rate = error_rate
+                        row.replicate = replicate
+                        row.aw_n_out_samples = aw_n_out_samples
+                        row.aw_burnin_iters = aw_burnin_iters
+                        row.aw_iter_out_freq = aw_iter_out_freq
+                        row.tsinfer_biforce_reps = tsinfer_biforce_reps
+                        self.save_variant_matrices(ts, fn, error_rate, 
+                            #infinite_sites=True)
+                            infinite_sites=False)
         return data
 
 class SampleSizeEffectOnSubsetDataset(Dataset):
