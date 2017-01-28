@@ -301,24 +301,31 @@ class InferenceRunner(object):
     def __run_tsinfer(self):
 
         samples_fn = self.base_fn + ".npy"
-        logging.debug("reading: variant matrix {} for msprime inference".format(samples_fn))
         positions_fn = self.base_fn + ".pos.npy"
-        logging.debug("reading: positions {} for msprime inference".format(positions_fn))
-        scaled_recombination_rate = 4 * self.row.recombination_rate * self.row.Ne
-        inferred_ts, time, memory = self.run_tsinfer(
-            samples_fn, positions_fn, self.row.length, scaled_recombination_rate,
-            num_threads=self.num_threads)
-        if 'tsinfer_subset' in self.row:
-            logging.debug("writing trees for only a subset of {} / {} tips".format(
-                int(self.row.tsinfer_subset), inferred_ts.sample_size))
-            inferred_ts = inferred_ts.simplify(list(range(int(self.row.tsinfer_subset))))
-            out_fn = construct_tsinfer_name(self.base_fn, int(self.row.tsinfer_subset))
+        time = None
+        memory = None
+        logging.debug("reading: variant matrix {} & positions {} for msprime inference".format(
+            samples_fn, positions_fn))
+        if os.path.isfile(samples_fn) and os.path.isfile(positions_fn):
+            scaled_recombination_rate = 4 * self.row.recombination_rate * self.row.Ne
+            inferred_ts, time, memory = self.run_tsinfer(
+                samples_fn, positions_fn, self.row.length, scaled_recombination_rate,
+                num_threads=self.num_threads)
+            if 'tsinfer_subset' in self.row:
+                logging.debug("writing trees for only a subset of {} / {} tips".format(
+                    int(self.row.tsinfer_subset), inferred_ts.sample_size))
+                inferred_ts = inferred_ts.simplify(list(range(int(self.row.tsinfer_subset))))
+                out_fn = construct_tsinfer_name(self.base_fn, int(self.row.tsinfer_subset))
+            else:
+                out_fn = construct_tsinfer_name(self.base_fn)
+                
+            with open(out_fn +".nex", "w+") as out:
+                #tree metrics assume tips are numbered from 1 not 0
+                inferred_ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
         else:
-            out_fn = construct_tsinfer_name(self.base_fn)
-            
-        with open(out_fn +".nex", "w+") as out:
-            #tree metrics assume tips are numbered from 1 not 0
-            inferred_ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+            logging.info("Files not found for tsinfer inference:" + 
+                " simulation on row {} has produced no files.".format(self.row[0]) + 
+                " If you are not expecting this, it could be a simulation with no mutations")
         return  {
             cpu_time_colname(self.tool): time,
             memory_colname(self.tool): memory
@@ -327,11 +334,18 @@ class InferenceRunner(object):
     def __run_fastARG(self):
         inference_seed = self.row.seed  # TODO do we need to specify this separately?
         infile = self.base_fn + ".hap"
-        out_fn = construct_fastarg_name(self.base_fn, inference_seed)
+        time = None
+        memory = None
         logging.debug("reading: {} for fastARG inference".format(infile))
-        inferred_ts, time, memory = self.run_fastarg(infile, self.row.length, inference_seed)
-        with open(out_fn +".nex", "w+") as out:
-            inferred_ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+        if os.path.isfile(infile):
+            out_fn = construct_fastarg_name(self.base_fn, inference_seed) + ".nex"
+            inferred_ts, time, memory = self.run_fastarg(infile, self.row.length, inference_seed)
+            with open(out_fn , "w+") as out:
+                inferred_ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+        else:
+            logging.info("Files not found for fastARG inference:" + 
+                " simulation on row {} has produced no files.".format(self.row[0]) + 
+                " If you are not expecting this, it could be a simulation with no mutations")
         return {
             cpu_time_colname(self.tool): time,
             memory_colname(self.tool): memory
@@ -340,18 +354,27 @@ class InferenceRunner(object):
     def __run_ARGweaver(self):
         inference_seed = self.row.seed  # TODO do we need to specify this separately?
         infile = self.base_fn + ".sites"
-        out_fn = construct_argweaver_name(self.base_fn, inference_seed)
+        time = None
+        memory = None
+        iteration_ids = []
+        stats_file = None
         logging.debug("reading: {} for ARGweaver inference".format(infile))
-        iteration_ids, stats_file, time, memory = self.run_argweaver(
-            infile, self.row.Ne, self.row.recombination_rate, self.row.mutation_rate,
-            out_fn, inference_seed, int(self.row.aw_n_out_samples),
-            self.row.aw_iter_out_freq, int(self.row.aw_burnin_iters))
-        #now must convert all of the .smc files to .nex format
-        for it in iteration_ids:
-            base = construct_argweaver_name(self.base_fn, inference_seed, it)
-            with open(base + ".nex", "w+") as out:
-                msprime_ARGweaver.ARGweaver_smc_to_nexus(
-                    base+".smc.gz", out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+        if os.path.isfile(infile):
+            out_fn = construct_argweaver_name(self.base_fn, inference_seed)
+            iteration_ids, stats_file, time, memory = self.run_argweaver(
+                infile, self.row.Ne, self.row.recombination_rate, self.row.mutation_rate,
+                out_fn, inference_seed, int(self.row.aw_n_out_samples),
+                self.row.aw_iter_out_freq, int(self.row.aw_burnin_iters))
+            #now must convert all of the .smc files to .nex format
+            for it in iteration_ids:
+                base = construct_argweaver_name(self.base_fn, inference_seed, it)
+                with open(base + ".nex", "w+") as out:
+                    msprime_ARGweaver.ARGweaver_smc_to_nexus(
+                        base+".smc.gz", out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+        else:
+            logging.info("Files not found for ARGweaver inference:" + 
+                " simulation on row {} has produced no files.".format(self.row[0]) + 
+                " If you are not expecting this, it could be a simulation with no mutations")
         results = {
             cpu_time_colname(self.tool): time,
             memory_colname(self.tool): memory,
