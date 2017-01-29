@@ -432,57 +432,64 @@ class InferenceRunner(object):
         TO DO: if verbosity < 0 (logging level == warning) we should set quiet = TRUE
 
         """
-        cpu_time = memory_use = 0
+        cpu_time = []
+        memory_use = []
         burn_prefix = None
-        exe = [ARGweaver_executable, '--sites', sites_file.name if hasattr(sites_file, "name") else sites_file,
-               '--popsize', str(Ne),
-               '--recombrate', str(recombination_rate), 
-               '--mutrate', str(mutation_rate), 
-               '--overwrite']
-        if quiet:
-            exe += ['--quiet']
-        if seed is not None:
-            exe += ['--randseed', str(int(seed))]
-        if burnin_iterations > 0:
-            burn_in = str(int(burnin_iterations))
-            burn_prefix = path_prefix+"_burn"
-            logging.info("== Burning in ARGweaver MCMC using {} steps ==".format(burn_in))
-            c, m = time_cmd(exe + ['--iters', burn_in,
-                                   '--sample-step', burn_in,
-                                   '--output', burn_prefix])
-            cpu_time += c
-            memory_use += m
-            #if burn_in, read from the burn in arg file, rather than the original .sites
-            exe += ['--arg', burn_prefix+"."+ burn_in +".smc.gz"]
-        else:
-            exe += ['--sites', sites_file]
-    
-        new_prefix = path_prefix + "_i" #we append a '_i' to mark iteration number
-        iterations = int(sample_step * (MSMC_samples-1))
-        exe += ['--output', new_prefix]
-        exe += ['--iters', str(iterations)]
-        exe += ['--sample-step', str(int(sample_step))]
-        logging.info("== Running ARGweaver for {} steps to collect {} samples ==".format( \
-            int(iterations), MSMC_samples))
-        logging.debug("== ARGweaver command is {} ==".format(" ".join(exe)))
-        c, m = time_cmd(exe)
-        cpu_time += c
-        memory_use += m
-
-        smc_prefix = new_prefix + "." #the arg-sample program adds .iteration_num
-        iterations = [f[len(smc_prefix):-7] for f in glob.glob(smc_prefix + "*" + ".smc.gz")]
-        new_stats_file_name = path_prefix+".stats"
+        try:
+            exe = [ARGweaver_executable, '--sites', sites_file.name if hasattr(sites_file, "name") else sites_file,
+                   '--popsize', str(Ne),
+                   '--recombrate', str(recombination_rate), 
+                   '--mutrate', str(mutation_rate), 
+                   '--overwrite']
+            if quiet:
+                exe += ['--quiet']
+            if seed is not None:
+                exe += ['--randseed', str(int(seed))]
+            if burnin_iterations > 0:
+                burn_in = str(int(burnin_iterations))
+                burn_prefix = path_prefix+"_burn"
+                logging.info("== Burning in ARGweaver MCMC using {} steps ==".format(burn_in))
+                c, m = time_cmd(exe + ['--iters', burn_in,
+                                       '--sample-step', burn_in,
+                                       '--output', burn_prefix])
+                cpu_time.append(c)
+                memory_use.append(m)
+                #if burn_in, read from the burn in arg file, rather than the original .sites
+                exe += ['--arg', burn_prefix+"."+ burn_in +".smc.gz"]
+            else:
+                exe += ['--sites', sites_file]
         
-        #concatenate all the stats together
-        with open(new_stats_file_name, "w+") as stats:
-            if burn_prefix:
-                shutil.copyfileobj(open(burn_prefix + ".stats"), stats)
-                print("\n", file=stats)
-            shutil.copyfileobj(open(new_prefix + ".stats"), stats)
-        #cannot translate these to msprime ts objects, as smc2arg does not work
-        #see https://github.com/mdrasmus/argweaver/issues/20
-        return iterations, new_stats_file_name, cpu_time, memory_use
-
+            new_prefix = path_prefix + "_i" #we append a '_i' to mark iteration number
+            iterations = int(sample_step * (MSMC_samples-1))
+            exe += ['--output', new_prefix]
+            exe += ['--iters', str(iterations)]
+            exe += ['--sample-step', str(int(sample_step))]
+            logging.info("== Running ARGweaver for {} steps to collect {} samples ==".format( \
+                int(iterations), MSMC_samples))
+            logging.debug("== ARGweaver command is {} ==".format(" ".join(exe)))
+            c, m = time_cmd(exe)
+            cpu_time.append(c)
+            memory_use.append(m)
+    
+            smc_prefix = new_prefix + "." #the arg-sample program adds .iteration_num
+            saved_iterations = [f[len(smc_prefix):-7] for f in glob.glob(smc_prefix + "*" + ".smc.gz")]
+            new_stats_file_name = path_prefix+".stats"
+            
+            #concatenate all the stats together
+            with open(new_stats_file_name, "w+") as stats:
+                if burn_prefix:
+                    shutil.copyfileobj(open(burn_prefix + ".stats"), stats)
+                    print("\n", file=stats)
+                shutil.copyfileobj(open(new_prefix + ".stats"), stats)
+            #cannot translate these to msprime ts objects, as smc2arg does not work
+            #see https://github.com/mdrasmus/argweaver/issues/20
+            return saved_iterations, new_stats_file_name, sum(cpu_time), np.mean(memory_use)
+        except ValueError as e:
+            if 'src/argweaver/sample_thread.cpp:517:' in str(e):
+                logging.info("Hit argweaver bug https://github.com/mcveanlab/treeseq-inference/issues/25. Skipping")
+                return "Simulation error", "NA", None, None
+            else:
+                raise
 
 
 def infer_worker(work):
