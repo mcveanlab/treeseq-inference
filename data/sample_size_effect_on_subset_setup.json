@@ -5,7 +5,7 @@
   "name": [
     "sample_size_effect_on_subset"
   ],
-  "replicates": 3,
+  "replicates": 20,
   "seed": null,
-  "verbosity": 1
+  "verbosity": 2
 }
