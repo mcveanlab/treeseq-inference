@@ -677,14 +677,14 @@ class Dataset(object):
         self.dump_data(write_index=True)
         self.dump_setup({k:v for k,v in vars(args).items() if k != "func"})
 
-    def infer(self, num_processes, num_threads, force=False):
+    def infer(self, num_processes, num_threads, force=False, bespoke_rows=[]):
         """
         Runs the main inference processes and stores results in the dataframe.
+        can 'force' all rows to be (re)run, or specify bespoke set of rows to infer
         """
         self.load_data()
         work = []
-        n_rows = len(self.data.index)
-        for i in self.data.index:
+        for i in bespoke_rows if bespoke_rows else self.data.index:
             row = self.data.iloc[i]
             tools_to_use = [tool for tool,func in self.tools.items() if func(self, row)]
             random.shuffle(tools_to_use) #helps to avoid stalling on long-running tools
@@ -693,9 +693,8 @@ class Dataset(object):
                 # haven't been filled in already. This allows us to stop and start the
                 # infer processes without having to start from scratch each time.
                 if force or pd.isnull(row[cpu_time_colname(tool)]):
-                    work.append((tool, row, self.simulations_dir, num_threads, n_rows))
+                    work.append((tool, row, self.simulations_dir, num_threads, len(self.data.index)))
                 else:
-                    n_rows -= 1
                     logging.info("Data row {} is filled out for {} inference: skipping".format(i, tool))
         logging.info("running {} inference trials (max {} tools over {} of {} rows) with {} processes and {} threads".format(
             len(work), len(self.tools), int(np.ceil(len(work)/len(self.tools))), 
@@ -797,7 +796,7 @@ class Dataset(object):
             #and the infer step will simply skip this simulation
             logging.info("No variants in this sample, so no files created for this simulation")
 
-    def process(self, num_processes, num_threads, force=False):
+    def process(self, num_processes, num_threads, force=False, bespoke_rows=[]):
         """
         Runs the main metric calculating processes and stores results in the dataframe.
         Should be able to cope with missing nexus files, e.g. if inference only run
@@ -806,7 +805,7 @@ class Dataset(object):
         self.load_data()
         work = []
         metric_cols = metric_colnames(self.metrics_for.keys())
-        for i in self.data.index:
+        for i in bespoke_rows if bespoke_rows else self.data.index:
             # Any row without the metrics columns unset should be NaN, so we only run those that
             # haven't been filled in already. This allows us to stop and start the
             # infer processes without having to start from scratch each time.
@@ -1370,13 +1369,13 @@ def run_setup(cls, args):
 def run_infer(cls, args):
     logging.info("Inferring {}".format(cls.name))
     f = cls(args.data_file)
-    f.infer(args.processes, args.threads, args.force)
+    f.infer(args.processes, args.threads, args.force, args.row)
 
 
 def run_process(cls, args):
     logging.info("Processing {}".format(cls.name))
     f = cls(args.data_file)
-    f.process(args.processes, args.threads, args.force)
+    f.process(args.processes, args.threads, args.force, args.row)
 
 
 def run_plot(cls, args):
@@ -1435,6 +1434,9 @@ def main():
     subparser.add_argument(
          '--force',  action='store_true', 
          help="redo all the inferences, even if we have already filled out some", )
+    subparser.add_argument(
+         '--row', type=int,  nargs="+", default=[],
+         help="Only run inferences for this row of the data file (for debugging)", )
     subparser.set_defaults(func=run_infer)
 
     subparser = subparsers.add_parser('process')
@@ -1453,6 +1455,9 @@ def main():
     subparser.add_argument(
          '--force',  action='store_true', 
          help="redo all the metrics, even if we have already filled out some", )
+    subparser.add_argument(
+         '--row', type=int,  nargs="+", default=[],
+         help="Only process this row of the data file (for debugging)", )
     subparser.set_defaults(func=run_process)
 
     subparser = subparsers.add_parser('figure')
