@@ -1435,7 +1435,7 @@ def main():
          '--force',  action='store_true', 
          help="redo all the inferences, even if we have already filled out some", )
     subparser.add_argument(
-         '--row', type=int,  nargs="+", default=[],
+         '--row', type=int,  nargs="*", default=[],
          help="Only run inferences for this row of the data file (for debugging)", )
     subparser.set_defaults(func=run_infer)
 
@@ -1456,7 +1456,7 @@ def main():
          '--force',  action='store_true', 
          help="redo all the metrics, even if we have already filled out some", )
     subparser.add_argument(
-         '--row', type=int,  nargs="+", default=[],
+         '--row', type=int,  nargs="*", default=[],
          help="Only process this row of the data file (for debugging)", )
     subparser.set_defaults(func=run_process)
 
