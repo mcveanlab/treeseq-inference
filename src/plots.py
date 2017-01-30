@@ -4,20 +4,21 @@ in the paper.
 """
 
 import argparse
-import logging
-import os.path
-import shutil
-import sys
-import time
-import glob
 import collections
-import itertools
-import tempfile
-import subprocess
 import filecmp
-import random
-import multiprocessing
+import glob
+import itertools
 import json
+import logging
+import multiprocessing
+import os.path
+import random
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import time
 
 import numpy as np
 import matplotlib
@@ -66,7 +67,7 @@ def always_true(*pargs):
     A func that returns True for any input value
     """
     return True
-    
+
 def make_errors(v, p):
     """
     Flip each bit with probability p.
@@ -109,11 +110,11 @@ def msprime_name(n, Ne, l, rho, mu, genealogy_seed, mut_seed, directory=None):
 
 def msprime_name_from_row(row, directory=None, error_col=None, subsample_col=None):
     """
-    If error_col and subsample_col are None, this is the same as msprime_name() 
+    If error_col and subsample_col are None, this is the same as msprime_name()
     but filled out using data from a row. If error_col is a string which exists as
-    a column name in the row then add_error_param_to_name() is also called, using 
-    the error rate specified in that column. Alternatively (e.g. if error_col is a 
-    number) then it is treated as the error rate to add via add_error_param_to_name(). 
+    a column name in the row then add_error_param_to_name() is also called, using
+    the error rate specified in that column. Alternatively (e.g. if error_col is a
+    number) then it is treated as the error rate to add via add_error_param_to_name().
     The same goes for subsample_col.
     """
     name = msprime_name(row.sample_size, row.Ne, row.length, row.recombination_rate,
@@ -170,12 +171,12 @@ def construct_fastarg_name(sim_name, seed, directory=None):
 
 def fastarg_name_from_msprime_row(row, sim_dir):
     """
-    return the fa name based on an msprime sim specified by row 
+    return the fa name based on an msprime sim specified by row
     """
     return construct_fastarg_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'),
                                   seed=row.seed)
-                                  
-                                  
+
+
 def construct_argweaver_name(sim_name, seed, iteration_number=None):
     """
     Returns an ARGweaver inference filename (without file extension),
@@ -203,7 +204,7 @@ def construct_tsinfer_name(sim_name, subsample_size=None):
     """
     Returns an MSprime Li & Stevens inference filename.
     If the file is a subset of the original, this can be added to the
-    basename in this function, or later using the 
+    basename in this function, or later using the
     add_subsample_param_to_name() routine.
     """
     d,f = os.path.split(sim_name)
@@ -214,14 +215,14 @@ def construct_tsinfer_name(sim_name, subsample_size=None):
 
 def tsinfer_name_from_msprime_row(row, sim_dir, subsample_size=None):
     """
-    return the tsinfer name based on an msprime sim specified by row 
+    return the tsinfer name based on an msprime sim specified by row
     """
     if subsample_size is None and not pd.isnull(subsample_size):
         return construct_tsinfer_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'))
     else:
         return construct_tsinfer_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'),
             subsample_size = subsample_size)
-    
+
 
 def time_cmd(cmd, stdout=sys.stdout):
     """
@@ -241,7 +242,7 @@ def time_cmd(cmd, stdout=sys.stdout):
             raise ValueError(
                 "Error running '{}': status={}:stderr{}".format(
                     " ".join(cmd), exit_status, stderr.read()))
-        
+
         split = stderr.readlines()[-1].split()
         # From the time man page:
         # M: Maximum resident set size of the process during its lifetime,
@@ -259,10 +260,10 @@ def ARGmetric_params_from_row(row):
     """
     Create some ARGmetric params (see ARGmetrics.py) from a row
     We hack the same polytomy seed as inference seed
-    
+
     This stupidly has to be defined at the top level, since it is
     part of the function passed in to a multiprocessing Pool, and
-    hence needs to be 'pickle'able :( 
+    hence needs to be 'pickle'able :(
     """
     return {'make_bin_seed':row.seed, 'reps':row.tsinfer_biforce_reps}
 
@@ -278,7 +279,7 @@ class InferenceRunner(object):
         self.row = row
         self.n_rows = n_rows
         self.num_threads = num_threads
-        self.base_fn = msprime_name_from_row(row, simulations_dir, 
+        self.base_fn = msprime_name_from_row(row, simulations_dir,
             'error_rate', 'subsample')
 
     def run(self):
@@ -318,13 +319,13 @@ class InferenceRunner(object):
                 out_fn = construct_tsinfer_name(self.base_fn, int(self.row.tsinfer_subset))
             else:
                 out_fn = construct_tsinfer_name(self.base_fn)
-                
+
             with open(out_fn +".nex", "w+") as out:
                 #tree metrics assume tips are numbered from 1 not 0
                 inferred_ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
         else:
-            logging.info("Files not found for tsinfer inference:" + 
-                " simulation on row {} has produced no files.".format(self.row[0]) + 
+            logging.info("Files not found for tsinfer inference:" +
+                " simulation on row {} has produced no files.".format(self.row[0]) +
                 " If you are not expecting this, it could be a simulation with no mutations")
         return  {
             cpu_time_colname(self.tool): time,
@@ -343,8 +344,8 @@ class InferenceRunner(object):
             with open(out_fn , "w+") as out:
                 inferred_ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
         else:
-            logging.info("Files not found for fastARG inference:" + 
-                " simulation on row {} has produced no files.".format(self.row[0]) + 
+            logging.info("Files not found for fastARG inference:" +
+                " simulation on row {} has produced no files.".format(self.row[0]) +
                 " If you are not expecting this, it could be a simulation with no mutations")
         return {
             cpu_time_colname(self.tool): time,
@@ -372,8 +373,8 @@ class InferenceRunner(object):
                     msprime_ARGweaver.ARGweaver_smc_to_nexus(
                         base+".smc.gz", out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
         else:
-            logging.info("Files not found for ARGweaver inference:" + 
-                " simulation on row {} has produced no files.".format(self.row[0]) + 
+            logging.info("Files not found for ARGweaver inference:" +
+                " simulation on row {} has produced no files.".format(self.row[0]) +
                 " If you are not expecting this, it could be a simulation with no mutations")
         results = {
             cpu_time_colname(self.tool): time,
@@ -438,8 +439,8 @@ class InferenceRunner(object):
         try:
             exe = [ARGweaver_executable, '--sites', sites_file.name if hasattr(sites_file, "name") else sites_file,
                    '--popsize', str(Ne),
-                   '--recombrate', str(recombination_rate), 
-                   '--mutrate', str(mutation_rate), 
+                   '--recombrate', str(recombination_rate),
+                   '--mutrate', str(mutation_rate),
                    '--overwrite']
             if quiet:
                 exe += ['--quiet']
@@ -458,7 +459,7 @@ class InferenceRunner(object):
                 exe += ['--arg', burn_prefix+"."+ burn_in +".smc.gz"]
             else:
                 exe += ['--sites', sites_file]
-        
+
             new_prefix = path_prefix + "_i" #we append a '_i' to mark iteration number
             iterations = int(sample_step * (MSMC_samples-1))
             exe += ['--output', new_prefix]
@@ -470,11 +471,11 @@ class InferenceRunner(object):
             c, m = time_cmd(exe)
             cpu_time.append(c)
             memory_use.append(m)
-    
+
             smc_prefix = new_prefix + "." #the arg-sample program adds .iteration_num
             saved_iterations = [f[len(smc_prefix):-7] for f in glob.glob(smc_prefix + "*" + ".smc.gz")]
             new_stats_file_name = path_prefix+".stats"
-            
+
             #concatenate all the stats together
             with open(new_stats_file_name, "w+") as stats:
                 if burn_prefix:
@@ -512,29 +513,29 @@ class MetricsRunner(object):
         self.nexus_dir = nexus_dir
         self.num_threads = num_threads
         self.tools=collections.OrderedDict()
-        # the original file against which others should be compared is the one 
+        # the original file against which others should be compared is the one
         # without errors injected, but could potentially be a subsetted one
-        self.simulation_comparison_fn=msprime_name_from_row(row, self.nexus_dir, 
+        self.simulation_comparison_fn=msprime_name_from_row(row, self.nexus_dir,
             error_col=None, subsample_col='tsinfer_subset')
 
     def add_tool(self, toolname, filenames, reps=None, make_bin_seed=None):
         """
         Adds a tool for this simulation. Some simulations wil create
         multiple output files, results from which can be averaged.
-        Other simulations may have a single file, but the metric calculation 
+        Other simulations may have a single file, but the metric calculation
         may need to be run multiple times (e.g. if polytomies/multifurcations
         are resolved at random on each successive calculation of a metric.
-        If so, the 'reps' parameter gives a number of replicates, and the 
+        If so, the 'reps' parameter gives a number of replicates, and the
         result returned is an average over different reps.
-        
+
         Columns named `toolname`-`metric` should exist in the row
         """
         self.tools[toolname] = {'nexus':filenames, 'reps':reps, 'make_bin_seed': make_bin_seed}
-    
+
 
     def run(self):
         if self.tools:
-            return ARG_metrics.get_ARG_metrics(self.simulation_comparison_fn + ".nex", 
+            return ARG_metrics.get_ARG_metrics(self.simulation_comparison_fn + ".nex",
                 threads=self.num_threads, **self.tools)
         else:
             #called with nothing to compare!
@@ -544,8 +545,8 @@ def metric_worker(work):
     """
     Entry point for running a single set of metric calculations in a worker process.
     This is called multiple times for each worker process.
-    
-    Each row of the dataset compares a single original file with the result from 
+
+    Each row of the dataset compares a single original file with the result from
     multiple tools. To save having to read the same original file multiple times
     we do the calculation for all tools withing a single instance of metric_worker.
     """
@@ -594,7 +595,7 @@ class Dataset(object):
 
     #the tools dict contains functions that are called on each row
     #that define when to use each tool. This allows us to run only
-    #some tools for some of the simulations. The defaults here can 
+    #some tools for some of the simulations. The defaults here can
     #be overridden in each dataset class, to run only a subset
     tools = {
         "ARGweaver": always_true,
@@ -603,15 +604,15 @@ class Dataset(object):
     #the metrics_for dict defines what metrics we calculate
     #and how to calculate them, given a row in a df
     #it is assumed that each will be a function that
-    # is called with a row of data and a simulation dir 
-    #The function should output a tuple whose first value 
-    #is the interence file name, and whose (optional) second 
+    # is called with a row of data and a simulation dir
+    #The function should output a tuple whose first value
+    #is the interence file name, and whose (optional) second
     #value give further parameters to the metrics function
     metrics_for = {
         "fastARG": {'files_func':fastarg_name_from_msprime_row},
         "Aweaver": {'files_func':argweaver_names_from_msprime_row},
         "tsipoly": {'files_func': tsinfer_name_from_msprime_row},
-        "tsibiny": {'files_func': tsinfer_name_from_msprime_row, 
+        "tsibiny": {'files_func': tsinfer_name_from_msprime_row,
                     'param_func': ARGmetric_params_from_row}
     }
 
@@ -669,7 +670,7 @@ class Dataset(object):
         if "ARGweaver" in self.tools:
             extra_cols["ARGweaver_iterations"]=""
             extra_cols["ARGweaver_stats_file"]=""
-        
+
         #add the columns for the ARG metrics
         extra_cols.update([(k,np.NaN) for k in metric_colnames(self.metrics_for.keys())])
         for col, default in extra_cols.items():
@@ -697,7 +698,7 @@ class Dataset(object):
                 else:
                     logging.info("Data row {} is filled out for {} inference: skipping".format(i, tool))
         logging.info("running {} inference trials (max {} tools over {} of {} rows) with {} processes and {} threads".format(
-            len(work), len(self.tools), int(np.ceil(len(work)/len(self.tools))), 
+            len(work), len(self.tools), int(np.ceil(len(work)/len(self.tools))),
             len(self.data.index), num_processes, num_threads))
         if num_processes > 1:
             with multiprocessing.Pool(processes=num_processes) as pool:
@@ -717,7 +718,7 @@ class Dataset(object):
     #
     # Utilities for running simulations and saving files.
     #
-    def single_simulation(self, n, Ne, l, rho, mu, seed, mut_seed=None, 
+    def single_simulation(self, n, Ne, l, rho, mu, seed, mut_seed=None,
         discretise_mutations=True):
         """
         The standard way to run one msprime simulation for a set of parameter
@@ -857,11 +858,11 @@ class BasicTestDataset(Dataset):
         for k in list(self.metrics_for.keys()):
             if k.startswith('ts'):
                 del self.metrics_for[k]
-        
+
     def setup(self, args):
         self.JeromesDiscretise = not args.hack_finite_sites
         super().setup(args)
-    
+
     def run_simulations(self, replicates, seed):
         # TODO there is a fair amount of shared code here between this and the
         # MetricsByMutationRateDataset. Factor these out once a few more datasets
@@ -886,9 +887,9 @@ class BasicTestDataset(Dataset):
         num_rows = replicates * len(mutation_rates)
         data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
         row_id = 0
-        #always make 'replicate' the outer loop: 
+        #always make 'replicate' the outer loop:
         # allows us to look at results before all replicates have finished
-        for replicate in range(replicates): 
+        for replicate in range(replicates):
             for mutation_rate in mutation_rates:
                 done = False
                 while not done:
@@ -915,7 +916,7 @@ class BasicTestDataset(Dataset):
                 row.aw_n_out_samples = aw_n_out_samples
                 row.aw_burnin_iters = aw_burnin_iters
                 row.aw_iter_out_freq = aw_iter_out_freq
-                self.save_variant_matrices(ts, fn, error_rate=None, 
+                self.save_variant_matrices(ts, fn, error_rate=None,
                     infinite_sites=self.JeromesDiscretise)
         return data
 
@@ -930,10 +931,10 @@ class NumRecordsBySampleSizeDataset(Dataset):
     tools = {
         "fastARG":always_true,
         "tsinfer":always_true}
-    
+
     default_replicates = 10
     default_seed = 123
-        
+
     def run_simulations(self, replicates, seed):
         # TODO there is a fair amount of shared code here between this and the
         # MetricsByMutationRateDataset. Factor these out once a few more datasets
@@ -994,13 +995,13 @@ class MetricsByMutationRateDataset(Dataset):
     tending to fully accurate as mutation rate increases
     """
     name = "metrics_by_mutation_rate"
-    
+
     default_replicates = 10
     default_seed = 123
 
     def __init__(self, data_file):
         super().__init__(data_file)
-    
+
     def run_simulations(self, replicates, seed):
         if replicates is None:
             replicates = self.default_replicates
@@ -1043,8 +1044,8 @@ class MetricsByMutationRateDataset(Dataset):
                     # Run the simulation
                     ts, fn = self.single_simulation(
                         sample_size, Ne, length, recombination_rate, mutation_rate,
-                        replicate_seed, replicate_seed, 
-                        #discretise_mutations=True) 
+                        replicate_seed, replicate_seed,
+                        #discretise_mutations=True)
                         discretise_mutations=False) #stop doing Jerome's discretising step!
                     with open(fn +".nex", "w+") as out:
                         ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
@@ -1064,7 +1065,7 @@ class MetricsByMutationRateDataset(Dataset):
                         row.aw_burnin_iters = aw_burnin_iters
                         row.aw_iter_out_freq = aw_iter_out_freq
                         row.tsinfer_biforce_reps = tsinfer_biforce_reps
-                        self.save_variant_matrices(ts, fn, error_rate, 
+                        self.save_variant_matrices(ts, fn, error_rate,
                             #infinite_sites=True)
                             infinite_sites=False)
         return data
@@ -1100,7 +1101,7 @@ class SampleSizeEffectOnSubsetDataset(Dataset):
     tools = {
         "tsinfer":   always_true,
         #only use fastARG & ARGweaver tools on small subsamples
-        "fastARG":   lambda self, row: row.subsample==self.base_subsample_size, 
+        "fastARG":   lambda self, row: row.subsample==self.base_subsample_size,
         "ARGweaver": lambda self, row: row.subsample==self.base_subsample_size
         }
     default_replicates = 10
@@ -1114,7 +1115,7 @@ class SampleSizeEffectOnSubsetDataset(Dataset):
         self.metrics_for["tsibiny"] = {'files_func':tsinfer_name_from_msprime_row,
                                        'files_func_params':{'subsample_size':self.base_subsample_size},
                                        'param_func': ARGmetric_params_from_row}
-        
+
     def run_simulations(self, replicates, seed):
         if replicates is None:
             replicates = self.default_replicates
@@ -1184,7 +1185,7 @@ class SampleSizeEffectOnSubsetDataset(Dataset):
                         row.aw_burnin_iters = aw_burnin_iters
                         row.aw_iter_out_freq = aw_iter_out_freq
                         row.tsinfer_biforce_reps = tsinfer_biforce_reps
-                        self.save_variant_matrices(ts_sub, subfn, error_rate, 
+                        self.save_variant_matrices(ts_sub, subfn, error_rate,
                             infinite_sites=False)
         return data
 
@@ -1210,11 +1211,11 @@ class Figure(object):
     def __init__(self, data_file):
         self.dataset = self.datasetClass(data_file)
         self.filepath = self.dataset.data_path + "+" + self.name
-        
+
     def R_plot(self, Rcmds):
         """
         Take the R commands used to generate a plot (as a single string
-        or an array of lines) and evaluate them in R, saving the result 
+        or an array of lines) and evaluate them in R, saving the result
         to a pdf file.
         """
         if isinstance(Rcmds, str):
@@ -1240,7 +1241,7 @@ class Figure(object):
         if Rdata_cmd is None:
             Rdata_cmd = "data <- read.csv('{}')".format(self.dataset.data_file)
         self.R_plot([Rdata_cmd] + Rcmds)
-    
+
     @staticmethod
     def to_Rvec(vec):
         try:
@@ -1256,14 +1257,14 @@ class Figure(object):
                 #values are probably numeric
                 s = "c(" + ",".join([str(v) for v in vec]) + ")"
         return s
-        
+
     def plot(self):
         raise NotImplementedError()
 
 class BasicARGweaverVSfastARGFigure(Figure):
     datasetClass = BasicTestDataset
     name = "aw_vs_fa"
-    
+
     def plot(self):
         metric_colours = collections.OrderedDict(
             [(k,v) for k,v in self.default_metric_colours.items() if k in self.dataset.metrics_for])
@@ -1276,7 +1277,7 @@ datamean <- aggregate(subset(data, select=-ARGweaver_iterations), list(data$muta
 layout(matrix(1:6,2,3))
 sapply(metrics, function(m) {
     colnames = paste(names(toolcols), m, sep='_')
-    matplot(data$mutation_rate, data[, colnames], type='p', pch=c(1,2), col=toolcols, main=m, 
+    matplot(data$mutation_rate, data[, colnames], type='p', pch=c(1,2), col=toolcols, main=m,
         log='x', ylim = c(0,max(data[, colnames], na.rm=TRUE)))
     matlines(datamean$mutation_rate, datamean[, colnames], type='l', lty=1, col=toolcols)
     mtext(names(toolcols), line=seq(-1.2, by=-0.8, along.with=toolcols), adj=0.95,
@@ -1289,7 +1290,7 @@ sapply(metrics, function(m) {
 class MetricsAgainstMutationRateFigure(Figure):
     datasetClass = MetricsByMutationRateDataset
     name = "metrics_vs_mutrate"
-    
+
     def plot(self):
         metric_colours = collections.OrderedDict(
             [(k,v) for k,v in self.default_metric_colours.items() if k in self.dataset.metrics_for])
@@ -1305,8 +1306,8 @@ error.rates <- sort(unique(data$error_rate))
 layout(matrix(1:6,2,3))
 sapply(metrics, function(m) {
     colnames = paste(names(toolcols), m, sep='_')
-    matplot(data$mutation_rate, data[, colnames], type='p', col=toolcols, main=paste(m, 'metric'), 
-        ylab='Distance between true and inferred trees', 
+    matplot(data$mutation_rate, data[, colnames], type='p', col=toolcols, main=paste(m, 'metric'),
+        ylab='Distance between true and inferred trees',
         xlab='mutation rate (err: dotted=0.1, dashed=0.01, solid=0.0)',
         log='x', ylim = c(0,max(data[, colnames], na.rm=TRUE)),
         pch = ifelse(data$error_rate == error.rates[1],1,ifelse(data$error_rate == error.rates[2], 2, 4)))
@@ -1327,7 +1328,7 @@ sapply(metrics, function(m) {
 class TSSampleSubset(Figure):
     datasetClass = SampleSizeEffectOnSubsetDataset
     name = "ts_sample_subset"
-    
+
     def plot(self):
         metric_colours = collections.OrderedDict(
             [(k,v) for k,v in self.default_metric_colours.items() if k in self.dataset.metrics_for])
@@ -1343,8 +1344,8 @@ error.rates <- sort(unique(data$error_rate))
 layout(matrix(1:6,2,3))
 sapply(metrics, function(m) {
     colnames = paste(names(toolcols), m, sep='_')
-    matplot(data$mutation_rate, data[, colnames], type='p', col=toolcols, main=paste(m, 'metric'), 
-        ylab='Distance between true and inferred trees', 
+    matplot(data$mutation_rate, data[, colnames], type='p', col=toolcols, main=paste(m, 'metric'),
+        ylab='Distance between true and inferred trees',
         xlab='mutation rate (err: dotted=0.1, dashed=0.01, solid=0.0)',
         log='x', ylim = c(0,max(data[, colnames], na.rm=TRUE)),
         pch = ifelse(data$error_rate == error.rates[1],1,ifelse(data$error_rate == error.rates[2], 2, 4)))
@@ -1361,7 +1362,7 @@ sapply(metrics, function(m) {
 """ % (self.to_Rvec(metric_colours), self.to_Rvec(metrics))
             )
 
-                
+
 def run_setup(cls, args):
     f = cls(args.data_file)
     f.setup(args)
@@ -1432,7 +1433,7 @@ def main():
          '--data_file', '-f', type=str,
          help="which CSV file to use for existing data, if not the default", )
     subparser.add_argument(
-         '--force',  action='store_true', 
+         '--force',  action='store_true',
          help="redo all the inferences, even if we have already filled out some", )
     subparser.add_argument(
          '--row', type=int,  nargs="*", default=[],
@@ -1453,7 +1454,7 @@ def main():
          '--data_file', '-f', type=str,
          help="which CSV file to use for existing data, if not the default")
     subparser.add_argument(
-         '--force',  action='store_true', 
+         '--force',  action='store_true',
          help="redo all the metrics, even if we have already filled out some", )
     subparser.add_argument(
          '--row', type=int,  nargs="*", default=[],
@@ -1478,21 +1479,28 @@ def main():
     logging.basicConfig(
         format='%(asctime)s %(message)s', level=log_level, stream=sys.stdout)
 
+    # Create a new process group and become the leader.
+    os.setpgrp()
     k = args.name[0]
-    if k == "all":
-        classes = datasets
-        if args.func == run_plot:
-            classes = figures
-        for name, cls in name_map.items():
-            if cls in classes:
+    try:
+        if k == "all":
+            classes = datasets
+            if args.func == run_plot:
+                classes = figures
+            for name, cls in name_map.items():
+                if cls in classes:
+                    args.func(cls, args)
+        else:
+            try:
+                cls = name_map[k]
                 args.func(cls, args)
-    else:
-        try:
-            cls = name_map[k]
-            args.func(cls, args)
-        except KeyError as e:
-            e.args = (e.args[0] + ". Select from datasets={} or figures={}".format(
-                    [d.name for d in datasets], [f.name for f in figures]),)
-            raise
+            except KeyError as e:
+                e.args = (e.args[0] + ". Select from datasets={} or figures={}".format(
+                        [d.name for d in datasets], [f.name for f in figures]),)
+                raise
+    except KeyboardInterrupt:
+        print("Interrupted! Trying to kill subprocesses")
+        os.killpg(0, signal.SIGINT)
+
 if __name__ == "__main__":
     main()
