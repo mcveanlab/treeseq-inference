@@ -483,7 +483,7 @@ class InferenceRunner(object):
                 shutil.copyfileobj(open(new_prefix + ".stats"), stats)
             #cannot translate these to msprime ts objects, as smc2arg does not work
             #see https://github.com/mdrasmus/argweaver/issues/20
-            return saved_iterations, new_stats_file_name, sum(cpu_time), np.mean(memory_use)
+            return saved_iterations, new_stats_file_name, sum(cpu_time), max(memory_use)
         except ValueError as e:
             if 'src/argweaver/sample_thread.cpp:517:' in str(e):
                 logging.info("Hit argweaver bug https://github.com/mcveanlab/treeseq-inference/issues/25. Skipping")
