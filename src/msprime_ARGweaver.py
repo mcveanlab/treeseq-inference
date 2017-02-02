@@ -114,11 +114,11 @@ def variant_matrix_to_ARGweaver_in(var_matrix, var_positions, seq_length, ARGwea
     ARGweaver_filehandle.seek(0)
         
     
-def ARGweaver_smc_to_msprime_txts(smc2bin_executable, prefix, tree_filehandle):
+def ARGweaver_smc_to_msprime_txts(smc2bin_executable, prefix, tree_filehandle, override_assertions=False):
     """
     convert the ARGweaver smc representation to coalescence records format
     """
-    assert False, "smc2arg is currently broken and should not be used." + \
+    assert override_assertions, "smc2arg is currently broken and should not be used." + \
         "See https://github.com/mdrasmus/argweaver/issues/20"
     from subprocess import call
     logging.info("== Converting the ARGweaver smc output file '{}' to .arg format using '{}' ==".format(\
@@ -284,10 +284,12 @@ def msprime_txts_to_hdf5(tree_filehandle, hdf5_outname=None):
 
 def main(args):
     import os
+    import itertools
+    import subprocess
     from dendropy import TreeList, calculate
     import msprime_extras
     msprime.TreeSequence.write_nexus_trees = msprime_extras.write_nexus_trees
-    iterations = 30
+    iterations = 50
     full_prefix = os.path.join(args.outputdir, os.path.splitext(os.path.basename(args.hdf5file))[0])
     with open(full_prefix+".sites", "w+") as aw_in:
         msprime_hdf5_to_ARGweaver_in(args.hdf5file, aw_in)
@@ -301,22 +303,24 @@ def main(args):
             '--iters', str(iterations),
             '--sample-step', str(iterations),
             '--output', full_prefix]
-        logging.debug("running '{}'".format(" ".join(cmd)))
         assert os.stat(aw_in.name).st_size > 0,  "Initial .sites file is empty"
+        logging.debug("running '{}'".format(" ".join(cmd)))
+        subprocess.call(cmd)
         smc = full_prefix + "." + str(iterations) + ".smc.gz"
         assert os.path.isfile(smc),  "No output file names {}".format(smc)
         smc_nex = smc.replace(".smc.gz", ".nex")
-        with open(smc_nex, "w+") as smc_nex:
-            ARGweaver_smc_to_nexus(smc, smc_nex, zero_based_tip_numbers=False)
+        with open(smc_nex, "w+") as smc_nex_out:
+            ARGweaver_smc_to_nexus(smc, smc_nex_out, zero_based_tip_numbers=False)
         arg_nex=smc.replace(".smc.gz", ".msp_nex")
         with open(smc.replace(".smc.gz", ".msp_recs"), "w+") as tree, \
             open(arg_nex, "w+") as msp_nex:
             ARGweaver_smc_to_msprime_txts(
                 os.path.join(args.ARGweaver_executable_dir, args.ARGweaver_smc2arg_executable), 
                 smc.replace(".smc.gz", ""),
-                tree)
+                tree,
+                override_assertions=True)
             ts = msprime_txts_to_hdf5(tree)
-            ts.write_nexus(msp_nex, zero_based_tip_numbers=False)
+            ts.write_nexus_trees(msp_nex, zero_based_tip_numbers=False)
         smc_trees = TreeList.get(path=smc_nex, schema="nexus")
         arg_trees = TreeList.get(path=arg_nex, schema='nexus') 
         #zero_based_tip_numbers assumed False)
@@ -326,20 +330,23 @@ def main(args):
         #the original sequences with the reconstructed ones
             
         assert len(smc_trees)==len(arg_trees), "number of trees in original and msprime-processed files is not the same"
-        assert [t.name for t in smc_trees] == [t.name for t in arg_trees], "names are different"
+        assert [int(float(t.label)) for t in smc_trees] == [int(float(t.label)) for t in arg_trees], "names are different"
         if ts.get_sample_size() <= 5:
+            stats={}
             print("Testing all permutations of tips")
-            for perm in itertools.permutations(range(1, ts.get_sample_size+1)):
+            for i, perm in enumerate(itertools.permutations(range(1, ts.get_sample_size()+1))):
                 arg_trees = TreeList.get(path=arg_nex, schema='nexus')
                 for taxon in arg_trees.taxon_namespace:
-                    taxon.label = perm[int(taxon_label)+1]
+                    taxon.label = perm[int(taxon.label)-1]
                 test_trees = arg_trees.migrate_taxon_namespace(smc_trees.taxon_namespace)
-        print("The following RF and wRF statistics should be zero or near zero")
-        for (smc_tree, msp_tree) in zip(smc_trees, msp_trees):
-            print("Tree up to smc position {}, ms prime position {}: RF={} wRF={}".format(smc_tree._label, msp_tree._label, calculate.treecompare.symmetric_difference(smc_tree, msp_tree), calculate.treecompare.weighted_robinson_foulds_distance(smc_tree, msp_tree)))
+                tot=0
+                for (smc_tree, arg_tree) in zip(smc_trees, arg_trees):
+                    tot+=calculate.treecompare.symmetric_difference(smc_tree, arg_tree)
+                stats[i] = tot
+            for perm in sorted(stats, key=stats.get):
+                print("Permutation {}, sum stat = {} over {} trees".format(perm, stats[perm], len(smc_trees)))
 
 if __name__ == "__main__":
-
     import argparse
     import filecmp
     import os
@@ -353,9 +360,9 @@ if __name__ == "__main__":
     parser.add_argument('--ARGweaver_smc2arg_executable', '-s', default="smc2arg", help='the name of the ARGweaver executable')
     parser.add_argument('--sample_size', '-n', type=int, default=5, help='the sample size if an hdf5 file is not given')
     parser.add_argument('--effective_population_size', '-Ne', type=float, default=5000, help='the effective population size if an hdf5 file is not given')
-    parser.add_argument('--sequence_length', '-l', type=float, default=2.5e-8, help='the sequence length if an hdf5 file is not given')
+    parser.add_argument('--sequence_length', '-l', type=float, default=550000, help='the sequence length if an hdf5 file is not given')
     parser.add_argument('--recombination_rate', '-rho', type=float, default=2.5e-8, help='the recombination rate if an hdf5 file is not given')
-    parser.add_argument('--mutation_rate', '-mu', type=float, default=1.5e-8, help='the mutation rate if an hdf5 file is not given')
+    parser.add_argument('--mutation_rate', '-mu', type=float, default=5e-8, help='the mutation rate if an hdf5 file is not given')
     parser.add_argument('--random_seed', '-seed', type=int, default=1234, help='a random seed for msprime & AW simulation')
     parser.add_argument('outputdir', nargs="?", default=None, help='the directory in which to store the intermediate files. If None, files are saved under temporary names')
     parser.add_argument('--verbosity', '-v', action='count', default=0)
