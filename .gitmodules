@@ -7,3 +7,6 @@
 [submodule "argweaver"]
 	path = argweaver
 	url = https://github.com/mdrasmus/argweaver
+[submodule "RentPlus"]
+	path = RentPlus
+	url = https://github.com/SajadMirzaei/RentPlus
