@@ -793,7 +793,7 @@ class Dataset(object):
             pos = np.array([v.position for v in ts.variants()])
             logging.debug("writing variant positions to {} for tsinfer".format(outfile))
             np.save(outfile, pos)
-            if infinite_sites: #for infinite sites, assume we have diecretised mutations to ints
+            if infinite_sites: #for infinite sites, assume we have discretised mutations to ints
                 assert all(p.is_integer() for p in pos), \
                     "Variant positions are not all integers in {}".format()
             logging.debug("writing variant matrix to {}.hap for fastARG".format(filename))
@@ -1311,9 +1311,8 @@ class MetricsAgainstMutationRateFigure(Figure):
 toolcols <- %s
 metrics <- %s
 datamean <- aggregate(subset(data, select=-ARGweaver_iterations), list(data$mutation_rate, data$error_rate), mean, na.rm=TRUE)
-error.rates <- unique(data$error_rate)
-layout(matrix(1:6,2,3))
 error.rates <- sort(unique(data$error_rate))
+layout(matrix(seq_along(metrics),nrows=2))
 layout(matrix(1:6,2,3))
 sapply(metrics, function(m) {
     colnames = paste(names(toolcols), m, sep='_')
@@ -1331,6 +1330,42 @@ sapply(metrics, function(m) {
 
     mtext(names(toolcols), 1, line=rev(seq(-1.2, by=-0.8, along.with=toolcols)), adj=0.05,
         cex=0.7, col=toolcols)
+})
+""" % (self.to_Rvec(metric_colours), self.to_Rvec(metrics))
+            )
+
+class MetricsAgainstMutationRateSimpleFigure(Figure):
+    """
+    A simpler version that 
+    """
+    datasetClass = MetricsByMutationRateDataset
+    name = "metrics_vs_mutrate_simple"
+
+    def plot(self):
+        metric_colours = collections.OrderedDict(
+            [(k,v) for k,v in self.default_metric_colours.items() if k in self.dataset.metrics_for])
+        metrics  = [m for m in ARG_metrics.get_ARG_metrics() if not m.startswith('w')]
+        self.R_plot_data(\
+"""
+toolcols <- %s
+metrics <- %s
+datamean <- aggregate(subset(data, select=-ARGweaver_iterations), list(data$mutation_rate, data$error_rate), mean, na.rm=TRUE)
+error.rates <- sort(unique(data$error_rate))
+layout(seq_along(error.rates))
+sapply(metrics, function(m) {
+    colnames = paste(names(toolcols), m, sep='_')
+    sapply(error.rates, function(error.rate) {
+        d = subset(data, error_rate==error.rate)
+        dm = subset(datamean, error_rate==error.rate)
+        matplot(d$mutation_rate, d[, colnames], type='p', col=toolcols, main=paste(m, 'metric: error', error.rate),
+            ylab='Distance between true and inferred trees',
+            xlab='mutation rate',
+            log='x', ylim = c(0,max(d[, colnames], na.rm=TRUE)),
+            pch = ifelse(data$error_rate == error.rates[1],1,ifelse(data$error_rate == error.rates[2], 2, 4)))
+        matlines(dm$mutation_rate, dm[, colnames], lty=1, col=toolcols)
+        mtext(names(toolcols), 1, line=rev(seq(-1.2, by=-0.8, along.with=toolcols)), adj=0.05,
+            cex=0.7, col=toolcols)
+    })
 })
 """ % (self.to_Rvec(metric_colours), self.to_Rvec(metrics))
             )
@@ -1396,16 +1431,8 @@ def run_plot(cls, args):
 
 
 def main():
-    datasets = [
-        BasicTestDataset,
-        NumRecordsBySampleSizeDataset,
-        MetricsByMutationRateDataset,
-        SampleSizeEffectOnSubsetDataset,
-    ]
-    figures = [
-        BasicARGweaverVSfastARGFigure,
-        MetricsAgainstMutationRateFigure,
-    ]
+    datasets = Dataset.__subclasses__()
+    figures = Figure.__subclasses__()
     name_map = dict([(d.name, d) for d in datasets + figures])
     parser = argparse.ArgumentParser(
         description="Set up base data, generate inferred datasets, process datasets and plot figures.")
