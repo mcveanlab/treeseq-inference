@@ -15,6 +15,7 @@ import os.path
 import random
 import shutil
 import signal
+import statistics
 import subprocess
 import sys
 import tempfile
@@ -38,6 +39,8 @@ import ARG_metrics
 
 fastARG_executable = os.path.join(curr_dir,'..','fastARG','fastARG')
 ARGweaver_executable = os.path.join(curr_dir,'..','argweaver','bin','arg-sample')
+smc2arg_executable = os.path.join(curr_dir,'..','argweaver','bin','smc2arg')
+RentPlus_executable = os.path.join(curr_dir,'..','RentPlus','RentPlus.jar')
 tsinfer_executable = os.path.join(curr_dir,'run_tsinfer.py')
 #monkey-patch write.nexus into msprime
 msprime.TreeSequence.write_nexus_trees = msprime_extras.write_nexus_trees
@@ -53,6 +56,9 @@ def cpu_time_colname(tool):
 
 def memory_colname(tool):
     return tool + "_memory"
+
+def n_coalescence_records_colname(tool):
+    return tool + "_crecords"
 
 def metric_colnames(metrics_for):
     metric_names = list(ARG_metrics.get_ARG_metrics())
@@ -211,6 +217,22 @@ def argweaver_names_from_msprime_row(row, sim_dir):
                                      seed=row.seed, iteration_number=it)
                 for it in nanblank(row.ARGweaver_iterations).split(",") if it]
 
+
+def construct_rentplus_name(sim_name):
+    """
+    Returns an RentPlus inference filename (without file extension),
+    based on a simulation name. 
+    """
+    d,f = os.path.split(sim_name)
+    return os.path.join(d,'+'.join(['rentpls', f, ""]))
+
+def rentplus_name_from_msprime_row(row, sim_dir):
+    """
+    return the rentplus name based on an msprime sim specified by row
+    there is one name per argweaver iteration listed in row.ARGweaver_iterations
+    """
+    return construct_rentplus_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'))
+
 def construct_tsinfer_name(sim_name, subsample_size=None):
     """
     Returns an MSprime Li & Stevens inference filename.
@@ -316,6 +338,7 @@ class InferenceRunner(object):
         positions_fn = self.base_fn + ".pos.npy"
         time = None
         memory = None
+        c_records = None
         logging.debug("reading: variant matrix {} & positions {} for msprime inference".format(
             samples_fn, positions_fn))
         if os.path.isfile(samples_fn) and os.path.isfile(positions_fn):
@@ -323,6 +346,7 @@ class InferenceRunner(object):
             inferred_ts, time, memory = self.run_tsinfer(
                 samples_fn, positions_fn, self.row.length, scaled_recombination_rate,
                 num_threads=self.num_threads)
+            
             if 'tsinfer_subset' in self.row:
                 logging.debug("writing trees for only a subset of {} / {} tips".format(
                     int(self.row.tsinfer_subset), inferred_ts.sample_size))
@@ -330,17 +354,18 @@ class InferenceRunner(object):
                 out_fn = construct_tsinfer_name(self.base_fn, int(self.row.tsinfer_subset))
             else:
                 out_fn = construct_tsinfer_name(self.base_fn)
-
             with open(out_fn +".nex", "w+") as out:
                 #tree metrics assume tips are numbered from 1 not 0
                 inferred_ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+            c_records = inferred_ts.get_num_records()
         else:
             logging.info("Files not found for tsinfer inference:" +
                 " simulation on row {} has produced no files.".format(self.row[0]) +
                 " If you are not expecting this, it could be a simulation with no mutations")
         return  {
             cpu_time_colname(self.tool): time,
-            memory_colname(self.tool): memory
+            memory_colname(self.tool): memory,
+            n_coalescence_records_colname(self.tool): c_records
         }
 
     def __run_fastARG(self):
@@ -348,12 +373,14 @@ class InferenceRunner(object):
         infile = self.base_fn + ".hap"
         time = None
         memory = None
+        c_records = None
         logging.debug("reading: {} for fastARG inference".format(infile))
         if os.path.isfile(infile):
             out_fn = construct_fastarg_name(self.base_fn, inference_seed) + ".nex"
             inferred_ts, time, memory = self.run_fastarg(infile, self.row.length, inference_seed)
             with open(out_fn , "w+") as out:
                 inferred_ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+            c_records = inferred_ts.get_num_records()
         else:
             logging.info("Files not found for fastARG inference:" +
                 " simulation on row {} has produced no files.".format(self.row[0]) +
@@ -361,6 +388,8 @@ class InferenceRunner(object):
         return {
             cpu_time_colname(self.tool): time,
             memory_colname(self.tool): memory
+            n_coalescence_records_colname(self.tool): c_records
+
         }
 
     def __run_ARGweaver(self):
@@ -368,6 +397,7 @@ class InferenceRunner(object):
         infile = self.base_fn + ".sites"
         time = None
         memory = None
+        c_records = []
         iteration_ids = []
         stats_file = None
         logging.debug("reading: {} for ARGweaver inference".format(infile))
@@ -383,6 +413,15 @@ class InferenceRunner(object):
                 with open(base + ".nex", "w+") as out:
                     msprime_ARGweaver.ARGweaver_smc_to_nexus(
                         base+".smc.gz", out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+                try:
+                    with open(base+".msp", "w+") as msprime_txtrecs:
+                        msprime_ARGweaver.ARGweaver_smc_to_msprime_txts(
+                            smc2arg_executable, base, msprime_txtrecs,
+                            override_assertions=True)
+                        inferred_ts = msprime_txts_to_hdf5(msprime_txtrecs)
+                        c_records.append(inferred_ts.get_num_records())
+                except AssertionError:
+                    #smc2arg cyclical bug: ignore this conversion
         else:
             logging.info("Files not found for ARGweaver inference:" +
                 " simulation on row {} has produced no files.".format(self.row[0]) +
@@ -390,6 +429,7 @@ class InferenceRunner(object):
         results = {
             cpu_time_colname(self.tool): time,
             memory_colname(self.tool): memory,
+            n_coalescence_records_colname(self.tool): statistics.mean(c_records) if len(c_records) else None,
             "ARGweaver_iterations": ",".join(iteration_ids),
             "ARGweaver_stats_file":stats_file,
         }
@@ -431,6 +471,33 @@ class InferenceRunner(object):
                     fa_revised.name, debug_file),)
                 raise
             return inferred_ts, cpu_time, memory_use
+
+    @staticmethod
+    def run_rentplus(file_name, seq_length, seed):
+        with tempfile.NamedTemporaryFile("w+") as fa_out, \
+                tempfile.NamedTemporaryFile("w+") as tree, \
+                tempfile.NamedTemporaryFile("w+") as muts, \
+                tempfile.NamedTemporaryFile("w+") as fa_revised:
+            cmd = msprime_fastARG.get_cmd(fastARG_executable, file_name, seed)
+            cpu_time, memory_use = time_cmd(cmd, fa_out)
+            logging.debug("ran fastarg for seq length {} [{} s]: '{}'".format(seq_length, cpu_time, cmd))
+            var_pos = msprime_fastARG.variant_positions_from_fastARGin_name(file_name)
+            root_seq = msprime_fastARG.fastARG_root_seq(fa_out)
+            msprime_fastARG.fastARG_out_to_msprime_txts(
+                    fa_out, var_pos, tree, muts, seq_len=seq_length)
+            inferred_ts = msprime_fastARG.msprime_txts_to_fastARG_in_revised(
+                    tree, muts, root_seq, fa_revised, simplify=True)
+            try:
+                assert filecmp.cmp(file_name, fa_revised.name, shallow=False), \
+                    "{} and {} differ".format(file_name, fa_revised.name)
+            except Exception as e:
+                debug_file = os.path.join(os.path.dirname(fa_revised.name), "bad.hap")
+                shutil.copyfile(fa_revised.name, debug_file)
+                e.args = (e.args[0] + ". File '{}' copied to '{}' for debugging".format(
+                    fa_revised.name, debug_file),)
+                raise
+            return inferred_ts, cpu_time, memory_use
+
 
     @staticmethod
     def run_argweaver(
@@ -803,6 +870,10 @@ class Dataset(object):
             with open(filename+".sites", "w+") as argweaver_in:
                 msprime_ARGweaver.variant_matrix_to_ARGweaver_in(np.transpose(S), pos,
                         ts.get_sequence_length(), argweaver_in, infinite_sites=infinite_sites)
+            logging.debug("writing variant matrix to {}.dat for RentPlus".format(filename))
+            with open(filename+".dat", "w+") as rentplus_in:
+                msprime_RentPlus.variant_matrix_to_RentPlus_in(np.transpose(S), pos,
+                        ts.get_sequence_length(), rentplus_in, infinite_sites=False)
         else:
             #No variants. We should be able to get away with not creating any files
             #and the infer step will simply skip this simulation
