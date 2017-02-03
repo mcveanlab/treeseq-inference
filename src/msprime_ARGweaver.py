@@ -331,6 +331,13 @@ def main(args):
             
         assert len(smc_trees)==len(arg_trees), "number of trees in original and msprime-processed files is not the same"
         assert [int(float(t.label)) for t in smc_trees] == [int(float(t.label)) for t in arg_trees], "names are different"
+        tot=0
+        for (smc_tree, arg_tree) in zip(smc_trees, arg_trees):
+            tot+=abs(calculate.treemeasure.colless_tree_imbalance(smc_tree, None)-
+                calculate.treemeasure.colless_tree_imbalance(arg_tree, None))
+        print("sum of tree balance differences is {} (should be 0) over {} trees of {} tips".format(
+            tot, len(smc_trees), len(smc_trees.taxon_namespace)))
+        
         if ts.get_sample_size() <= 5:
             stats={}
             print("Testing all permutations of tips")
@@ -342,10 +349,11 @@ def main(args):
                 tot=0
                 for (smc_tree, arg_tree) in zip(smc_trees, arg_trees):
                     tot+=calculate.treecompare.symmetric_difference(smc_tree, arg_tree)
-                stats[i] = tot
+                stats[i] = tot, perm
             
-            for perm in sorted(stats, key=stats.get, reverse=True):
-                print("Permutation {}, sum stat = {} over {} trees".format(perm, stats[perm], len(smc_trees)))
+            for i in sorted(stats, key=stats.get, reverse=True):
+                print("Permutation {}, sum stat = {} over {} trees".format(
+                    (i, stats[i][1]) if stats[i][0]==0 else i, stats[i][0], len(smc_trees)))
 
 if __name__ == "__main__":
     import argparse
@@ -361,7 +369,7 @@ if __name__ == "__main__":
     parser.add_argument('--ARGweaver_smc2arg_executable', '-s', default="smc2arg", help='the name of the ARGweaver executable')
     parser.add_argument('--sample_size', '-n', type=int, default=5, help='the sample size if an hdf5 file is not given')
     parser.add_argument('--effective_population_size', '-Ne', type=float, default=5000, help='the effective population size if an hdf5 file is not given')
-    parser.add_argument('--sequence_length', '-l', type=float, default=5500, help='the sequence length if an hdf5 file is not given')
+    parser.add_argument('--sequence_length', '-l', type=float, default=55000, help='the sequence length if an hdf5 file is not given')
     parser.add_argument('--recombination_rate', '-rho', type=float, default=2.5e-8, help='the recombination rate if an hdf5 file is not given')
     parser.add_argument('--mutation_rate', '-mu', type=float, default=5e-8, help='the mutation rate if an hdf5 file is not given')
     parser.add_argument('--random_seed', '-seed', type=int, default=1234, help='a random seed for msprime & AW simulation')
