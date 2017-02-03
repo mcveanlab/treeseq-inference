@@ -343,7 +343,8 @@ def main(args):
                 for (smc_tree, arg_tree) in zip(smc_trees, arg_trees):
                     tot+=calculate.treecompare.symmetric_difference(smc_tree, arg_tree)
                 stats[i] = tot
-            for perm in sorted(stats, key=stats.get):
+            
+            for perm in sorted(stats, key=stats.get, reverse=True):
                 print("Permutation {}, sum stat = {} over {} trees".format(perm, stats[perm], len(smc_trees)))
 
 if __name__ == "__main__":
@@ -360,7 +361,7 @@ if __name__ == "__main__":
     parser.add_argument('--ARGweaver_smc2arg_executable', '-s', default="smc2arg", help='the name of the ARGweaver executable')
     parser.add_argument('--sample_size', '-n', type=int, default=5, help='the sample size if an hdf5 file is not given')
     parser.add_argument('--effective_population_size', '-Ne', type=float, default=5000, help='the effective population size if an hdf5 file is not given')
-    parser.add_argument('--sequence_length', '-l', type=float, default=550000, help='the sequence length if an hdf5 file is not given')
+    parser.add_argument('--sequence_length', '-l', type=float, default=5500, help='the sequence length if an hdf5 file is not given')
     parser.add_argument('--recombination_rate', '-rho', type=float, default=2.5e-8, help='the recombination rate if an hdf5 file is not given')
     parser.add_argument('--mutation_rate', '-mu', type=float, default=5e-8, help='the mutation rate if an hdf5 file is not given')
     parser.add_argument('--random_seed', '-seed', type=int, default=1234, help='a random seed for msprime & AW simulation')
@@ -375,7 +376,6 @@ if __name__ == "__main__":
     logging.basicConfig(
         format='%(asctime)s %(message)s', level=log_level, stream=sys.stdout)
 
-    logging.info("foo")
     if args.hdf5file is None:
         logging.info("Running a new simulation with n {}, Ne {}, l {}, rho {}, mu {}".format(
         args.sample_size, args.effective_population_size, args.sequence_length,
