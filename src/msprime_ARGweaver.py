@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 """Various functions to convert msprime simulation file to ARGweaver input format, and from .arg files to msprime input.
 
-When run as a script, takes an msprime simulation in hdf5 format, saves to ARGweaver input format (haplotype sequences), runs ARGweaver inference on it, converts the ARGweaver output file (arg and mutations) to msprime input files, reads these into msprime outputs the haplotype sequences again, and checks that the haplotype sequences are the same.
+When run as a script, takes an msprime simulation in hdf5 format, saves to ARGweaver input format (haplotype sequences), 
+runs ARGweaver inference on it to make .smc files, converts the .smc ARGweaver output files to msprime input files, 
+reads these into msprime, and checks that the trees from msprime are the same/. Dues to a bug in smc2arg 
+(https://github.com/mdrasmus/argweaver/issues/20) these are *NOT* the same, but this tests tree balance statistics 
+(which are tip-label agnostic) and (if sample <= 5) looks at all possible tip permutations to see if the trees are
+essentially the same but with the labels lost.
 
-E.g. for 8.hdf files produced by generate_data.py
+E.g. to look ove many small trees (seq length 1 million bases), try
 
-./msprime_ARGweaver.py ../test_files/8.hdf5 -d ../argweaver/bin/
+python3 ./src/msprime_ARGweaver.py tmp/AWtest -v -l 1000000 
+
 
 """
 import sys
