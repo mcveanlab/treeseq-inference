@@ -356,7 +356,8 @@ class InferenceRunner(object):
                 out_fn = construct_tsinfer_name(self.base_fn)
             with open(out_fn +".nex", "w+") as out:
                 #tree metrics assume tips are numbered from 1 not 0
-                inferred_ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+                inferred_ts.write_nexus_trees(out, tree_labels_between_variants=True,
+                    zero_based_tip_numbers=tree_tip_labels_start_at_0)
             c_records = inferred_ts.get_num_records()
         else:
             logging.info("Files not found for tsinfer inference:" +
@@ -379,6 +380,7 @@ class InferenceRunner(object):
             out_fn = construct_fastarg_name(self.base_fn, inference_seed) + ".nex"
             inferred_ts, time, memory = self.run_fastarg(infile, self.row.length, inference_seed)
             with open(out_fn , "w+") as out:
+                #the treeseq output by run_fastarg() is already averaged between regions
                 inferred_ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
             c_records = inferred_ts.get_num_records()
         else:
@@ -473,30 +475,29 @@ class InferenceRunner(object):
             return inferred_ts, cpu_time, memory_use
 
     @staticmethod
-    def run_rentplus(file_name, seq_length, seed):
-        with tempfile.NamedTemporaryFile("w+") as fa_out, \
-                tempfile.NamedTemporaryFile("w+") as tree, \
-                tempfile.NamedTemporaryFile("w+") as muts, \
-                tempfile.NamedTemporaryFile("w+") as fa_revised:
-            cmd = msprime_fastARG.get_cmd(fastARG_executable, file_name, seed)
-            cpu_time, memory_use = time_cmd(cmd, fa_out)
-            logging.debug("ran fastarg for seq length {} [{} s]: '{}'".format(seq_length, cpu_time, cmd))
-            var_pos = msprime_fastARG.variant_positions_from_fastARGin_name(file_name)
-            root_seq = msprime_fastARG.fastARG_root_seq(fa_out)
-            msprime_fastARG.fastARG_out_to_msprime_txts(
-                    fa_out, var_pos, tree, muts, seq_len=seq_length)
-            inferred_ts = msprime_fastARG.msprime_txts_to_fastARG_in_revised(
-                    tree, muts, root_seq, fa_revised, simplify=True)
-            try:
-                assert filecmp.cmp(file_name, fa_revised.name, shallow=False), \
-                    "{} and {} differ".format(file_name, fa_revised.name)
-            except Exception as e:
-                debug_file = os.path.join(os.path.dirname(fa_revised.name), "bad.hap")
-                shutil.copyfile(fa_revised.name, debug_file)
-                e.args = (e.args[0] + ". File '{}' copied to '{}' for debugging".format(
-                    fa_revised.name, debug_file),)
-                raise
-            return inferred_ts, cpu_time, memory_use
+    def run_rentplus(file_name, seq_length):
+        """
+        runs RentPlus, returning the output filename, the total CPU, & max mem
+        """
+        cmd = ["java", "-jar", RentPlus_executable, file_name)
+        cpu_time, memory_use = time_cmd(cmd)
+        logging.debug("ran RentPlus for seq length {} [{} s]: '{}'".format(seq_length, cpu_time, cmd))
+        #we cannot back-convert RentPlus output to 
+        root_seq = msprime_fastARG.fastARG_root_seq(fa_out)
+        msprime_fastARG.fastARG_out_to_msprime_txts(
+                fa_out, var_pos, tree, muts, seq_len=seq_length)
+        inferred_ts = msprime_fastARG.msprime_txts_to_fastARG_in_revised(
+                tree, muts, root_seq, fa_revised, simplify=True)
+        try:
+            assert filecmp.cmp(file_name, fa_revised.name, shallow=False), \
+                "{} and {} differ".format(file_name, fa_revised.name)
+        except Exception as e:
+            debug_file = os.path.join(os.path.dirname(fa_revised.name), "bad.hap")
+            shutil.copyfile(fa_revised.name, debug_file)
+            e.args = (e.args[0] + ". File '{}' copied to '{}' for debugging".format(
+                fa_revised.name, debug_file),)
+            raise
+        return inferred_ts, cpu_time, memory_use
 
 
     @staticmethod
@@ -505,9 +506,11 @@ class InferenceRunner(object):
             MSMC_samples, sample_step, burnin_iterations=0, quiet=True):
         """
         this produces a whole load of .smc files labelled <path_prefix>i.0.smc,
-        <path_prefix>i.10.smc, etc. the iteration numbers ('i.0', 'i.10', etc)
-        are returned by this function
-
+        <path_prefix>i.10.smc, etc. 
+        
+        Returns the iteration numbers ('0', '10', '20' etc), the name of the
+        statistics file, the total CPU time, and the max memory usage.
+        
         TO DO: if verbosity < 0 (logging level == warning) we should set quiet = TRUE
 
         """
