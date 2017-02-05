@@ -74,7 +74,7 @@ def fastARG_out_to_msprime_txts(
     mutation_nodes=set() #to check there aren't duplicate nodes with the same mutations - a fastARG restriction
     seq_len = seq_len if seq_len is not None else  variant_positions[-1]+1 #if not given, hack seq length to max variant pos +1
     try:
-        breakpoints = np.insert(np.diff(variant_positions)/2 + variant_positions[:-1], [0, len(variant_positions)-1], [0, seq_len])
+        breakpoints = np.concatenate([0],np.diff(variant_positions)/2 + variant_positions[:-1], [seq_len])
     except:
         assert FALSE, \
             "Some variant positions seem to lie outside the sequence length (l={}):\n{}".format(
