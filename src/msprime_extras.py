@@ -93,27 +93,29 @@ def discretise_mutations(ts):
     ll_ts.set_mutations(new_mutations)
     return msprime.TreeSequence(ll_ts)
 
-# JK - I've been staring at this for 10 minutes, an I can't figure out what the
-# index_trees_by_variants argument does here. It seems
-# to be two mutually exclusive arguments, which give different behaviours? We have to
-# simplify this. Maybe this should be two different functions? What do we use this
-# behaviour for??
 
 def write_nexus_trees(
-        ts, treefile, index_trees_by_variants=False, zero_based_tip_numbers=True):
+        ts, treefile, tree_labels_between_variants=False, zetrees()o_based_tip_numbers=True):
     """
-    trees in the file correspond to the upper breakpoint position along the
-    genome. If index_trees_by_variants == True then each tree name is instead
-    the number of variants observed along the sequence so far (i.e. the
-    uppermost variant index + 1). If index_tree_by_variants is a list, it is
-    taken to be a list of variant positions to use as positions at which trees
-    are output (with adjacent identical trees output as a single tree and
-    indexed by the uppermost variant position, in the same manner as for
-    index_trees_by_variants = True).
-
-    Using the variant position to index trees allows trees to be compared for
-    batches of variants rather than via chromosome position, allowing fair
-    comparison between inferred trees.
+    Writes out all the trees in this tree sequence to a single nexus file.
+    The names of each tree in the treefile are meaningful. They give the 
+    positions along the sequence where we switch to a new tree.
+    
+    The positions are half-open intervals, that is a tree named '3' will *not* 
+    include position 3, but will include position 2.999999. That means if a
+    treesequence of (say) legnth 5 has been inferred from variants, say at 
+    position 3 and 4, the first tree will be named '4' (i.e. covering all positions 
+    up to but not including 4) and the second tree will be named with the sequence 
+    length '5'. Thus variants at position 4 will fall into the tree labelled 5 
+    not the tree labelled 4 - this seems slightly odd.
+    
+    If tree_labels_between_variants is True, we change this so that the 
+    positions are instead, halfway between the two nearest variants
+    i.e. if there are variants with different trees at position 3 & 4, then
+    the first tree has the name '3.5' and the second '5'. Thus we are assured
+    that variant 3 lies in the tree labelled 3.5 (covering 0-3.5), and the 
+    variant 4 lies in the tree labelled 5.
+    
     """
     print("#NEXUS\nBEGIN TREES;", file=treefile)
     increment = 0 if zero_based_tip_numbers else 1
@@ -122,32 +124,19 @@ def write_nexus_trees(
         for i in range(ts.get_sample_size())]
     print("TRANSLATE\n{};".format(",\n".join(tip_map)), file=treefile)
     variant_index = 0
-    if hasattr(index_trees_by_variants, "__len__"):
-        # index_trees_by_variants contains an array of variant positions, which can
-        # be used to index the trees
-        assert min(index_trees_by_variants) >= 0, \
-            "The variant positions passed in must all be greater than or equal to 0"
-        assert max(index_trees_by_variants) < ts.get_sequence_length(), \
-            "The variant positions passed in must all be less than {}".format(
-                        ts.get_sequence_length())
-        positions = np.sort(np.array(index_trees_by_variants))
-    else:
-        positions = None
 
-    # TODO: should do ts.newick_trees(zero_based_tip_numbers)
-    for t, (_, newick) in zip(ts.trees(), newick_trees(ts)):
-        if not index_trees_by_variants:
+    assert zero_based_tip_numbers==False, 'At the moment, we can only output 1-based tip labels'
+    if tree_labels_between_variants:
+        variant_pos = np.array([m.position for m in ts.mutations()])
+        pos_between_vars = np.concatenate([[0],np.diff(variant_pos)/2+variant_pos[:-1],
+                                          [ts.get_sequence_length()]])
+        for t, (_, newick) in zip(ts.trees(), newick_trees(ts)):
+            # index by the average position between the two nearest variants
+            av_upper_pos = pos_between_vars[np.searchsorted(variant_pos,t.get_interval()[1])]
+            assert av_upper_pos <= t.get_interval()[1]
+            print("TREE " + str(av_upper_pos) + " = " + newick, file=treefile)
+    else:
+        for t, (_, newick) in zip(ts.trees(), newick_trees(ts)):
             # index by rightmost genome position
             print("TREE " + str(t.get_interval()[1]) + " = " + newick, file=treefile)
-        else:
-            # index by rightmost variant number
-            if positions is None:  # use the built-in variant positions
-                n = t.get_num_mutations()
-            else:
-                l, r = t.get_interval()
-                n = np.count_nonzero((positions >= l) & (positions < r))
-            if n:
-                # only print a tree if is is covered by at least 1 variant
-                variant_index += n
-                print("TREE " + str(variant_index) + " = " + newick, file=treefile)
     print("END;", file=treefile)
