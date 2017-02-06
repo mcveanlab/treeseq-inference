@@ -92,14 +92,15 @@ def RentPlus_trees_to_nexus(trees_filename, outfilehandle, seq_length, num_tips,
                 #RentPlus has many repeated tree lines. We only need to print out 1
                 if tree != oldline[1]:
                     if oldline[1]:
-                        print("TREE " + str((float(oldline[0])+float(pos))/2) + " = " +
-                            tip_subtract_1(tree) if zero_based_tip_numbers else tree, 
+                        print("TREE", str((float(oldline[0])+float(pos))/2), "=",
+                            (tip_subtract_1(tree) if zero_based_tip_numbers else tree),
+                            sep=" ",
                             end = "\n" if tree.endswith(';') else ";\n", 
                             file = outfilehandle)
                     oldline = pos, tree
         if oldline[1]:
-            print("TREE " + str((float(oldline[0])+float(pos))/2) + " = " +
-                tip_subtract_1(tree) if zero_based_tip_numbers else tree, 
+            print("TREE", str(seq_length), "=",
+                (tip_subtract_1(tree) if zero_based_tip_numbers else tree), 
                 end = "\n" if tree.endswith(';') else ";\n", 
                 file = outfilehandle)
         print("END;", file = outfilehandle)
