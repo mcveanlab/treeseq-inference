@@ -402,7 +402,7 @@ class InferenceRunner(object):
         memory = None
         logging.debug("reading: {} for RentPlus inference".format(infile))
         if os.path.isfile(infile):
-            out_fn = construct_RentPlus_name(self.base_fn) + ".nex"
+            out_fn = construct_rentplus_name(self.base_fn) + ".nex"
             treefile, num_tips, time, memory = self.run_rentplus(infile, self.row.length)
             with open(out_fn , "w+") as out:
                 msprime_RentPlus.RentPlus_trees_to_nexus(treefile, out_fn, self.row.length,
@@ -444,9 +444,11 @@ class InferenceRunner(object):
                         msprime_ARGweaver.ARGweaver_smc_to_msprime_txts(
                             smc2arg_executable, base, msprime_txtrecs,
                             override_assertions=True)
-                        inferred_ts = msprime_txts_to_hdf5(msprime_txtrecs)
+                        inferred_ts = msprime.load_txt(msprime_txtrecs.name).simplify()
                         c_records.append(inferred_ts.get_num_records())
                 except AssertionError:
+                    logging.warning("smc2arg bug encountered converting '{}' to TS. Ignoring this row".format(
+                        base+".msp"))
                     #smc2arg cyclical bug: ignore this conversion
                     pass
         else:

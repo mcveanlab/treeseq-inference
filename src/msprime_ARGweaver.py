@@ -266,27 +266,6 @@ def ARGweaver_smc_to_nexus(smc_filename, outfilehandle, zero_based_tip_numbers=T
                 print(re.sub(r'^TREE\s+\d+\s+(\d+)\s+',lambda m: "TREE "+ m.group(1) + " = ", line.rstrip()), file = outfilehandle)
         print("END;", file = outfilehandle)
 
-def msprime_txts_to_hdf5(tree_filehandle, hdf5_outname=None):
-    import shutil
-    import msprime
-    logging.info("== Converting new msprime ARG as hdf5 ===")
-    try:
-        ts = msprime.load_txt(tree_filehandle.name)
-    except:
-        logging.warning("Can't load the txt file properly. Saved a copy to 'bad.msprime' for inspection")
-        shutil.copyfile(tree_filehandle.name, "bad.msprime")
-        raise
-    logging.info("== loaded {} ===".format(tree_filehandle.name))
-    try:
-        simple_ts = ts.simplify()
-    except:
-        ts.dump("bad.hdf5")
-        logging.warning("Can't simplify. HDF5 file dumped to 'bad.hdf5'")
-        raise
-    if hdf5_outname:
-        simple_ts.dump(hdf5_outname)
-    return(simple_ts)
-
 
 def main(args):
     import os
@@ -294,6 +273,27 @@ def main(args):
     import subprocess
     from dendropy import TreeList, calculate
     import msprime_extras
+    def msprime_txts_to_hdf5(tree_filehandle, hdf5_outname=None):
+        import shutil
+        import msprime
+        logging.info("== Converting new msprime ARG as hdf5 ===")
+        try:
+            ts = msprime.load_txt(tree_filehandle.name)
+        except:
+            logging.warning("Can't load the txt file properly. Saved a copy to 'bad.msprime' for inspection")
+            shutil.copyfile(tree_filehandle.name, "bad.msprime")
+            raise
+        logging.info("== loaded {} ===".format(tree_filehandle.name))
+        try:
+            simple_ts = ts.simplify()
+        except:
+            ts.dump("bad.hdf5")
+            logging.warning("Can't simplify. HDF5 file dumped to 'bad.hdf5'")
+            raise
+        if hdf5_outname:
+            simple_ts.dump(hdf5_outname)
+        return(simple_ts)
+
     msprime.TreeSequence.write_nexus_trees = msprime_extras.write_nexus_trees
     iterations = 50
     full_prefix = os.path.join(args.outputdir, os.path.splitext(os.path.basename(args.hdf5file))[0])
