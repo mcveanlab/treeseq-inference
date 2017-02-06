@@ -897,14 +897,14 @@ class Dataset(object):
                     "Variant positions are not all integers in {}".format()
             logging.debug("writing variant matrix to {}.hap for fastARG".format(filename))
             with open(filename+".hap", "w+") as fastarg_in:
-                msprime_fastARG.variant_matrix_to_fastARG_in(np.transpose(S), pos, fastarg_in)
+                msprime_fastARG.variant_matrix_to_fastARG_in(S.T, pos, fastarg_in)
             logging.debug("writing variant matrix to {}.sites for ARGweaver".format(filename))
             with open(filename+".sites", "w+") as argweaver_in:
-                msprime_ARGweaver.variant_matrix_to_ARGweaver_in(np.transpose(S), pos,
+                msprime_ARGweaver.variant_matrix_to_ARGweaver_in(S.T, pos,
                         ts.get_sequence_length(), argweaver_in, infinite_sites=infinite_sites)
             logging.debug("writing variant matrix to {}.dat for RentPlus".format(filename))
-            with open(filename+".dat", "w+") as rentplus_in:
-                msprime_RentPlus.variant_matrix_to_RentPlus_in(np.transpose(S), pos,
+            with open(filename+".dat", "wb+") as rentplus_in:
+                msprime_RentPlus.variant_matrix_to_RentPlus_in(S.T, pos,
                         ts.get_sequence_length(), rentplus_in, infinite_sites=infinite_sites)
         else:
             #No variants. We should be able to get away with not creating any files
