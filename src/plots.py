@@ -520,7 +520,8 @@ class InferenceRunner(object):
                     haplotype_lines += 1
         cmd = ["java", "-jar", RentPlus_executable]
         cmd += [file_name] if integer_positions else ['-l', seq_length, file_name]
-        cpu_time, memory_use = time_cmd(cmd)
+        with tempfile.NamedTemporaryFile("w+") as script_output:
+            cpu_time, memory_use = time_cmd(cmd, script_output)
         logging.debug("ran RentPlus for {} haplotypes with seq length {} [{} s]: '{}'".format(
             haplotype_lines, seq_length, cpu_time, cmd))
         #we cannot back-convert RentPlus output to treeseq form - just return the trees file
