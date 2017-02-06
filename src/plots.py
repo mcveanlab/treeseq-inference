@@ -394,6 +394,28 @@ class InferenceRunner(object):
 
         }
 
+    def __run_RentPlus(self):
+        infile = self.base_fn + ".dat"
+        time = None
+        memory = None
+        logging.debug("reading: {} for RentPlus inference".format(infile))
+        if os.path.isfile(infile):
+            out_fn = construct_RentPlus_name(self.base_fn) + ".nex"
+            treefile, num_tips, time, memory = self.run_rentplus(infile, self.row.length)
+            with open(out_fn , "w+") as out:
+                msprime_RentPlus.RentPlus_trees_to_nexus(treefile, out_fn, self.row.length,
+                    num_tips, self.row.zero_based_tip_numbers=tree_tip_labels_start_at_0)
+        else:
+            logging.info("Files not found for Rent+ inference:" +
+                " simulation on row {} has produced no files.".format(self.row[0]) +
+                " If you are not expecting this, it could be a simulation with no mutations")
+        return {
+            cpu_time_colname(self.tool): time,
+            memory_colname(self.tool): memory
+            n_coalescence_records_colname(self.tool): None
+        }
+
+
     def __run_ARGweaver(self):
         inference_seed = self.row.seed  # TODO do we need to specify this separately?
         infile = self.base_fn + ".sites"
@@ -478,26 +500,28 @@ class InferenceRunner(object):
     def run_rentplus(file_name, seq_length):
         """
         runs RentPlus, returning the output filename, the total CPU, & max mem
+        must check here if we are using 0..1 positions (infinite sites) or integers
         """
-        cmd = ["java", "-jar", RentPlus_executable, file_name)
+        haplotype_lines = 0
+        integer_positions = True
+        with open(file_name, "r+") as infile:
+            for pos in next(infile).split():
+                try:
+                    dummy = int(pos)
+                except ValueError:
+                    integer_positions = False
+            for line in infile:
+                if line.rstrip():
+                    haplotype_lines += 1
+        cmd = ["java", "-jar", RentPlus_executable]
+        cmd += [file_name] if integer_positions else ['-l', seq_length, file_name]
         cpu_time, memory_use = time_cmd(cmd)
-        logging.debug("ran RentPlus for seq length {} [{} s]: '{}'".format(seq_length, cpu_time, cmd))
-        #we cannot back-convert RentPlus output to 
-        root_seq = msprime_fastARG.fastARG_root_seq(fa_out)
-        msprime_fastARG.fastARG_out_to_msprime_txts(
-                fa_out, var_pos, tree, muts, seq_len=seq_length)
-        inferred_ts = msprime_fastARG.msprime_txts_to_fastARG_in_revised(
-                tree, muts, root_seq, fa_revised, simplify=True)
-        try:
-            assert filecmp.cmp(file_name, fa_revised.name, shallow=False), \
-                "{} and {} differ".format(file_name, fa_revised.name)
-        except Exception as e:
-            debug_file = os.path.join(os.path.dirname(fa_revised.name), "bad.hap")
-            shutil.copyfile(fa_revised.name, debug_file)
-            e.args = (e.args[0] + ". File '{}' copied to '{}' for debugging".format(
-                fa_revised.name, debug_file),)
-            raise
-        return inferred_ts, cpu_time, memory_use
+        logging.debug("ran RentPlus for {} haplotypes with seq length {} [{} s]: '{}'".format(
+            haplotype_lines, seq_length, cpu_time, cmd))
+        #we cannot back-convert RentPlus output to treeseq form - just return the trees file
+        assert os.path.isfile(file_name + ".trees"), 'No trees file created when running Rent+'
+        #we might also want to look at TMRCAs (file_name + '.Tmrcas')
+        return file_name + ".trees", haplotype_lines, cpu_time, memory_use
 
 
     @staticmethod
@@ -876,7 +900,7 @@ class Dataset(object):
             logging.debug("writing variant matrix to {}.dat for RentPlus".format(filename))
             with open(filename+".dat", "w+") as rentplus_in:
                 msprime_RentPlus.variant_matrix_to_RentPlus_in(np.transpose(S), pos,
-                        ts.get_sequence_length(), rentplus_in, infinite_sites=False)
+                        ts.get_sequence_length(), rentplus_in, infinite_sites=infinite_sites)
         else:
             #No variants. We should be able to get away with not creating any files
             #and the infer step will simply skip this simulation
