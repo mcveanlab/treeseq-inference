@@ -34,6 +34,7 @@ import msprime
 import msprime_extras
 import msprime_fastARG
 import msprime_ARGweaver
+import msprime_RentPlus
 import tsinfer
 import ARG_metrics
 
@@ -325,6 +326,8 @@ class InferenceRunner(object):
             ret = self.__run_fastARG()
         elif self.tool == "ARGweaver":
             ret = self.__run_ARGweaver()
+        elif self.tool == "RentPlus":
+            ret = self.__run_RentPlus()
         else:
             raise KeyError("unknown tool {}".format(self.tool))
         logging.debug("returning infer results for {} row {} = {}".format(
@@ -389,9 +392,8 @@ class InferenceRunner(object):
                 " If you are not expecting this, it could be a simulation with no mutations")
         return {
             cpu_time_colname(self.tool): time,
-            memory_colname(self.tool): memory
+            memory_colname(self.tool): memory,
             n_coalescence_records_colname(self.tool): c_records
-
         }
 
     def __run_RentPlus(self):
@@ -404,14 +406,14 @@ class InferenceRunner(object):
             treefile, num_tips, time, memory = self.run_rentplus(infile, self.row.length)
             with open(out_fn , "w+") as out:
                 msprime_RentPlus.RentPlus_trees_to_nexus(treefile, out_fn, self.row.length,
-                    num_tips, self.row.zero_based_tip_numbers=tree_tip_labels_start_at_0)
+                    num_tips, zero_based_tip_numbers=tree_tip_labels_start_at_0)
         else:
             logging.info("Files not found for Rent+ inference:" +
                 " simulation on row {} has produced no files.".format(self.row[0]) +
                 " If you are not expecting this, it could be a simulation with no mutations")
         return {
             cpu_time_colname(self.tool): time,
-            memory_colname(self.tool): memory
+            memory_colname(self.tool): memory,
             n_coalescence_records_colname(self.tool): None
         }
 
@@ -446,6 +448,7 @@ class InferenceRunner(object):
                         c_records.append(inferred_ts.get_num_records())
                 except AssertionError:
                     #smc2arg cyclical bug: ignore this conversion
+                    pass
         else:
             logging.info("Files not found for ARGweaver inference:" +
                 " simulation on row {} has produced no files.".format(self.row[0]) +
@@ -705,6 +708,7 @@ class Dataset(object):
     tools = {
         "ARGweaver": always_true,
         "fastARG"  : always_true,
+        "RentPlus"  : always_true,
         "tsinfer"  : always_true}
     #the metrics_for dict defines what metrics we calculate
     #and how to calculate them, given a row in a df
@@ -714,8 +718,9 @@ class Dataset(object):
     #is the interence file name, and whose (optional) second
     #value give further parameters to the metrics function
     metrics_for = {
-        "fastARG": {'files_func':fastarg_name_from_msprime_row},
-        "Aweaver": {'files_func':argweaver_names_from_msprime_row},
+        "fastARG": {'files_func': fastarg_name_from_msprime_row},
+        "Aweaver": {'files_func': argweaver_names_from_msprime_row},
+        "RentPls": {'files_func': rentplus_name_from_msprime_row},
         "tsipoly": {'files_func': tsinfer_name_from_msprime_row},
         "tsibiny": {'files_func': tsinfer_name_from_msprime_row,
                     'param_func': ARGmetric_params_from_row}

@@ -95,7 +95,7 @@ def discretise_mutations(ts):
 
 
 def write_nexus_trees(
-        ts, treefile, tree_labels_between_variants=False, zetrees()o_based_tip_numbers=True):
+        ts, treefile, tree_labels_between_variants=False, zero_based_tip_numbers=True):
     """
     Writes out all the trees in this tree sequence to a single nexus file.
     The names of each tree in the treefile are meaningful. They give the 

@@ -25,21 +25,24 @@ def variant_matrix_to_RentPlus_in(var_matrix, var_positions, seq_length, RentPlu
     
     Note that with integer positions rentplus uses position coordinates (1,N) - i.e. [0,N). 
     That compares to msprime which uses (0..N-1) - i.e. (0,N].
+    
+    Compared e.g. with fastARG, the matrix is transposed, so that rows are positions,
+    this is a pain when trying to merge adjacent genotypes
     """
     n_variants, n_samples = var_matrix.shape
     assert len(var_matrix)==n_variants
     if infinite_sites:
         #normalize to between 0 and 1
-        print " ".join([float(p)/seq_length for p in var_positions])
+        print(" ".join([float(p)/seq_length for p in var_positions]), file=RentPlus_filehandle)
         for v in var_matrix:
             print("".join(v), file=RentPlus_filehandle)
     else:
-        #compress runlengths of integers
+        #compress runlengths of integers - we need to do this on the first line and also 
         prev_position = 0
         delim=""
-        for pos in positions:
+        for pos in var_positions:
             if int(ceil(pos)) != prev_position:
-                RentPlus_filehandle.write(delim + str(int(ceil(pos)))
+                RentPlus_filehandle.write(delim + str(int(ceil(pos))))
                 delim=" "
             prev_position = int(ceil(pos))
 
@@ -77,7 +80,7 @@ def RentPlus_trees_to_nexus(trees_filename, outfilehandle, seq_length, num_tips,
     increment = 0 if zero_based_tip_numbers else 1
     with open(trees_filename, 'rt+') as RentPlusTrees:
         print("#NEXUS\nBEGIN TREES;", file = outfilehandle)
-        print("TRANSLATE\n{};".format(",\n".join(["{} {}".format(i+increment,i+increment) for i in range(num_tips)], 
+        print("TRANSLATE\n{};".format(",\n".join(["{} {}".format(i+increment,i+increment) for i in range(num_tips)])), 
             file = outfilehandle)
         oldline = 0,''
         for line in RentPlusTrees:
