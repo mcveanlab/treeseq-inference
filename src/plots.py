@@ -365,7 +365,7 @@ class InferenceRunner(object):
         else:
             logging.info("Files not found for tsinfer inference:" +
                 " simulation on row {} has produced no files.".format(self.row[0]) +
-                " If you are not expecting this, it could be a simulation with no mutations")
+                " If you are not expecting this, it could be a simulation with no or few mutations")
         return  {
             cpu_time_colname(self.tool): time,
             memory_colname(self.tool): memory,
@@ -405,7 +405,7 @@ class InferenceRunner(object):
             out_fn = construct_rentplus_name(self.base_fn) + ".nex"
             treefile, num_tips, time, memory = self.run_rentplus(infile, self.row.length)
             with open(out_fn , "w+") as out:
-                msprime_RentPlus.RentPlus_trees_to_nexus(treefile, out_fn, self.row.length,
+                msprime_RentPlus.RentPlus_trees_to_nexus(treefile, out, self.row.length,
                     num_tips, zero_based_tip_numbers=tree_tip_labels_start_at_0)
         else:
             logging.info("Files not found for Rent+ inference:" +
@@ -904,10 +904,14 @@ class Dataset(object):
             with open(filename+".sites", "w+") as argweaver_in:
                 msprime_ARGweaver.variant_matrix_to_ARGweaver_in(S.T, pos,
                         ts.get_sequence_length(), argweaver_in, infinite_sites=infinite_sites)
-            logging.debug("writing variant matrix to {}.dat for RentPlus".format(filename))
-            with open(filename+".dat", "wb+") as rentplus_in:
-                msprime_RentPlus.variant_matrix_to_RentPlus_in(S.T, pos,
-                        ts.get_sequence_length(), rentplus_in, infinite_sites=infinite_sites)
+            if ts.get_num_mutations() < 6:
+                logging.info("Not enough variants to run RentPlus (requires >=6). " +
+                    "Will skip writing {}.dat".format(filename))
+            else:
+                logging.debug("writing variant matrix to {}.dat for RentPlus".format(filename))
+                with open(filename+".dat", "wb+") as rentplus_in:
+                    msprime_RentPlus.variant_matrix_to_RentPlus_in(S.T, pos,
+                            ts.get_sequence_length(), rentplus_in, infinite_sites=infinite_sites)
         else:
             #No variants. We should be able to get away with not creating any files
             #and the infer step will simply skip this simulation
@@ -1316,6 +1320,7 @@ class Figure(object):
         ('tsipoly','cyan'),
         ('fastARG','red'),
         ('Aweaver','green'),
+        ('RentPls','magenta'),
     ])
     """
     Each figure has a unique name. This is used as the identifier and the
