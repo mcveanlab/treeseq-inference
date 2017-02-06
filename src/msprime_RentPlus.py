@@ -33,32 +33,35 @@ def variant_matrix_to_RentPlus_in(var_matrix, var_positions, seq_length, RentPlu
     assert len(var_matrix)==n_variants
     if infinite_sites:
         #normalize to between 0 and 1
-        print(" ".join([float(p)/seq_length for p in var_positions]), file=RentPlus_filehandle)
-        for v in var_matrix:
-            print("".join(v), file=RentPlus_filehandle)
+        unique_positions = np.unique(var_positions)
+        assert unique_positions.shape[0] == n_variants, \
+            'If infinite sites is assumed, positions need to be unique, but there are dups'
+        np.savetxt(RentPlus_filehandle, var_matrix.T, delimiter="", comments='',
+            header=" ".join([float(p)/seq_length for p in var_positions]))
     else:
-        #compress runlengths of integers - we need to do this on the first line and also 
+        #compress runlengths of integers
+        unique_positions = np.unique(np.ceil(var_positions).astype(np.uint64))
+        output = np.zeros((n_samples, unique_positions.shape[0]), dtype=np.uint8)
         prev_position = 0
-        delim=""
-        for pos in var_positions:
-            if int(ceil(pos)) != prev_position:
-                RentPlus_filehandle.write(delim + str(int(ceil(pos))))
-                delim=" "
-            prev_position = int(ceil(pos))
-
-        prev_position = 0
+        index=0
         ANDed_genotype = None
         for pos, genotype in zip(var_positions, var_matrix):
             if int(ceil(pos)) != prev_position:
-                #this is a new position. Print the genotype at the old position, and then reset everything
-                if prev_position:
-                    print("".join(ANDed_genotype), file=RentPlus_filehandle)
+                #this is a new position. Save the genotype at the old position, and then reset everything
+                if ANDed_genotype is not None:
+                    output[:,index]=ANDed_genotype
+                    index += 1
                 ANDed_genotype = genotype
             else:
                 ANDed_genotype =  np.logical_and(ANDed_genotype, genotype)
             prev_position = int(ceil(pos))
         if ANDed_genotype is not None: # print out the last site
-            print("".join(ANDed_genotype), file=RentPlus_filehandle)
+            output[:,index]=ANDed_genotype
+        
+        assert index+1 == unique_positions.shape[0], \
+            "Saved {} columns, should be {}".format(index+1, unique_positions.shape[0])
+        np.savetxt(RentPlus_filehandle, output, "%u", delimiter="", comments='',
+            header=" ".join([str(p) for p in unique_positions]))
 
     RentPlus_filehandle.flush()
     RentPlus_filehandle.seek(0)
