@@ -402,11 +402,12 @@ class InferenceRunner(object):
         memory = None
         logging.debug("reading: {} for RentPlus inference".format(infile))
         if os.path.isfile(infile):
-            out_fn = construct_rentplus_name(self.base_fn) + ".nex"
             treefile, num_tips, time, memory = self.run_rentplus(infile, self.row.length)
-            with open(out_fn , "w+") as out:
-                msprime_RentPlus.RentPlus_trees_to_nexus(treefile, out, self.row.length,
-                    num_tips, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+            if treefile:
+                out_fn = construct_rentplus_name(self.base_fn) + ".nex"
+                with open(out_fn , "w+") as out:
+                    msprime_RentPlus.RentPlus_trees_to_nexus(treefile, out, self.row.length,
+                        num_tips, zero_based_tip_numbers=tree_tip_labels_start_at_0)
         else:
             logging.info("Files not found for Rent+ inference:" +
                 " simulation on row {} has produced no files.".format(self.row[0]) +
@@ -520,15 +521,21 @@ class InferenceRunner(object):
                     haplotype_lines += 1
         cmd = ["java", "-jar", RentPlus_executable]
         cmd += [file_name] if integer_positions else ['-l', seq_length, file_name]
-        with tempfile.NamedTemporaryFile("w+") as script_output:
-            cpu_time, memory_use = time_cmd(cmd, script_output)
-        logging.debug("ran RentPlus for {} haplotypes with seq length {} [{} s]: '{}'".format(
-            haplotype_lines, seq_length, cpu_time, cmd))
-        #we cannot back-convert RentPlus output to treeseq form - just return the trees file
-        assert os.path.isfile(file_name + ".trees"), 'No trees file created when running Rent+'
-        #we might also want to look at TMRCAs (file_name + '.Tmrcas')
-        return file_name + ".trees", haplotype_lines, cpu_time, memory_use
-
+        try:
+            with tempfile.NamedTemporaryFile("w+") as script_output:
+                cpu_time, memory_use = time_cmd(cmd, script_output)
+            logging.debug("ran RentPlus for {} haplotypes with seq length {} [{} s]: '{}'".format(
+                haplotype_lines, seq_length, cpu_time, cmd))
+            #we cannot back-convert RentPlus output to treeseq form - just return the trees file
+            assert os.path.isfile(file_name + ".trees"), 'No trees file created when running Rent+'
+            #we might also want to look at TMRCAs (file_name + '.Tmrcas')
+            return file_name + ".trees", haplotype_lines, cpu_time, memory_use
+        except ValueError as e:
+            if "Main.makeGuideTrees(Main.java:486)" in str(e):
+                logging.info("Hit RentPlus bug: https://github.com/SajadMirzaei/RentPlus/issues/3. Skipping")
+                return None, None, None, None
+            else:
+                raise
 
     @staticmethod
     def run_argweaver(
