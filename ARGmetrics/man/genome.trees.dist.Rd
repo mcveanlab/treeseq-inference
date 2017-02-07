@@ -4,9 +4,10 @@
 \alias{genome.trees.dist}
 \title{Use tree metrics to compare two inferred ancestries (ARGs) over a genomic region}
 \usage{
-genome.trees.dist(treeseq.a, treeseq.b, output.full.table = FALSE,
-  acceptable.length.diff.pct = 0.1, variant.positions = NULL,
-  randomly.resolve.a = FALSE, randomly.resolve.b = FALSE)
+genome.trees.dist(treeseq.a = NA, treeseq.b = NA,
+  output.full.table = FALSE, acceptable.length.diff.pct = 0.1,
+  variant.positions = NULL, randomly.resolve.a = FALSE,
+  randomly.resolve.b = FALSE, force.rooted = TRUE)
 }
 \arguments{
 \item{treeseq.a}{The first multiPhylo object, or a path to a .nex file}
@@ -18,7 +19,7 @@ genome.trees.dist(treeseq.a, treeseq.b, output.full.table = FALSE,
 \item{acceptable.length.diff.pct}{How much difference in sequence length is allows between the 2 trees? (Default: 0.1 percent)}
 
 \item{variant.positions}{A vector of genome positions of each variant. If given the metric will be 
-calculated for each variant site and averaged over all sites, rather than averaged over every point on the genome (not yet implemented)}
+calculated for each variant site and averaged over all sites, rather than averaged over every point on the genome}
 
 \item{randomly.resolve.a}{Some distance metrics only operate on binary trees. Set this to TRUE to 
 force trees in treeseq.a to be binary by randomly resolving polytomies where necessary, using the
@@ -27,6 +28,8 @@ multi2di routine in the 'ape' library. If this is a number, it is additionally u
 \item{randomly.resolve.b}{Some distance metrics only operate on binary trees. Set this to TRUE to 
 force trees in treeseq.b to be binary by randomly resolving polytomies where necessary, using the
 multi2di routine in the 'ape' library. If this is a number, it is additionally used as an RNG seed.}
+
+\item{force.rooted}{Force input trees to be treated as rooted, even if there is a polytomy at the root.}
 }
 \description{
 Requires two multiPhylo objects which contain sequential trees (tree sequences) along a genomic region.

@@ -5,7 +5,8 @@
 \title{Use binary tree metrics to compare two inferred ancestries (ARGs) over a genomic region}
 \usage{
 genome.trees.dist.forcebin.b(treeseq.a, treeseq.b, replicates = 1,
-  seed = NA, acceptable.length.diff.pct = 0.1, variant.positions = NULL)
+  seed = NA, acceptable.length.diff.pct = 0.1, variant.positions = NULL,
+  threads = 1)
 }
 \arguments{
 \item{treeseq.a}{The base multiPhylo object, or a path to a .nex file}

@@ -10,18 +10,21 @@
 #' @param output.full.table Output tree metrics for each overlapping region, rather than simply a weighted summary.
 #' @param acceptable.length.diff.pct How much difference in sequence length is allows between the 2 trees? (Default: 0.1 percent)
 #' @param variant.positions A vector of genome positions of each variant. If given the metric will be 
-#'  calculated for each variant site and averaged over all sites, rather than averaged over every point on the genome (not yet implemented)
+#'  calculated for each variant site and averaged over all sites, rather than averaged over every point on the genome
 #' @param randomly.resolve.a Some distance metrics only operate on binary trees. Set this to TRUE to 
 #' force trees in treeseq.a to be binary by randomly resolving polytomies where necessary, using the
 #' multi2di routine in the 'ape' library. If this is a number, it is additionally used as an RNG seed.
 #' @param randomly.resolve.b Some distance metrics only operate on binary trees. Set this to TRUE to 
 #' force trees in treeseq.b to be binary by randomly resolving polytomies where necessary, using the
 #' multi2di routine in the 'ape' library. If this is a number, it is additionally used as an RNG seed.
+#' @param force.rooted Force input trees to be treated as rooted, even if there is a polytomy at the root.
 #' @export
 #' @examples
 #' genome.trees.dist()
 
 genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FALSE, acceptable.length.diff.pct = 0.1, variant.positions=NULL, randomly.resolve.a=FALSE, randomly.resolve.b=FALSE, force.rooted=TRUE) { 
+    require(phangorn)
+    has.KC.metric=require(treescape)
     results=data.frame(lft=numeric(), rgt=numeric(), RFrooted=numeric(), RFunrooted=numeric(),
         wRFrooted=numeric(), wRFunrooted=numeric(), SPRunrooted=numeric(), pathunrooted=numeric(), KCrooted=numeric())
     
@@ -112,8 +115,9 @@ genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FA
                 'subtree prune & regraft')
             catchTreeDistErrors({pathunrooted <- path.dist(a[[tree.index.ctr['a']]], b[[tree.index.ctr['b']]])},
                 'path distance')
-            catchTreeDistErrors({KCrooted <- treeDist(a[[tree.index.ctr['a']]], b[[tree.index.ctr['b']]])},
-                'Kendall-Colijn', rooted=TRUE)
+            if (has.KC.metric)
+                catchTreeDistErrors({KCrooted <- treeDist(a[[tree.index.ctr['a']]], b[[tree.index.ctr['b']]])},
+                    'Kendall-Colijn', rooted=TRUE)
             results[nrow(results)+1,] <- c(lft,rgt,RFrooted, RFunrooted, wRFrooted, wRFunrooted, SPRunrooted, pathunrooted, KCrooted)
             lft <- rgt
             tree.index.ctr[brk$ind] <- tree.index.ctr[brk$ind] + 1 #NB, brk$ind is a factor with levels (m1,m2), so we hope that m1==1 and m2==2
