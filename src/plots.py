@@ -521,21 +521,14 @@ class InferenceRunner(object):
                     haplotype_lines += 1
         cmd = ["java", "-jar", RentPlus_executable]
         cmd += [file_name] if integer_positions else ['-l', seq_length, file_name]
-        try:
-            with tempfile.NamedTemporaryFile("w+") as script_output:
-                cpu_time, memory_use = time_cmd(cmd, script_output)
-            logging.debug("ran RentPlus for {} haplotypes with seq length {} [{} s]: '{}'".format(
-                haplotype_lines, seq_length, cpu_time, cmd))
-            #we cannot back-convert RentPlus output to treeseq form - just return the trees file
-            assert os.path.isfile(file_name + ".trees"), 'No trees file created when running Rent+'
-            #we might also want to look at TMRCAs (file_name + '.Tmrcas')
-            return file_name + ".trees", haplotype_lines, cpu_time, memory_use
-        except ValueError as e:
-            if "Main.makeGuideTrees(Main.java:486)" in str(e):
-                logging.info("Hit RentPlus bug: https://github.com/SajadMirzaei/RentPlus/issues/3. Skipping")
-                return None, None, None, None
-            else:
-                raise
+        with tempfile.NamedTemporaryFile("w+") as script_output:
+            cpu_time, memory_use = time_cmd(cmd, script_output)
+        logging.debug("ran RentPlus for {} haplotypes with seq length {} [{} s]: '{}'".format(
+            haplotype_lines, seq_length, cpu_time, cmd))
+        #we cannot back-convert RentPlus output to treeseq form - just return the trees file
+        assert os.path.isfile(file_name + ".trees"), 'No trees file created when running Rent+'
+        #we might also want to look at TMRCAs (file_name + '.Tmrcas')
+        return file_name + ".trees", haplotype_lines, cpu_time, memory_use
 
     @staticmethod
     def run_argweaver(
@@ -912,14 +905,10 @@ class Dataset(object):
             with open(filename+".sites", "w+") as argweaver_in:
                 msprime_ARGweaver.variant_matrix_to_ARGweaver_in(S.T, pos,
                         ts.get_sequence_length(), argweaver_in, infinite_sites=infinite_sites)
-            if ts.get_num_mutations() < 6:
-                logging.info("Not enough variants to run RentPlus (requires >=6). " +
-                    "Will skip writing {}.dat".format(filename))
-            else:
-                logging.debug("writing variant matrix to {}.dat for RentPlus".format(filename))
-                with open(filename+".dat", "wb+") as rentplus_in:
-                    msprime_RentPlus.variant_matrix_to_RentPlus_in(S.T, pos,
-                            ts.get_sequence_length(), rentplus_in, infinite_sites=infinite_sites)
+            logging.debug("writing variant matrix to {}.dat for RentPlus".format(filename))
+            with open(filename+".dat", "wb+") as rentplus_in:
+                msprime_RentPlus.variant_matrix_to_RentPlus_in(S.T, pos,
+                        ts.get_sequence_length(), rentplus_in, infinite_sites=infinite_sites)
         else:
             #No variants. We should be able to get away with not creating any files
             #and the infer step will simply skip this simulation
