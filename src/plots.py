@@ -1144,9 +1144,9 @@ class MetricsByMutationRateDataset(Dataset):
         length = 5000
         recombination_rate = 2.5e-8
         ## argweaver params: aw_n_out_samples will be produced, every argweaver_iter_out_freq
-        aw_burnin_iters = 5#000
-        aw_n_out_samples = 10#0
-        aw_iter_out_freq = 1#0
+        aw_burnin_iters = 5000
+        aw_n_out_samples = 100
+        aw_iter_out_freq = 10
         # TMP for development
         ## tsinfer params: number of times to randomly resolve into bifurcating (binary) trees
         tsinfer_biforce_reps = 20
