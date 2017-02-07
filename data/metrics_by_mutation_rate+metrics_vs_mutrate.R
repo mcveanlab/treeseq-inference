@@ -1,16 +1,16 @@
 if (!interactive()) pdf('/Users/yan/Documents/Research/Wellcome/treeseq-inference/data/metrics_by_mutation_rate+metrics_vs_mutrate.pdf',width=10, height=7)
 data <- read.csv('/Users/yan/Documents/Research/Wellcome/treeseq-inference/data/metrics_by_mutation_rate_data.csv')
 
-toolcols <- c('tsibiny'='blue','tsipoly'='cyan','fastARG'='red','Aweaver'='green')
+toolcols <- c('tsibiny'='blue','tsipoly'='cyan','fastARG'='red','Aweaver'='green','RentPls'='magenta')
 metrics <- c('RFrooted','RFunrooted','wRFrooted','wRFunrooted','SPRunrooted','pathunrooted')
-error.rates <- unique(data$error_rate)
-layout(matrix(1:6,2,3))
+datamean <- aggregate(subset(data, select=-ARGweaver_iterations), list(data$mutation_rate, data$error_rate), mean, na.rm=TRUE)
 error.rates <- sort(unique(data$error_rate))
+layout(matrix(seq_along(metrics),nrows=2))
 layout(matrix(1:6,2,3))
 sapply(metrics, function(m) {
     colnames = paste(names(toolcols), m, sep='_')
-    matplot(data$mutation_rate, data[, colnames], type='p', col=toolcols, main=paste(m, "metric"), 
-        ylab='Distance between true and inferred trees', 
+    matplot(data$mutation_rate, data[, colnames], type='p', col=toolcols, main=paste(m, 'metric'),
+        ylab='Distance between true and inferred trees',
         xlab='mutation rate (err: dotted=0.1, dashed=0.01, solid=0.0)',
         log='x', ylim = c(0,max(data[, colnames], na.rm=TRUE)),
         pch = ifelse(data$error_rate == error.rates[1],1,ifelse(data$error_rate == error.rates[2], 2, 4)))

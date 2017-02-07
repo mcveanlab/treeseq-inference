@@ -1144,9 +1144,9 @@ class MetricsByMutationRateDataset(Dataset):
         length = 5000
         recombination_rate = 2.5e-8
         ## argweaver params: aw_n_out_samples will be produced, every argweaver_iter_out_freq
-        aw_burnin_iters = 5000
-        aw_n_out_samples = 100
-        aw_iter_out_freq = 10
+        aw_burnin_iters = 5#000
+        aw_n_out_samples = 10#0
+        aw_iter_out_freq = 1#0
         # TMP for development
         ## tsinfer params: number of times to randomly resolve into bifurcating (binary) trees
         tsinfer_biforce_reps = 20
@@ -1421,13 +1421,23 @@ class MetricsAgainstMutationRateFigure(Figure):
 """
 toolcols <- %s
 metrics <- %s
+makeTransparent = function(..., alpha=0.5) {
+  if(alpha<0 | alpha>1) stop('alpha must be between 0 and 1')
+  alpha = floor(255*alpha)  
+  newColor = col2rgb(col=unlist(list(...)), alpha=FALSE)
+  .makeTransparent = function(col, alpha) {
+    rgb(red=col[1], green=col[2], blue=col[3], alpha=alpha, maxColorValue=255)
+  }
+  return(apply(newColor, 2, .makeTransparent, alpha=alpha))
+}
 datamean <- aggregate(subset(data, select=-ARGweaver_iterations), list(data$mutation_rate, data$error_rate), mean, na.rm=TRUE)
 error.rates <- sort(unique(data$error_rate))
-layout(matrix(seq_along(metrics),nrows=2))
+layout(matrix(seq_along(metrics),nrow=2))
 layout(matrix(1:6,2,3))
 sapply(metrics, function(m) {
     colnames = paste(names(toolcols), m, sep='_')
-    matplot(data$mutation_rate, data[, colnames], type='p', col=toolcols, main=paste(m, 'metric'),
+    matplot(data$mutation_rate, data[, colnames], type='p', main=paste(m, 'metric'),
+        col= makeTransparent(toolcols, 0.1), 
         ylab='Distance between true and inferred trees',
         xlab='mutation rate (err: dotted=0.1, dashed=0.01, solid=0.0)',
         log='x', ylim = c(0,max(data[, colnames], na.rm=TRUE)),
@@ -1460,20 +1470,30 @@ class MetricsAgainstMutationRateSimpleFigure(Figure):
 """
 toolcols <- %s
 metrics <- %s
+makeTransparent = function(..., alpha=0.5) {
+  if(alpha<0 | alpha>1) stop('alpha must be between 0 and 1')
+  alpha = floor(255*alpha)  
+  newColor = col2rgb(col=unlist(list(...)), alpha=FALSE)
+  .makeTransparent = function(col, alpha) {
+    rgb(red=col[1], green=col[2], blue=col[3], alpha=alpha, maxColorValue=255)
+  }
+  return(apply(newColor, 2, .makeTransparent, alpha=alpha))
+}
 datamean <- aggregate(subset(data, select=-ARGweaver_iterations), list(data$mutation_rate, data$error_rate), mean, na.rm=TRUE)
 error.rates <- sort(unique(data$error_rate))
-layout(seq_along(error.rates))
+layout(t(seq_along(error.rates)))
 sapply(metrics, function(m) {
     colnames = paste(names(toolcols), m, sep='_')
     sapply(error.rates, function(error.rate) {
         d = subset(data, error_rate==error.rate)
         dm = subset(datamean, error_rate==error.rate)
-        matplot(d$mutation_rate, d[, colnames], type='p', col=toolcols, main=paste(m, 'metric: error', error.rate),
+        matplot(d$mutation_rate, d[, colnames], type='p', main=paste(m, 'metric: error', error.rate),
+            col=makeTransparent(toolcols,0.1), 
             ylab='Distance between true and inferred trees',
             xlab='mutation rate',
             log='x', ylim = c(0,max(d[, colnames], na.rm=TRUE)),
             pch = ifelse(data$error_rate == error.rates[1],1,ifelse(data$error_rate == error.rates[2], 2, 4)))
-        matlines(dm$mutation_rate, dm[, colnames], lty=1, col=toolcols)
+        matlines(dm$mutation_rate, dm[, colnames], lty=which(error.rates==error.rate), col=toolcols)
         mtext(names(toolcols), 1, line=rev(seq(-1.2, by=-0.8, along.with=toolcols)), adj=0.05,
             cex=0.7, col=toolcols)
     })
