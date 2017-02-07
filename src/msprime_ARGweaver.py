@@ -127,7 +127,7 @@ def ARGweaver_smc_to_msprime_txts(smc2bin_executable, prefix, tree_filehandle, o
     assert override_assertions, "smc2arg is currently broken and should not be used." + \
         "See https://github.com/mdrasmus/argweaver/issues/20"
     from subprocess import call
-    logging.info("== Converting the ARGweaver smc output file '{}' to .arg format using '{}' ==".format(\
+    logging.debug("== Converting the ARGweaver smc output file '{}' to .arg format using '{}' ==".format(\
         prefix + ".smc.gz", smc2bin_executable))
     call([smc2bin_executable, prefix + ".smc.gz", prefix + ".arg"])
     with open(prefix + ".arg", "r+") as arg_fh:
@@ -144,7 +144,7 @@ def ARGweaver_arg_to_msprime_txts(ARGweaver_arg_filehandle, tree_filehandle):
     """
     import re
     import csv
-    logging.info("== Converting .arg output to msprime ==")
+    logging.debug("== Converting .arg output to msprime ==")
     ARG_nodes={} #cr[X] = child1:[left,right], child2:[left,right],... : serves as intermediate ARG storage 
     ARG_node_times={} #node_name => time
     node_names={} #map of ARGweaver names -> numbers
