@@ -9,6 +9,7 @@ assert robjects.r('packageVersion("ape") >= "4.0.0.2"')[0], \
     "You must install an 'ape' version in R > 4.0.0.2, e.g. by running" + \
     'install.packages("ape", repos = "http://ape-package.ird.fr/", type="source")'
 importr("phangorn")
+importr("treescape")
 ARGmetrics = importr("ARGmetrics")
 #NB the above requires your version of R to have the bespoke ARGmetrics package installed
 #Open R and set the working dir to treeseq-inference, then do

@@ -23,7 +23,7 @@
 
 genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FALSE, acceptable.length.diff.pct = 0.1, variant.positions=NULL, randomly.resolve.a=FALSE, randomly.resolve.b=FALSE, force.rooted=TRUE) { 
     results=data.frame(lft=numeric(), rgt=numeric(), RFrooted=numeric(), RFunrooted=numeric(),
-        wRFrooted=numeric(), wRFunrooted=numeric(), SPRunrooted=numeric(), pathunrooted=numeric())
+        wRFrooted=numeric(), wRFunrooted=numeric(), SPRunrooted=numeric(), pathunrooted=numeric(), KCrooted=numeric())
     
     if (!is.na(treeseq.a) && !is.na(treeseq.b)) {
         require(ape)
@@ -74,13 +74,9 @@ genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FA
                     return(NULL)
                 }, 
                 message=function(cond){
-                    if (rooted==FALSE && startsWith(cond$message, 'one tree is unrooted, unrooted both')) {
-                    #nothing to worry about
-                    } else {
-                        cond$message <- paste("For", metric, "metric (rooted = ", rooted,"): ", cond$message)
-                        message(cond)
-                        return(NULL)
-                    }
+                    cond$message <- paste("For", metric, "metric (rooted = ", rooted,"): ", cond$message)
+                    message(cond)
+                    return(NULL)
                 })
         }
         brk.a <- as.numeric(names(a))
@@ -103,7 +99,7 @@ genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FA
                 break
             }
             rgt <- brk$values[0:1]
-            RFrooted <- RFunrooted <- wRFrooted <- wRFunrooted <- SPRunrooted  <- pathunrooted <- NA
+            RFrooted <- RFunrooted <- wRFrooted <- wRFunrooted <- SPRunrooted  <- pathunrooted <- KCrooted  <- NA
             catchTreeDistErrors({RFrooted <- RF.dist(a[[tree.index.ctr['a']]], b[[tree.index.ctr['b']]], rooted=TRUE)},
                 'RF', rooted=TRUE)
             catchTreeDistErrors({RFunrooted <- RF.dist(a[[tree.index.ctr['a']]], b[[tree.index.ctr['b']]], rooted=FALSE)},
@@ -116,7 +112,9 @@ genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FA
                 'subtree prune & regraft')
             catchTreeDistErrors({pathunrooted <- path.dist(a[[tree.index.ctr['a']]], b[[tree.index.ctr['b']]])},
                 'path distance')
-            results[nrow(results)+1,] <- c(lft,rgt,RFrooted, RFunrooted, wRFrooted, wRFunrooted, SPRunrooted, pathunrooted)
+            catchTreeDistErrors({KCrooted <- treeDist(a[[tree.index.ctr['a']]], b[[tree.index.ctr['b']]])},
+                'Kendall-Colijn', rooted=TRUE)
+            results[nrow(results)+1,] <- c(lft,rgt,RFrooted, RFunrooted, wRFrooted, wRFunrooted, SPRunrooted, pathunrooted, KCrooted)
             lft <- rgt
             tree.index.ctr[brk$ind] <- tree.index.ctr[brk$ind] + 1 #NB, brk$ind is a factor with levels (m1,m2), so we hope that m1==1 and m2==2
         }
@@ -133,6 +131,7 @@ genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FA
                  wRFrooted=weighted.mean(results$wRFrooted,      weights, na.rm = TRUE),
                  wRFunrooted=weighted.mean(results$wRFunrooted,  weights, na.rm = TRUE),
                  SPRunrooted=weighted.mean(results$SPRunrooted,  weights, na.rm = TRUE),
-                 pathunrooted=weighted.mean(results$pathunrooted, weights, na.rm = TRUE)))
+                 pathunrooted=weighted.mean(results$pathunrooted,weights, na.rm = TRUE),
+                 KCrooted=weighted.mean(results$KCrooted,        weights, na.rm = TRUE)))
     }
 }
