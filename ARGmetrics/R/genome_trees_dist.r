@@ -57,7 +57,24 @@ genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FA
         } else {
              b <- process.b(treeseq.b)
         }
-    
+        catchTreeDistErrors <- function(f, metric="", rooted=FALSE) {
+            #allow processing to continue even if there are errors
+            tryCatch(f, 
+                error=function(cond){
+                    cond$message <- paste("For", metric, "metric (rooted = ", rooted,"): ", cond$message)
+                    message(cond)
+                    return(NULL)
+                }, 
+                message=function(cond){
+                    if (rooted==FALSE && startsWith(cond$message, 'one tree is unrooted, unrooted both')) {
+                    #nothing to worry about
+                    } else {
+                        cond$message <- paste("For", metric, "metric (rooted = ", rooted,"): ", cond$message)
+                        message(cond)
+                        return(NULL)
+                    }
+                })
+        }
         brk.a <- as.numeric(names(a))
         if (is.unsorted(brk.a))
             stop("Tree names should correspond to numerical breakpoints or variant totals, sorted from low to high, but tree names in the first trees object are not numbers in ascending order.")
@@ -69,31 +86,31 @@ genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FA
             warning("The sequence lengths of the two trees files differ markedly: ", max(brk.a), " vs. ", max(brk.b), immediate. = TRUE)
         breaks.table <- stack(list('a'=brk.a,'b'=brk.b))
         breaks.table <- by(breaks.table, breaks.table$values, function(x) x) #put identical breakpoints together
-        tree.index.counter=c(a=1, b=1) 
+        tree.index.ctr=c(a=1, b=1) 
         lft <- 0
         for (o in order(as.numeric(names(breaks.table)))) {
             brk = breaks.table[[o]]
-            if (any(tree.index.counter[brk$ind] > c(length(a),length(b))[brk$ind])) {
+            if (any(tree.index.ctr[brk$ind] > c(length(a),length(b))[brk$ind])) {
                 warning("Reached the end of the trees with ", max(brk.a, brk.b)-lft, " left to go")
                 break
             }
             rgt <- brk$values[0:1]
             RFrooted <- RFunrooted <- wRFrooted <- wRFunrooted <- SPRunrooted  <- pathunrooted <- NA
-            tryCatch({RFrooted <- RF.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]], rooted=TRUE)}, 
-                     error=function(e){})
-            tryCatch({RFunrooted <- RF.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]], rooted=FALSE)},
-                     error=function(e){})
-            tryCatch({wRFrooted <- wRF.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]], rooted=TRUE)},
-                     error=function(e){})
-            tryCatch({wRFunrooted <- wRF.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]], rooted=FALSE)},
-                     error=function(e){})
-            tryCatch({SPRunrooted <- SPR.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]])},
-                     error=function(e){})
-            tryCatch({pathunrooted <- path.dist(a[[tree.index.counter['a']]], b[[tree.index.counter['b']]])},
-                     error=function(e){})
+            catchTreeDistErrors({RFrooted <- RF.dist(a[[tree.index.ctr['a']]], b[[tree.index.ctr['b']]], rooted=TRUE)},
+                'RF', rooted=TRUE)
+            catchTreeDistErrors({RFunrooted <- RF.dist(a[[tree.index.ctr['a']]], b[[tree.index.ctr['b']]], rooted=FALSE)},
+                'RF')
+            catchTreeDistErrors({wRFrooted <- wRF.dist(a[[tree.index.ctr['a']]], b[[tree.index.ctr['b']]], rooted=TRUE)},
+                'weighted RF', rooted=TRUE)
+            catchTreeDistErrors({wRFunrooted <- wRF.dist(a[[tree.index.ctr['a']]], b[[tree.index.ctr['b']]], rooted=FALSE)},
+                'weighted RF')
+            catchTreeDistErrors({SPRunrooted <- SPR.dist(a[[tree.index.ctr['a']]], b[[tree.index.ctr['b']]])},
+                'subtree prune & regraft')
+            catchTreeDistErrors({pathunrooted <- path.dist(a[[tree.index.ctr['a']]], b[[tree.index.ctr['b']]])},
+                'path distance')
             results[nrow(results)+1,] <- c(lft,rgt,RFrooted, RFunrooted, wRFrooted, wRFunrooted, SPRunrooted, pathunrooted)
             lft <- rgt
-            tree.index.counter[brk$ind] <- tree.index.counter[brk$ind] + 1 #NB, brk$ind is a factor with levels (m1,m2), so we hope that m1==1 and m2==2
+            tree.index.ctr[brk$ind] <- tree.index.ctr[brk$ind] + 1 #NB, brk$ind is a factor with levels (m1,m2), so we hope that m1==1 and m2==2
         }
     }
     if (output.full.table) {
