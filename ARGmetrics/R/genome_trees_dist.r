@@ -21,7 +21,7 @@
 #' @examples
 #' genome.trees.dist()
 
-genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FALSE, acceptable.length.diff.pct = 0.1, variant.positions=NULL, randomly.resolve.a=FALSE, randomly.resolve.b=FALSE) { 
+genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FALSE, acceptable.length.diff.pct = 0.1, variant.positions=NULL, randomly.resolve.a=FALSE, randomly.resolve.b=FALSE, force.rooted=TRUE) { 
     results=data.frame(lft=numeric(), rgt=numeric(), RFrooted=numeric(), RFunrooted=numeric(),
         wRFrooted=numeric(), wRFunrooted=numeric(), SPRunrooted=numeric(), pathunrooted=numeric())
     
@@ -48,12 +48,20 @@ genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FA
     
         #check if trees or filenames
         if (class(treeseq.a) != "multiPhylo") {
-            a <- process.a(read.nexus(treeseq.a, force.multi=TRUE))
+            multiphy <- read.nexus(treeseq.a, force.multi=TRUE)
+            if (force.rooted)
+                for (i in seq_along(multiphy)) 
+                    multiphy[[i]]$root.edge <- 0
+            a <- process.a(multiphy)
         } else {
             a <- process.a(treeseq.a)
         }
         if (class(treeseq.b) != "multiPhylo") {
-             b <- process.b(read.nexus(treeseq.b, force.multi=TRUE))
+            multiphy <- read.nexus(treeseq.b, force.multi=TRUE)
+            if (force.rooted)
+                for (i in seq_along(multiphy)) 
+                    multiphy[[i]]$root.edge <- 0
+            b <- process.b(multiphy)
         } else {
              b <- process.b(treeseq.b)
         }
