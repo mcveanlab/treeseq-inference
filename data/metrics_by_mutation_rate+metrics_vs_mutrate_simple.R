@@ -24,7 +24,7 @@ sapply(metrics, function(m) {
         dm = subset(datamean, error_rate==error.rate)
         matplot(d$mutation_rate, d[, colnames], type='p', main=paste(m, 'metric: error', error.rate),
             col=makeTransparent(toolcols,0.1),
-            ylab='Distance between true and inferred trees',
+            ylab='Distance between true and inferred trees (solid: n=20 tips; dashed: n=10)',
             xlab='mutation rate',
             log='x', ylim = c(0,max(d[, colnames], na.rm=TRUE)),
             pch = ifelse(data$error_rate == error.rates[1],1,ifelse(data$error_rate == error.rates[2], 2, 4)))
