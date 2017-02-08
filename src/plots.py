@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Code to run simulations, inference methods and generate all plots
 in the paper.
@@ -433,7 +434,8 @@ class InferenceRunner(object):
             iteration_ids, stats_file, time, memory = self.run_argweaver(
                 infile, self.row.Ne, self.row.recombination_rate, self.row.mutation_rate,
                 out_fn, inference_seed, int(self.row.aw_n_out_samples),
-                self.row.aw_iter_out_freq, int(self.row.aw_burnin_iters))
+                self.row.aw_iter_out_freq, int(self.row.aw_burnin_iters),
+                verbose = logging.getLogger().isEnabledFor(logging.DEBUG))
             #now must convert all of the .smc files to .nex format
             for it in iteration_ids:
                 base = construct_argweaver_name(self.base_fn, inference_seed, it)
@@ -533,16 +535,13 @@ class InferenceRunner(object):
     @staticmethod
     def run_argweaver(
             sites_file, Ne, recombination_rate, mutation_rate, path_prefix, seed,
-            MSMC_samples, sample_step, burnin_iterations=0, quiet=True):
+            MSMC_samples, sample_step, burnin_iterations=0, verbose=False):
         """
         this produces a whole load of .smc files labelled <path_prefix>i.0.smc,
         <path_prefix>i.10.smc, etc.
 
         Returns the iteration numbers ('0', '10', '20' etc), the name of the
         statistics file, the total CPU time, and the max memory usage.
-
-        TO DO: if verbosity < 0 (logging level == warning) we should set quiet = TRUE
-
         """
         cpu_time = []
         memory_use = []
@@ -553,7 +552,7 @@ class InferenceRunner(object):
                    '--recombrate', str(recombination_rate),
                    '--mutrate', str(mutation_rate),
                    '--overwrite']
-            if quiet:
+            if not verbose:
                 exe += ['--quiet']
             if seed is not None:
                 exe += ['--randseed', str(int(seed))]
