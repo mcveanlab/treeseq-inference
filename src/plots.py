@@ -1481,6 +1481,7 @@ makeTransparent = function(..., alpha=0.5) {
 datamean <- aggregate(subset(data, select=-ARGweaver_iterations), list(
     data$sample_size, data$mutation_rate, data$error_rate), mean, na.rm=TRUE)
 error.rates <- sort(unique(data$error_rate))
+sample_sizes <- rev(sort(unique(data$sample_size)))
 layout(t(seq_along(error.rates)))
 sapply(metrics, function(m) {
     colnames = paste(names(toolcols), m, sep='_')
@@ -1495,10 +1496,10 @@ sapply(metrics, function(m) {
             pch = ifelse(data$error_rate == error.rates[1],1,ifelse(data$error_rate == error.rates[2], 2, 4)))
         mtext(names(toolcols), 1, line=rev(seq(-1.2, by=-0.8, along.with=toolcols)), adj=0.05,
             cex=0.7, col=toolcols)
-        for n in sort(unique(dm$sample_size)) {
+        for (n in sample_sizes) {
             #matlines(dm$mutation_rate, dm[, colnames], lty=which(error.rates==error.rate), col=toolcols)
             dm = subset(datamean, error_rate==error.rate & sample_size==n)
-            matlines(dm$mutation_rate, dm[, colnames], lty=1, col=toolcols)
+            matlines(dm$mutation_rate, dm[, colnames], lty=match(n, sample_sizes), col=toolcols)
         }
     })
 })
