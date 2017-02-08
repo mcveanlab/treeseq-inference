@@ -70,16 +70,14 @@ genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FA
         }
         catchTreeDistErrors <- function(f, metric="", rooted=FALSE) {
             #allow processing to continue even if there are errors
-            tryCatch(f, 
+            withCallingHandlers(f, 
                 error=function(cond){
                     cond$message <- paste("For", metric, "metric (rooted = ", rooted,"): ", cond$message)
                     message(cond)
-                    return(NULL)
                 }, 
                 message=function(cond){
                     cond$message <- paste("For", metric, "metric (rooted = ", rooted,"): ", cond$message)
                     message(cond)
-                    return(NULL)
                 })
         }
         brk.a <- as.numeric(names(a))
