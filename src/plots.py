@@ -1475,7 +1475,8 @@ makeTransparent = function(..., alpha=0.5) {
   }
   return(apply(newColor, 2, .makeTransparent, alpha=alpha))
 }
-datamean <- aggregate(subset(data, select=-ARGweaver_iterations), list(data$mutation_rate, data$error_rate), mean, na.rm=TRUE)
+datamean <- aggregate(subset(data, select=-ARGweaver_iterations), list(
+    data$sample_size, data$mutation_rate, data$error_rate), mean, na.rm=TRUE)
 error.rates <- sort(unique(data$error_rate))
 layout(t(seq_along(error.rates)))
 sapply(metrics, function(m) {
@@ -1489,10 +1490,13 @@ sapply(metrics, function(m) {
             xlab='mutation rate',
             log='x', ylim = c(0,max(d[, colnames], na.rm=TRUE)),
             pch = ifelse(data$error_rate == error.rates[1],1,ifelse(data$error_rate == error.rates[2], 2, 4)))
-        #matlines(dm$mutation_rate, dm[, colnames], lty=which(error.rates==error.rate), col=toolcols)
-        matlines(dm$mutation_rate, dm[, colnames], lty=1, col=toolcols)
         mtext(names(toolcols), 1, line=rev(seq(-1.2, by=-0.8, along.with=toolcols)), adj=0.05,
             cex=0.7, col=toolcols)
+        for n in sort(unique(dm$sample_size)) {
+            #matlines(dm$mutation_rate, dm[, colnames], lty=which(error.rates==error.rate), col=toolcols)
+            dm = subset(datamean, error_rate==error.rate & sample_size==n)
+            matlines(dm$mutation_rate, dm[, colnames], lty=1, col=toolcols)
+        }
     })
 })
 """ % (self.to_Rvec(metric_colours), self.to_Rvec(metrics))
