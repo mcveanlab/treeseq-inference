@@ -70,13 +70,13 @@ genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FA
         }
         catchTreeDistErrors <- function(f, metric="", rooted=FALSE) {
             #allow processing to continue even if there are errors
-            withCallingHandlers(f, 
-                error=function(cond){
-                    cond$message <- paste("For", metric, "metric (rooted = ", rooted,"): ", cond$message)
-                    message(cond)
-                }, 
+            tryCatch(withCallingHandlers(f, 
                 message=function(cond){
-                    cond$message <- paste("For", metric, "metric (rooted = ", rooted,"): ", cond$message)
+                    cond$message <- paste("For", metric, "metric (rooted = ", rooted,"): ", cond$message, "\n")
+                    message(cond)
+                }),
+                error=function(cond){
+                    cond$message <- paste("For", metric, "metric (rooted = ", rooted,"): ", cond$message, "\n")
                     message(cond)
                 })
         }
