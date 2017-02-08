@@ -1,6 +1,8 @@
 """
 Extra functionality for msprime which we need here.
 """
+import logging
+
 import numpy as np
 
 import msprime
@@ -61,6 +63,11 @@ def discretise_mutations(ts):
     Raises a ValueError if this is not possible without violating the underlying
     topology.
     """
+    logging.warning("The current implementation of the discretise_mutations() function" +
+        " creates sequences which do not fit the standard evolutionary model well." +
+        " That causes inference problems for probabalistic inference programs" +
+        " such as ARGweaver.\n" + "It is not recommended to test ARGweaver inference" +
+        " on this dataset, especially for high mutation rates")
     breakpoints = sorted(set([r.left for r in ts.records()] + [ts.sequence_length]))
     old_mutations = list(ts.mutations())
     positions = []
