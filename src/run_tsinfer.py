@@ -14,7 +14,9 @@ import tsinfer
 def main():
 
     parser = argparse.ArgumentParser(
-        description="Simple CLI wrapper for tsinf")
+        description="Simple CLI wrapper for tsinf\n msprime version: {}\n tsinfer version: {}".format(
+            msprime.__version__, tsinfer.__version__), 
+            formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--verbosity', '-v', action='count', default=0)
     parser.add_argument(
         "samples",
