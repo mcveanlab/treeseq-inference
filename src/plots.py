@@ -222,7 +222,7 @@ def argweaver_names_from_msprime_row(row, sim_dir):
 def construct_rentplus_name(sim_name):
     """
     Returns an RentPlus inference filename (without file extension),
-    based on a simulation name. 
+    based on a simulation name.
     """
     d,f = os.path.split(sim_name)
     return os.path.join(d,'+'.join(['rentpls', f, ""]))
@@ -349,7 +349,7 @@ class InferenceRunner(object):
             inferred_ts, time, memory = self.run_tsinfer(
                 samples_fn, positions_fn, self.row.length, scaled_recombination_rate,
                 num_threads=self.num_threads)
-            
+
             if 'tsinfer_subset' in self.row:
                 logging.debug("writing trees for only a subset of {} / {} tips".format(
                     int(self.row.tsinfer_subset), inferred_ts.sample_size))
@@ -536,11 +536,11 @@ class InferenceRunner(object):
             MSMC_samples, sample_step, burnin_iterations=0, quiet=True):
         """
         this produces a whole load of .smc files labelled <path_prefix>i.0.smc,
-        <path_prefix>i.10.smc, etc. 
-        
+        <path_prefix>i.10.smc, etc.
+
         Returns the iteration numbers ('0', '10', '20' etc), the name of the
         statistics file, the total CPU time, and the max memory usage.
-        
+
         TO DO: if verbosity < 0 (logging level == warning) we should set quiet = TRUE
 
         """
@@ -807,12 +807,16 @@ class Dataset(object):
                 # haven't been filled in already. This allows us to stop and start the
                 # infer processes without having to start from scratch each time.
                 if force or pd.isnull(row[cpu_time_colname(tool)]):
-                    work.append((tool, row, self.simulations_dir, num_threads, len(self.data.index)))
+                    work.append(
+                        (tool, row, self.simulations_dir, num_threads, len(self.data.index)))
                 else:
-                    logging.info("Data row {} is filled out for {} inference: skipping".format(i, tool))
-        logging.info("running {} inference trials (max {} tools over {} of {} rows) with {} processes and {} threads".format(
-            len(work), len(self.tools), int(np.ceil(len(work)/len(self.tools))),
-            len(self.data.index), num_processes, num_threads))
+                    logging.info(
+                        "Data row {} is filled out for {} inference: skipping".format(i, tool))
+        logging.info(
+            "running {} inference trials (max {} tools over {} of {} rows) with {} "
+            "processes and {} threads".format(
+                len(work), len(self.tools), int(np.ceil(len(work)/len(self.tools))),
+                len(self.data.index), num_processes, num_threads))
         if num_processes > 1:
             with multiprocessing.Pool(processes=num_processes) as pool:
                 for row_id, updated in pool.imap_unordered(infer_worker, work):
@@ -1419,7 +1423,7 @@ toolcols <- %s
 metrics <- %s
 makeTransparent = function(..., alpha=0.5) {
   if(alpha<0 | alpha>1) stop('alpha must be between 0 and 1')
-  alpha = floor(255*alpha)  
+  alpha = floor(255*alpha)
   newColor = col2rgb(col=unlist(list(...)), alpha=FALSE)
   .makeTransparent = function(col, alpha) {
     rgb(red=col[1], green=col[2], blue=col[3], alpha=alpha, maxColorValue=255)
@@ -1433,7 +1437,7 @@ layout(matrix(1:6,2,3))
 sapply(metrics, function(m) {
     colnames = paste(names(toolcols), m, sep='_')
     matplot(data$mutation_rate, data[, colnames], type='p', main=paste(m, 'metric'),
-        col= makeTransparent(toolcols, 0.1), 
+        col= makeTransparent(toolcols, 0.1),
         ylab='Distance between true and inferred trees',
         xlab='mutation rate (err: dotted=0.1, dashed=0.01, solid=0.0)',
         log='x', ylim = c(0,max(data[, colnames], na.rm=TRUE)),
@@ -1453,7 +1457,7 @@ sapply(metrics, function(m) {
 
 class MetricsAgainstMutationRateSimpleFigure(Figure):
     """
-    A simpler version that 
+    A simpler version that
     """
     datasetClass = MetricsByMutationRateDataset
     name = "metrics_vs_mutrate_simple"
@@ -1468,7 +1472,7 @@ toolcols <- %s
 metrics <- %s
 makeTransparent = function(..., alpha=0.5) {
   if(alpha<0 | alpha>1) stop('alpha must be between 0 and 1')
-  alpha = floor(255*alpha)  
+  alpha = floor(255*alpha)
   newColor = col2rgb(col=unlist(list(...)), alpha=FALSE)
   .makeTransparent = function(col, alpha) {
     rgb(red=col[1], green=col[2], blue=col[3], alpha=alpha, maxColorValue=255)
@@ -1485,7 +1489,7 @@ sapply(metrics, function(m) {
         d = subset(data, error_rate==error.rate)
         dm = subset(datamean, error_rate==error.rate)
         matplot(d$mutation_rate, d[, colnames], type='p', main=paste(m, 'metric: error', error.rate),
-            col=makeTransparent(toolcols,0.1), 
+            col=makeTransparent(toolcols,0.1),
             ylab='Distance between true and inferred trees',
             xlab='mutation rate',
             log='x', ylim = c(0,max(d[, colnames], na.rm=TRUE)),
