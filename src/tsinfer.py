@@ -105,7 +105,7 @@ class ReferencePanel(object):
             while H[u, l] == 1:
                 v = u
                 u = P[u][l]
-            mutations.append((sites[l], v))
+            mutations.append((sites[l], (v,)))
         assert len(mutations) == m
         for u in range(n, N):
             row = C[u]
@@ -129,9 +129,11 @@ class ReferencePanel(object):
         #     print(r)
         # for m in mutations:
         #     print(m)
+        samples = [(0, 0) for _ in range(n)]
         ll_ts = _msprime.TreeSequence()
-        ll_ts.load_records(records)
-        ll_ts.set_mutations(mutations)
+        ll_ts.load_records(
+            samples=samples, coalescence_records=records, mutations=mutations)
+        assert ll_ts.get_sample_size() == n
         assert ll_ts.get_num_mutations() == m
         ts = msprime.TreeSequence(ll_ts)
         assert ts.num_mutations == m
