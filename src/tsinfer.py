@@ -21,6 +21,8 @@ import msprime
 import _msprime
 import _tsinfer
 
+__version__ = 0.2
+
 if sys.version_info[0] < 3:
     raise Exception("Python 3 you idiot!")
 

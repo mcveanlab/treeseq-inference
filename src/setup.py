@@ -25,7 +25,6 @@ _tsinfer_module = Extension(
 )
 
 setup(
-    version = 0.2,
     name="tsinfer",
     description="Infer tree sequences from genetic data.",
     long_description=long_description,
