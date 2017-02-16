@@ -350,7 +350,6 @@ class InferenceRunner(object):
             inferred_ts, time, memory = self.run_tsinfer(
                 samples_fn, positions_fn, self.row.length, scaled_recombination_rate,
                 num_threads=self.num_threads)
-
             if 'tsinfer_subset' in self.row:
                 logging.debug("writing trees for only a subset of {} / {} tips".format(
                     int(self.row.tsinfer_subset), inferred_ts.sample_size))
@@ -358,6 +357,7 @@ class InferenceRunner(object):
                 out_fn = construct_tsinfer_name(self.base_fn, int(self.row.tsinfer_subset))
             else:
                 out_fn = construct_tsinfer_name(self.base_fn)
+            inferred_ts.dump(out_fn + ".hdf5")
             with open(out_fn +".nex", "w+") as out:
                 #tree metrics assume tips are numbered from 1 not 0
                 inferred_ts.write_nexus_trees(out, tree_labels_between_variants=True,
@@ -622,7 +622,7 @@ class MetricsRunner(object):
         self.row = row
         self.nexus_dir = nexus_dir
         self.num_threads = num_threads
-        self.tools=collections.OrderedDict()
+        self.tools = collections.OrderedDict()
         # the original file against which others should be compared is the one
         # without errors injected, but could potentially be a subsetted one
         self.simulation_comparison_fn=msprime_name_from_row(row, self.nexus_dir,
@@ -790,7 +790,7 @@ class Dataset(object):
         self.dump_data(write_index=True)
         self.dump_setup({k:v for k,v in vars(args).items() if k != "func"})
 
-    def infer(self, num_processes, num_threads, force=False, bespoke_rows=[]):
+    def infer(self, num_processes, num_threads, force=False, bespoke_rows=[], tool=None):
         """
         Runs the main inference processes and stores results in the dataframe.
         can 'force' all rows to be (re)run, or specify bespoke set of rows to infer
@@ -799,7 +799,13 @@ class Dataset(object):
         work = []
         for i in bespoke_rows if bespoke_rows else self.data.index:
             row = self.data.iloc[i]
-            tools_to_use = [tool for tool,func in self.tools.items() if func(self, row)]
+            if tool is None:
+                tools_to_use = [tool for tool,func in self.tools.items() if func(self, row)]
+            else:
+                if tool not in self.tools:
+                    raise ValueError("Tool '{}' not recognised: options = {}".format(
+                        tool, list(self.tools.keys())))
+                tools_to_use = [tool]
             random.shuffle(tools_to_use) #helps to avoid stalling on long-running tools
             for tool in tools_to_use:
                 # All values that are unset should be NaN, so we only run those that
@@ -1552,7 +1558,7 @@ def run_setup(cls, args):
 def run_infer(cls, args):
     logging.info("Inferring {}".format(cls.name))
     f = cls(args.data_file)
-    f.infer(args.processes, args.threads, args.force, args.row)
+    f.infer(args.processes, args.threads, args.force, args.row, args.tool)
 
 
 def run_process(cls, args):
@@ -1600,6 +1606,9 @@ def main():
     subparser.add_argument(
         "--threads", '-t', type=int, default=1,
         help="number of threads per worker process (for supporting tools)")
+    subparser.add_argument(
+        "--tool", '-T', default=None,
+        help="Only run this specific tool")
     subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
         help='the dataset identifier', choices=[d.name for d in datasets])

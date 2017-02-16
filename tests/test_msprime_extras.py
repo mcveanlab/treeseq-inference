@@ -32,7 +32,7 @@ class TestNewickTrees(unittest.TestCase):
     def test_write_nexus_trees(self):
         ts = self.get_binary_tree_sequence()
         with tempfile.TemporaryFile("w+") as f:
-            msprime_extras.write_nexus_trees(ts, f)
+            msprime_extras.write_nexus_trees(ts, f, zero_based_tip_numbers=False)
             f.seek(0)
             tree_list = dendropy.TreeList.get(file=f, schema="nexus")
             self.assertEqual(ts.num_trees, len(tree_list))
@@ -68,7 +68,8 @@ class TestDiscretisePositions(unittest.TestCase):
     """
     def verify_discretise(self, ts):
         ts_new = msprime_extras.discretise_mutations(ts)
-        self.assertEqual(list(ts.records()), list(ts_new.records()))
+        self.assertEqual(list(ts.nodes()), list(ts_new.nodes()))
+        self.assertEqual(list(ts.edgesets()), list(ts_new.edgesets()))
         breakpoints = sorted(set([r.left for r in ts.records()] + [ts.sequence_length]))
         for j in range(len(breakpoints) - 1):
             left, right = breakpoints[j], breakpoints[j + 1]
@@ -78,8 +79,8 @@ class TestDiscretisePositions(unittest.TestCase):
                 mut for mut in ts_new.mutations() if left <= mut.position < right]
             self.assertEqual(len(old_mutations), len(new_mutations))
             self.assertEqual(
-                [mut.node for mut in old_mutations],
-                [mut.node for mut in new_mutations])
+                [mut.nodes for mut in old_mutations],
+                [mut.nodes for mut in new_mutations])
             self.assertEqual(
                 [mut.index for mut in old_mutations],
                 [mut.index for mut in new_mutations])
