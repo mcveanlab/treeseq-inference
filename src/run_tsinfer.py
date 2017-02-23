@@ -5,20 +5,21 @@ import sys
 import os
 import argparse
 
-import pkg_resources  # part of setuptools
 import numpy as np
 
-sys.path.insert(1,os.path.join(sys.path[0],'..','msprime')) # use the local copy of msprime in preference to the global one
+# use the local copy of msprime in preference to the global one
+sys.path.insert(1,os.path.join(sys.path[0],'..','msprime'))
 import msprime
 import tsinfer
 
 def main():
 
+    description = """Simple CLI wrapper for tsinf
+        msprime version: {}
+        tsinfer version: {}""".format(msprime.__version__, tsinfer.__version__)
     parser = argparse.ArgumentParser(
-        description="Simple CLI wrapper for tsinf\n msprime version: {}\n tsinfer version: {}".format(
-            msprime.__version__, pkg_resources.require("tsinfer")[0].version
-), 
-            formatter_class=argparse.RawDescriptionHelpFormatter)
+        description=description,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--verbosity', '-v', action='count', default=0)
     parser.add_argument(
         "samples",

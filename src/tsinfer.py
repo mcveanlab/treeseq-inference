@@ -21,6 +21,8 @@ import msprime
 import _msprime
 import _tsinfer
 
+__version__ = 0.2
+
 if sys.version_info[0] < 3:
     raise Exception("Python 3 you idiot!")
 
@@ -92,10 +94,10 @@ class ReferencePanel(object):
         # for j in range(N):
         #     print(j, "\t", C[j])
 
-        mutations = []
-        records = []
+        nodes = msprime.NodeTable(N)
+        mutations = msprime.MutationTable(m, m)
+        edgesets = msprime.EdgesetTable(N, 2 * N)
         # Create the mutations by finding the oldest 1 in each locus.
-        # print("mutations = ")
         for l in range(m):
             u = np.where(H[:,l] == 1)[0][0]
             # u is a sample with this mutations. Follow its path upwards until
@@ -103,39 +105,36 @@ class ReferencePanel(object):
             while H[u, l] == 1:
                 v = u
                 u = P[u][l]
-            mutations.append((sites[l], (v,)))
-        assert len(mutations) == m
+            mutations.add_row(position=sites[l], nodes=(v,))
+        assert mutations.num_rows == m
+        for u in range(n):
+            nodes.add_row(flags=msprime.NODE_IS_SAMPLE)
+        # Change the first site to so our tree sequence begins at 0.
+        sites[0] = 0
+        # print("sites = ", sites)
         for u in range(n, N):
+            nodes.add_row(time=u)
             row = C[u]
             last_c = row[0]
             left = 0
             for l in range(1, m):
                 if row[l] != last_c:
                     if len(last_c) > 0:
-                        records.append(msprime.CoalescenceRecord(
-                            left=sites[left], right=sites[l], node=u, children=tuple(last_c),
-                            time=u, population=0))
+                        edgesets.add_row(
+                            left=sites[left], right=sites[l], parent=u,
+                            children=tuple(last_c))
                     left = l
                     last_c = row[l]
             if len(last_c) > 0:
-                records.append(msprime.CoalescenceRecord(
-                    left=sites[left], right=self.sequence_length, node=u,
-                    children=tuple(last_c), time=u, population=0))
-        records.sort(key=lambda r: r.time)
-        # print("records = ")
-        # for r in records:
-        #     print(r)
-        # for m in mutations:
-        #     print(m)
-        samples = [(0, 0) for _ in range(n)]
-        ll_ts = _msprime.TreeSequence()
-        ll_ts.load_records(
-            samples=samples, coalescence_records=records, mutations=mutations)
-        assert ll_ts.get_sample_size() == n
-        assert ll_ts.get_num_mutations() == m
-        ts = msprime.TreeSequence(ll_ts)
+                edgesets.add_row(
+                    left=sites[left], right=self.sequence_length, parent=u,
+                    children=tuple(last_c))
+        # print("edgesets = ", edgesets.num_rows)
+        # print("left = ", edgesets.left)
+        # print("right = ", edgesets.right)
+        ts = msprime.load_tables(nodes=nodes, edgesets=edgesets, mutations=mutations)
+        assert ts.sample_size == n
         assert ts.num_mutations == m
-        assert len(list(ts.mutations())) == m
         return ts
 
 
