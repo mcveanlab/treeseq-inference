@@ -9,12 +9,13 @@ import numpy as np
 
 # use the local copy of msprime in preference to the global one
 sys.path.insert(1,os.path.join(sys.path[0],'..','msprime'))
+sys.path.insert(1,os.path.join(sys.path[0],'..','tsinfer'))
 import msprime
 import tsinfer
 
 def main():
 
-    description = """Simple CLI wrapper for tsinf
+    description = """Simple CLI wrapper for tsinfer
         msprime version: {}
         tsinfer version: {}""".format(msprime.__version__, tsinfer.__version__)
     parser = argparse.ArgumentParser(
@@ -37,6 +38,9 @@ def main():
         "-r", "--recombination-rate", default=1, type=float,
         help="The scaled recombination rate.")
     parser.add_argument(
+        "-e", "--error-probability", default=0, type=float,
+        help="The probablity of observing an error")
+    parser.add_argument(
         "-t", "--threads", default=1, type=int,
         help="The number of worker threads to use")
 
@@ -44,8 +48,9 @@ def main():
     S = np.load(args.samples)
     pos = np.load(args.positions)
     panel = tsinfer.ReferencePanel(S, pos, args.length)
-    P = panel.infer_paths(args.recombination_rate, num_workers=args.threads)
-    ts_new = panel.convert_records(P)
+    P, mutations = panel.infer_paths(
+        args.recombination_rate, err=args.error_probability, num_workers=args.threads)
+    ts_new = panel.convert_records(P, mutations)
     ts_simplified = ts_new.simplify()
     ts_simplified.dump(args.output)
 

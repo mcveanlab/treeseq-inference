@@ -36,7 +36,6 @@ import msprime_extras
 import msprime_fastARG
 import msprime_ARGweaver
 import msprime_RentPlus
-import tsinfer
 import ARG_metrics
 
 fastARG_executable = os.path.join(curr_dir,'..','fastARG','fastARG')
@@ -349,7 +348,7 @@ class InferenceRunner(object):
             scaled_recombination_rate = 4 * self.row.recombination_rate * self.row.Ne
             inferred_ts, time, memory = self.run_tsinfer(
                 samples_fn, positions_fn, self.row.length, scaled_recombination_rate,
-                num_threads=self.num_threads)
+                self.row.error_rate, num_threads=self.num_threads)
             if 'tsinfer_subset' in self.row:
                 logging.debug("writing trees for only a subset of {} / {} tips".format(
                     int(self.row.tsinfer_subset), inferred_ts.sample_size))
@@ -468,11 +467,12 @@ class InferenceRunner(object):
         return results
 
     @staticmethod
-    def run_tsinfer(sample_fn, positions_fn, length, rho, num_threads=1):
+    def run_tsinfer(sample_fn, positions_fn, length, rho, error_probability, num_threads=1):
         with tempfile.NamedTemporaryFile("w+") as ts_out:
             cmd = [
                 sys.executable, tsinfer_executable, sample_fn, positions_fn,
                 "--length", str(int(length)), "--recombination-rate", str(rho),
+                "--error-probability", str(error_probability),
                 "--threads", str(num_threads), ts_out.name]
             cpu_time, memory_use = time_cmd(cmd)
             ts_simplified = msprime.load(ts_out.name)
@@ -790,7 +790,9 @@ class Dataset(object):
         self.dump_data(write_index=True)
         self.dump_setup({k:v for k,v in vars(args).items() if k != "func"})
 
-    def infer(self, num_processes, num_threads, force=False, bespoke_rows=[], tool=None):
+    def infer(
+            self, num_processes, num_threads, force=False, bespoke_rows=[],
+            specific_tool=None):
         """
         Runs the main inference processes and stores results in the dataframe.
         can 'force' all rows to be (re)run, or specify bespoke set of rows to infer
@@ -799,13 +801,13 @@ class Dataset(object):
         work = []
         for i in bespoke_rows if bespoke_rows else self.data.index:
             row = self.data.iloc[i]
-            if tool is None:
+            if specific_tool is None:
                 tools_to_use = [tool for tool,func in self.tools.items() if func(self, row)]
             else:
-                if tool not in self.tools:
+                if specific_tool not in self.tools:
                     raise ValueError("Tool '{}' not recognised: options = {}".format(
-                        tool, list(self.tools.keys())))
-                tools_to_use = [tool]
+                        specific_tool, list(self.tools.keys())))
+                tools_to_use = [specific_tool]
             random.shuffle(tools_to_use) #helps to avoid stalling on long-running tools
             for tool in tools_to_use:
                 # All values that are unset should be NaN, so we only run those that
