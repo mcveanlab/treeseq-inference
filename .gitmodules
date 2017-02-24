@@ -10,3 +10,6 @@
 [submodule "RentPlus"]
 	path = RentPlus
 	url = https://github.com/SajadMirzaei/RentPlus
+[submodule "tsinfer"]
+	path = tsinfer
+	url = git@github.com:mcveanlab/tsinfer.git
