@@ -358,10 +358,10 @@ class InferenceRunner(object):
                 #tree metrics assume tips are numbered from 1 not 0
                 inferred_ts.write_nexus_trees(out, tree_labels_between_variants=True,
                     zero_based_tip_numbers=tree_tip_labels_start_at_0)
-            poly_sum = poly_ss = poly_max = 0
+            poly_sum = poly_ssq = poly_max = 0
             for e in inferred_ts.edgesets():
                 poly_sum += len(e.children)
-                poly_ss += len(e.children)**2
+                poly_ssq += len(e.children)**2
                 poly_max = max(len(e.children), poly_max)
             poly_mean = poly_sum / inferred_ts.num_edgesets
             n = inferred_ts.num_edgesets
