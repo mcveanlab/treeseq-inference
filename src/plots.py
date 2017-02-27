@@ -363,8 +363,8 @@ class InferenceRunner(object):
                 poly_sum += len(e.children)
                 poly_ss += len(e.children)**2
                 poly_max = max(len(e.children), poly_max)
-            poly_mean = poly_sum / inferred_ts.get_num_edgesets()
-            n = inferred_ts.get_num_edgesets()
+            poly_mean = poly_sum / inferred_ts.num_edgesets
+            n = inferred_ts.num_edgesets
         else:
             logging.info("Files not found for tsinfer inference:" +
                 " simulation on row {} has produced no files.".format(self.row[0]) +
@@ -373,9 +373,9 @@ class InferenceRunner(object):
             cpu_time_colname(self.tool): time,
             memory_colname(self.tool): memory,
             n_coalescence_records_colname(self.tool): c_records,
-            mean_polytomy: poly_mean if poly_sum else None,
-            var_polytomy: ((poly_ssq - poly_sum**2/n)/ (n-1)) if poly_sum else None,
-            max_polytomy: poly_max
+            'tsinfer_mean_polytomy': poly_mean if poly_sum else None,
+            'tsinfer_var_polytomy': ((poly_ssq - poly_sum**2/n)/ (n-1)) if poly_sum else None,
+            'tsinfer_max_polytomy': poly_max
         }
 
     def __run_fastARG(self):
@@ -391,7 +391,7 @@ class InferenceRunner(object):
             with open(out_fn , "w+") as out:
                 #the treeseq output by run_fastarg() is already averaged between regions
                 inferred_ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
-            c_records = inferred_ts.get_num_edgesets()
+            c_records = inferred_ts.num_edgesets
         else:
             logging.info("Files not found for fastARG inference:" +
                 " simulation on row {} has produced no files.".format(self.row[0]) +
@@ -453,7 +453,7 @@ class InferenceRunner(object):
                             smc2arg_executable, base, msprime_txtrecs,
                             override_assertions=True)
                         inferred_ts = msprime.load_txt(msprime_txtrecs.name).simplify()
-                        c_records.append(inferred_ts.get_num_edgesets())
+                        c_records.append(inferred_ts.num_edgesets)
                 except AssertionError:
                     logging.warning("smc2arg bug encountered converting '{}' to TS. Ignoring this row".format(
                         base+".msp"))
@@ -907,7 +907,7 @@ class Dataset(object):
 
     @staticmethod
     def save_variant_matrices(ts, fname, error_rate=None, infinite_sites=True):
-        if ts.get_num_mutations()>0:
+        if ts.num_mutations>0:
             S = generate_samples(ts, error_rate or 0)
             filename = add_error_param_to_name(fname, error_rate)
             outfile = filename + ".npy"
