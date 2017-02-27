@@ -211,7 +211,7 @@ def construct_argweaver_name(sim_name, seed, iteration_number=None):
 
 def argweaver_names_from_msprime_row(row, sim_dir):
     """
-    return the argweaver names based on an msprime sim specified by row
+    return multiple argweaver names based on an msprime sim specified by row
     there is one name per argweaver iteration listed in row.ARGweaver_iterations
     """
     return [construct_argweaver_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'),
@@ -230,7 +230,6 @@ def construct_rentplus_name(sim_name):
 def rentplus_name_from_msprime_row(row, sim_dir):
     """
     return the rentplus name based on an msprime sim specified by row
-    there is one name per argweaver iteration listed in row.ARGweaver_iterations
     """
     return construct_rentplus_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'))
 
@@ -339,9 +338,7 @@ class InferenceRunner(object):
 
         samples_fn = self.base_fn + ".npy"
         positions_fn = self.base_fn + ".pos.npy"
-        time = None
-        memory = None
-        c_records = None
+        time = memory = c_records = poly_sum = poly_ssq = poly_max = None
         logging.debug("reading: variant matrix {} & positions {} for msprime inference".format(
             samples_fn, positions_fn))
         if os.path.isfile(samples_fn) and os.path.isfile(positions_fn):
@@ -361,7 +358,13 @@ class InferenceRunner(object):
                 #tree metrics assume tips are numbered from 1 not 0
                 inferred_ts.write_nexus_trees(out, tree_labels_between_variants=True,
                     zero_based_tip_numbers=tree_tip_labels_start_at_0)
-            c_records = inferred_ts.get_num_records()
+            poly_sum = poly_ss = poly_max = 0
+            for e in inferred_ts.edgesets():
+                poly_sum += len(e.children)
+                poly_ss += len(e.children)**2
+                poly_max = max(len(e.children), poly_max)
+            poly_mean = poly_sum / inferred_ts.get_num_edgesets()
+            n = inferred_ts.get_num_edgesets()
         else:
             logging.info("Files not found for tsinfer inference:" +
                 " simulation on row {} has produced no files.".format(self.row[0]) +
@@ -369,7 +372,10 @@ class InferenceRunner(object):
         return  {
             cpu_time_colname(self.tool): time,
             memory_colname(self.tool): memory,
-            n_coalescence_records_colname(self.tool): c_records
+            n_coalescence_records_colname(self.tool): c_records,
+            mean_polytomy: poly_mean if poly_sum else None,
+            var_polytomy: ((poly_ssq - poly_sum**2/n)/ (n-1)) if poly_sum else None,
+            max_polytomy: poly_max
         }
 
     def __run_fastARG(self):
@@ -385,7 +391,7 @@ class InferenceRunner(object):
             with open(out_fn , "w+") as out:
                 #the treeseq output by run_fastarg() is already averaged between regions
                 inferred_ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
-            c_records = inferred_ts.get_num_records()
+            c_records = inferred_ts.get_num_edgesets()
         else:
             logging.info("Files not found for fastARG inference:" +
                 " simulation on row {} has produced no files.".format(self.row[0]) +
@@ -447,7 +453,7 @@ class InferenceRunner(object):
                             smc2arg_executable, base, msprime_txtrecs,
                             override_assertions=True)
                         inferred_ts = msprime.load_txt(msprime_txtrecs.name).simplify()
-                        c_records.append(inferred_ts.get_num_records())
+                        c_records.append(inferred_ts.get_num_edgesets())
                 except AssertionError:
                     logging.warning("smc2arg bug encountered converting '{}' to TS. Ignoring this row".format(
                         base+".msp"))
@@ -782,6 +788,11 @@ class Dataset(object):
         if "ARGweaver" in self.tools:
             extra_cols["ARGweaver_iterations"]=""
             extra_cols["ARGweaver_stats_file"]=""
+        # For tsinfer we want to look at the sizes of polytomies too
+        if "tsinfer" in self.tools:
+            extra_cols["tsinfer_mean_polytomy"]=""
+            extra_cols["tsinfer_var_polytomy"]=""
+            extra_cols["tsinfer_max_polytomy"]=""
 
         #add the columns for the ARG metrics
         extra_cols.update([(k,np.NaN) for k in metric_colnames(self.metrics_for.keys())])
@@ -1052,6 +1063,10 @@ class NumRecordsBySampleSizeDataset(Dataset):
     """
     Information on the number of coalescence records inferred by tsinfer
     and FastARG for various sample sizes, under 3 different error rates
+    
+    We should take account of https://github.com/mcveanlab/treeseq-inference/issues/34
+    (and probably not call these 'records' any more, but 'edgesets' or something similar
+    
     """
     name = "num_records_by_sample_size"
     #the tools dict contains functions that are called on each row
