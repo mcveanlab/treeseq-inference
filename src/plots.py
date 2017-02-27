@@ -338,7 +338,7 @@ class InferenceRunner(object):
 
         samples_fn = self.base_fn + ".npy"
         positions_fn = self.base_fn + ".pos.npy"
-        time = memory = c_records = poly_sum = poly_ssq = poly_max = None
+        time = memory = c_records = poly_sum = poly_ssq = poly_max = n = None
         logging.debug("reading: variant matrix {} & positions {} for msprime inference".format(
             samples_fn, positions_fn))
         if os.path.isfile(samples_fn) and os.path.isfile(positions_fn):
@@ -373,8 +373,8 @@ class InferenceRunner(object):
             cpu_time_colname(self.tool): time,
             memory_colname(self.tool): memory,
             n_coalescence_records_colname(self.tool): c_records,
-            'tsinfer_mean_polytomy': poly_mean if poly_sum else None,
-            'tsinfer_var_polytomy': ((poly_ssq - poly_sum**2/n)/ (n-1)) if poly_sum else None,
+            'tsinfer_mean_polytomy': poly_mean if n else None,
+            'tsinfer_var_polytomy': ((poly_ssq - poly_sum**2/n)/ (n-1)) if n and n>1 else None,
             'tsinfer_max_polytomy': poly_max
         }
 
