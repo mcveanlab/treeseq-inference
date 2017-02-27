@@ -37,7 +37,7 @@ def variant_matrix_to_RentPlus_in(var_matrix, var_positions, seq_length, RentPlu
         assert unique_positions.shape[0] == n_variants, \
             'If infinite sites is assumed, positions need to be unique, but there are dups'
         np.savetxt(RentPlus_filehandle, var_matrix.T, delimiter="", comments='',
-            header=" ".join([float(p)/seq_length for p in var_positions]))
+            header=" ".join([str(float(p)/seq_length) for p in var_positions]))
     else:
         #compress runlengths of integers
         unique_positions = np.unique(np.ceil(var_positions).astype(np.uint64))
