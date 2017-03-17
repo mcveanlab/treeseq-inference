@@ -23,73 +23,28 @@ def get_metric_names():
     """
     Returns the list of the names of computed metrics.
     """
-    return list(pd.DataFrame(columns=ARGmetrics.genome_trees_dist().names))
+    # We could do it with :
+    # return list(pd.DataFrame(columns=ARGmetrics.genome_trees_dist().names))
+    # but it's extremely slow. Just return the list of strings instead.
+    return [
+        'RFrooted', 'RFunrooted', 'wRFrooted', 'wRFunrooted', 'SPRunrooted',
+        'pathunrooted', 'KCrooted']
 
 
-def get_ARG_metrics(true_nexus_fn=None, threads=1, variant_positions = None, **inferred_nexus_fns):
+def get_metrics(true_nexus_fn, inferred_nexus_fn):
     """
-    The complicated thing here is the inferred_nexus_fns parameters.
-    Each should contain a dictionary with a 'nexus' item pointing to
-    one or more nexus files. Optionally, this dictionary can also have
-    keys named 'make_bin_seed' and 'reps', which specify the number
-    of times to replicate the metric and the starting seed for replicates
-
-    e.g. ARG_metrics(true.nex, tsinfer={'nexus':'ms.nex'}, argWeaver={'nexus':['aw1.nex', 'aw2.nex']})
-
-    or (more complex):
-    ARG_metrics(true.nex,
-                tsinfer={'nexus':'fa.nex', 'make_bin_seed'=123, 'reps':10},
-                Aweaver={'nexus':['aw1.nex', 'aw2.nex']})
-
-    Returns a Data Frame with rows labelled by the parameters (tool names) passed in
-    ('tsinfer', 'ARGweaver', etc), and one column for each metric.
-
-    threads gives the number of subprocesses to fork() when doing extra random replicates
-    during polytomy resolution. This needs testing to see if it provides a speedup
-
+    Returns a dictionary of metrics for the specified pair of nexus files.
     """
-    logging.debug(
-        "get_ARG_metrics() is comparing {} against inferred trees for the "
-        "following tools (with file numbers) {}".format(
-        true_nexus_fn, threads, {k: len(v['nexus']) for k,v in inferred_nexus_fns.items()}))
+    logging.debug("get_ARG_metrics() is comparing {} against {}".format(
+        true_nexus_fn, inferred_nexus_fn))
     # load the true_nexus into the R session (but don't convert it to a python obj)
     orig_tree = ape.read_nexus(true_nexus_fn, force_multi=True)
-    var_pos = variant_positions or rinterface.NULL
+    var_pos = rinterface.NULL
     weights = 1
-    metrics = None
-    for tool, metric_params in inferred_nexus_fns.items():
-        logging.info(" * calculating ARG metrics for {} on R process {}.".format(tool,
-            robjects.r("Sys.getpid()")[0]))
-        nexus_files = metric_params['nexus']
-        if isinstance(nexus_files, str):
-            try:
-                break_binary_reps = int(metric_params['reps'])
-                seed = metric_params.get('make_bin_seed')
-                logging.debug("calculating tree metrics to compare binarised '{}' vs '{}'.".format(
-                    true_nexus_fn, nexus_files))
-                if seed:
-                    m = ARGmetrics.genome_trees_dist_forcebin_b(orig_tree, nexus_files, seed = int(seed),
-                         variant_positions=var_pos, replicates = break_binary_reps, threads=threads)
-                else:
-                    m = ARGmetrics.genome_trees_dist_forcebin_b(orig_tree, nexus_files,
-                         variant_positions=var_pos, replicates = break_binary_reps, threads=threads)
-            except:
-                logging.debug("calculating tree metrics to compare '{}' vs '{}'.".format(
-                    true_nexus_fn, nexus_files))
-                m = ARGmetrics.genome_trees_dist(orig_tree, nexus_files, variant_positions=var_pos)
-        else:
-            if len(nexus_files) == 0:
-                logging.debug("No inference files give to compare")
-                m = ARGmetrics.genome_trees_dist()
-            else:
-                logging.debug("calculating tree metrics to compare '{}' vs {} other files.".format(
-                    true_nexus_fn, len(nexus_files)))
-                m = ARGmetrics.genome_trees_dist_multi(orig_tree, nexus_files,
-                    variant_positions=var_pos, weights=1)
-        if metrics is None:
-            metrics = pd.DataFrame(columns = m.names)
-        metrics.loc[tool, tuple(m.names)] = tuple(m)
-    return metrics
+    m = ARGmetrics.genome_trees_dist_multi(
+            orig_tree, [inferred_nexus_fn], variant_positions=var_pos, weights=1)
+    return dict(m.items())
+
 
 if __name__ == "__main__":
     """Test whether we get sensible metrics for a tree sequence"""
