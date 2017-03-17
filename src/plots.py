@@ -62,7 +62,7 @@ def n_coalescence_records_colname(tool):
     return tool + "_crecords"
 
 def metric_colnames(metrics_for):
-    metric_names = list(ARG_metrics.get_ARG_metrics())
+    metric_names = ARG_metrics.get_metric_names()
     return ["{}_{}".format(f, metric) for f in metrics_for for metric in metric_names]
 
 def nanblank(val):
@@ -714,8 +714,10 @@ class Dataset(object):
     #some tools for some of the simulations. The defaults here can
     #be overridden in each dataset class, to run only a subset
     tools = {
-        "ARGweaver": always_true,
-        "fastARG"  : always_true,
+        # Disabling ARGweaver initially as it's too slow.
+        # "ARGweaver": always_true,
+        # Disabling FastARG until the input mechanism is fixed.
+        # "fastARG"  : always_true,
         "RentPlus"  : always_true,
         "tsinfer"  : always_true}
     #the metrics_for dict defines what metrics we calculate
@@ -751,12 +753,21 @@ class Dataset(object):
         self.param_file = self.data_path + "_setup.json"
         self.raw_data_dir = os.path.join(self.data_dir, "raw__NOBACKUP__", self.name)
         self.simulations_dir = os.path.join(self.raw_data_dir, "simulations")
+        self.last_data_write_time = time.time()
 
     def load_data(self):
         self.data = pd.read_csv(self.data_file)
 
-    def dump_data(self, write_index=False):
-        self.data.to_csv(self.data_file, index=write_index)
+    def dump_data(self, write_index=False, force_flush=True):
+        """
+        Dumps data if it hasn't been written in the last 30 seconds. If force is true,
+        write it out anyway.
+        """
+        now = time.time()
+        if force_flush or (now - self.last_data_write_time) > 30:
+            logging.info("Flushing data file")
+            self.data.to_csv(self.data_file, index=write_index)
+            self.last_data_write_time = time.time()
 
     def dump_setup(self, arg_dict):
         with open(self.param_file , "w+") as setup:
@@ -774,9 +785,9 @@ class Dataset(object):
             shutil.rmtree(self.simulations_dir)
             logging.info("Deleting dir {}".format(self.simulations_dir))
         os.makedirs(self.simulations_dir)
+        self.verbosity = args.verbosity
         logging.info("Creating dir {}".format(self.simulations_dir))
         self.data = self.run_simulations(args.replicates, args.seed)
-        self.verbosity = args.verbosity
         # Add the result columns
         extra_cols = collections.OrderedDict()
         for tool in sorted(self.tools.keys()):
@@ -840,14 +851,15 @@ class Dataset(object):
                 for row_id, updated in pool.imap_unordered(infer_worker, work):
                     for k, v in updated.items():
                         self.data.ix[row_id, k] = v
-                    self.dump_data()
+                    self.dump_data(force_flush=False)
         else:
             # When we have only one process it's easier to keep everything in the same
             # process for debugging.
             for row_id, updated in map(infer_worker, work):
                 for k, v in updated.items():
                     self.data.ix[row_id, k] = v
-                self.dump_data()
+                self.dump_data(force_flush=False)
+        self.dump_data(force_flush=True)
 
 
     #
@@ -962,7 +974,7 @@ class Dataset(object):
                         for rowname, row in dataframe.iterrows():
                             colnames = ["{}_{}".format(rowname,col) for col in row.index]
                             self.data.ix[row_id, colnames] = tuple(row)
-                        self.dump_data()
+                        self.dump_data(force_flush=False)
                     except AttributeError:
                         logging.debug("No dataframe returned from metric calculation")
         else:
@@ -974,9 +986,10 @@ class Dataset(object):
                         logging.debug("got {} for {}".format(tuple(row), rowname))
                         colnames = ["{}_{}".format(rowname,col) for col in row.index]
                         self.data.ix[row_id, colnames] = tuple(row)
-                    self.dump_data()
+                    self.dump_data(force_flush=False)
                 except AttributeError:
                     logging.debug("No dataframe returned from metric calculation")
+        self.dump_data(force_flush=True)
 
 
 class BasicTestDataset(Dataset):
@@ -1063,10 +1076,10 @@ class NumRecordsBySampleSizeDataset(Dataset):
     """
     Information on the number of coalescence records inferred by tsinfer
     and FastARG for various sample sizes, under 3 different error rates
-    
+
     We should take account of https://github.com/mcveanlab/treeseq-inference/issues/34
     (and probably not call these 'records' any more, but 'edgesets' or something similar
-    
+
     """
     name = "num_records_by_sample_size"
     #the tools dict contains functions that are called on each row
@@ -1412,7 +1425,7 @@ class BasicARGweaverVSfastARGFigure(Figure):
     def plot(self):
         metric_colours = collections.OrderedDict(
             [(k,v) for k,v in self.default_metric_colours.items() if k in self.dataset.metrics_for])
-        metrics  = list(ARG_metrics.get_ARG_metrics())
+        metrics  = ARG_metrics.get_metric_names()
         self.R_plot_data(\
 """
 toolcols <- %s
@@ -1487,7 +1500,7 @@ class MetricsAgainstMutationRateSimpleFigure(Figure):
     def plot(self):
         metric_colours = collections.OrderedDict(
             [(k,v) for k,v in self.default_metric_colours.items() if k in self.dataset.metrics_for])
-        metrics  = [m for m in ARG_metrics.get_ARG_metrics() if not m.startswith('w')]
+        metrics  = [m for m in ARG_metrics.get_metric_names() if not m.startswith('w')]
         self.R_plot_data(\
 """
 toolcols <- %s
@@ -1516,7 +1529,7 @@ sapply(metrics, function(m) {
             ylab='Distance between true and inferred trees (solid: n=20 tips; dashed: n=10)',
             xlab='mutation rate',
             log='x', ylim = c(0,max(d[, colnames], na.rm=TRUE)),
-            pch = ifelse(data$error_rate == error.rates[1],1,ifelse(data$error_rate == error.rates[2], 2, 4)))
+            pch="")
         mtext(names(toolcols), 1, line=rev(seq(-1.2, by=-0.8, along.with=toolcols)), adj=0.05,
             cex=0.7, col=toolcols)
         for (n in sample_sizes) {
@@ -1537,7 +1550,7 @@ class TSSampleSubset(Figure):
     def plot(self):
         metric_colours = collections.OrderedDict(
             [(k,v) for k,v in self.default_metric_colours.items() if k in self.dataset.metrics_for])
-        metrics  = list(ARG_metrics.get_ARG_metrics())
+        metrics  = ARG_metrics.get_metric_names()
         self.R_plot_data(\
 """
 toolcols <- %s
