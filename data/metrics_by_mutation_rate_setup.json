@@ -5,7 +5,7 @@
   "name": [
     "metrics_by_mutation_rate"
   ],
-  "replicates": 100,
+  "replicates": 2,
   "seed": null,
   "verbosity": 1
 }

@@ -995,11 +995,11 @@ class MetricsByMutationRateDataset(Dataset):
         # Variable parameters
         mutation_rates = np.logspace(-8, -5, num=6)[:-1] * 1.5
         error_rates = [0, 0.01, 0.1]
-        sample_sizes = [10, 20]
+        sample_sizes = [10, 50]
 
         # Fixed parameters
         Ne = 5000
-        length = 5000
+        length = 10000
         recombination_rate = 2.5e-8
         ## argweaver params: aw_n_out_samples will be produced, every argweaver_iter_out_freq
         aw_burnin_iters = 5000
@@ -1072,12 +1072,13 @@ class Figure(object):
     def plot(self):
         raise NotImplementedError()
 
-class MetricsByMutationRateSimpleFigure(Figure):
+
+class AllMetricsByMutationRateFigure(Figure):
     """
     Simple figure that shows all the metrics at the same time.
     """
     datasetClass = MetricsByMutationRateDataset
-    name = "metrics_vs_mutrate_simple"
+    name = "all_metrics_vs_mutrate"
 
     def plot(self):
         df = self.dataset.data
@@ -1112,6 +1113,80 @@ class MetricsByMutationRateSimpleFigure(Figure):
         self.savefig(fig)
 
 
+class MetricByMutationRateFigure(Figure):
+    """
+    Superclass of the metric by mutations rate figure. Each subclass should be a
+    single figure for a particular metric.
+    """
+    datasetClass = MetricsByMutationRateDataset
+
+
+    def plot(self):
+        df = self.dataset.data
+        error_rates = df.error_rate.unique()
+        sample_sizes = df.sample_size.unique()
+
+        # TODO move this into the superclass so that we have consistent styling.
+        tool_colours = collections.OrderedDict([
+            ("tsinfer", "blue"),
+            ("RentPlus", "red"),
+        ])
+        tool_markers = collections.OrderedDict([
+            ("tsinfer", "o"),
+            ("RentPlus", "s"),
+        ])
+        tools = list(tool_colours.keys())
+        linestyles = ["-", ":"]
+        fig, axes = pyplot.subplots(1, 3, figsize=(12, 6), sharey=True)
+        lines = []
+        for k, error_rate in enumerate(error_rates):
+            ax = axes[k]
+            ax.set_title("Error = {}".format(error_rate))
+            ax.set_xlabel("Mutation rate")
+            if k == 0:
+                ax.set_ylabel(self.metric + " metric")
+            for n, linestyle in zip(sample_sizes, linestyles):
+                df_s = df[np.logical_and(df.sample_size == n, df.error_rate == error_rate)]
+                group = df_s.groupby(["mutation_rate"])
+                group_mean = group.mean()
+                for tool in tools:
+                    ax.semilogx(
+                        group_mean[tool + "_" + self.metric], linestyle,
+                        color=tool_colours[tool],
+                        marker=tool_markers[tool])
+
+        axes[0].set_ylim(self.ylim)
+
+        # Create legends from custom artists
+        artists = [
+            pyplot.Line2D((0,1),(0,0), color=tool_colours[tool],
+                marker=tool_markers[tool], linestyle='')
+            for tool in tools]
+        first_legend = axes[0].legend(
+            artists, tools, numpoints=3, loc="upper center")
+            # bbox_to_anchor=(0.0, 0.1))
+        # ax = pyplot.gca().add_artist(first_legend)
+        artists = [
+            pyplot.Line2D(
+                (0,0),(0,0), color="black", linestyle=linestyle, linewidth=2)
+            for linestyle in linestyles]
+        axes[-1].legend(
+            artists, ["Sample size = {}".format(n) for n in sample_sizes],
+            loc="upper center")
+        self.savefig(fig)
+
+
+class RFRootedMetricByMutationsRateFigure(MetricByMutationRateFigure):
+    name = "rf_rooted_by_mutation_rate"
+    metric = "RFrooted"
+    ylim = None
+
+
+class KCRootedMetricByMutationsRateFigure(MetricByMutationRateFigure):
+    name = "kc_rooted_by_mutation_rate"
+    metric = "KCrooted"
+    ylim = (0, 110)
+
 
 
 def run_setup(cls, args):
@@ -1130,7 +1205,11 @@ def run_plot(cls, args):
 
 def main():
     datasets = Dataset.__subclasses__()
-    figures = Figure.__subclasses__()
+    figures = [
+        AllMetricsByMutationRateFigure,
+        RFRootedMetricByMutationsRateFigure,
+        KCRootedMetricByMutationsRateFigure,
+    ]
     name_map = dict([(d.name, d) for d in datasets + figures])
     parser = argparse.ArgumentParser(
         description="Set up base data, generate inferred datasets, process datasets and plot figures.")
