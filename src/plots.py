@@ -604,85 +604,6 @@ def infer_worker(work):
     return int(row[0]), result
 
 
-class MetricsRunner(object):
-    """
-    Class responsible for firing off the rpy2 code to calculate metrics that
-    compare an original simulation file against the result from a set of tools
-    (one class instantiated per row).
-    Results are returned that can be incorporated into the main dataframe.
-    """
-    def __init__(self, row, nexus_dir, num_threads):
-        self.row = row
-        self.nexus_dir = nexus_dir
-        self.num_threads = num_threads
-        self.tools = collections.OrderedDict()
-        # the original file against which others should be compared is the one
-        # without errors injected, but could potentially be a subsetted one
-        self.simulation_comparison_fn=msprime_name_from_row(row, self.nexus_dir,
-            error_col=None, subsample_col='tsinfer_subset')
-
-    def add_tool(self, toolname, filenames, reps=None, make_bin_seed=None):
-        """
-        Adds a tool for this simulation. Some simulations wil create
-        multiple output files, results from which can be averaged.
-        Other simulations may have a single file, but the metric calculation
-        may need to be run multiple times (e.g. if polytomies/multifurcations
-        are resolved at random on each successive calculation of a metric.
-        If so, the 'reps' parameter gives a number of replicates, and the
-        result returned is an average over different reps.
-
-        Columns named `toolname`-`metric` should exist in the row
-        """
-        self.tools[toolname] = {'nexus':filenames, 'reps':reps, 'make_bin_seed': make_bin_seed}
-
-
-    def run(self):
-        if self.tools:
-            return ARG_metrics.get_ARG_metrics(self.simulation_comparison_fn + ".nex",
-                threads=self.num_threads, **self.tools)
-        else:
-            #called with nothing to compare!
-            return None
-
-def metric_worker(work):
-    """
-    Entry point for running a single set of metric calculations in a worker process.
-    This is called multiple times for each worker process.
-
-    Each row of the dataset compares a single original file with the result from
-    multiple tools. To save having to read the same original file multiple times
-    we do the calculation for all tools withing a single instance of metric_worker.
-    """
-    metrics, row, simulations_dir, num_threads = work
-    runner = MetricsRunner(row, simulations_dir, num_threads)
-    #logging.debug("Running metrics on row")
-    for tool, target in metrics.items():
-        files_func_params = target.get('files_func_params') or {}
-        files = target['files_func'](row, simulations_dir, **files_func_params)
-        if 'params_func' in target:
-            params=target['params_func'](row)
-        else:
-            params={}
-        #now add the .nex extension
-        if isinstance(files, str):
-            filenames = files + ".nex"
-            if not os.path.isfile(filenames):
-                logging.debug("Skipping metrics for {} (row {}) due to missing nexus file {}".format(
-                    tool, row[0], filenames))
-                filenames = None
-        else:
-            filenames = []
-            for fn in files:
-                filename = fn + ".nex"
-                if os.path.isfile(filename):
-                    filenames.append(filename)
-                else:
-                    logging.debug("Skipping metrics for {} (row {}) due to missing nexus file {}".format(
-                        tool, row[0], filename))
-        if filenames:
-            runner.add_tool(tool, filenames, **params)
-    return int(row[0]), runner.run()
-
 class Dataset(object):
     """
     A dataset is some collection of simulations and associated data.
@@ -696,32 +617,13 @@ class Dataset(object):
 
     data_dir = "data"
 
-    #the tools dict contains functions that are called on each row
-    #that define when to use each tool. This allows us to run only
-    #some tools for some of the simulations. The defaults here can
-    #be overridden in each dataset class, to run only a subset
-    tools = {
+    tools = [
         # Disabling ARGweaver initially as it's too slow.
-        # "ARGweaver": always_true,
+        # "ARGweaver":
         # Disabling FastARG until the input mechanism is fixed.
-        # "fastARG"  : always_true,
-        "RentPlus"  : always_true,
-        "tsinfer"  : always_true}
-    #the metrics_for dict defines what metrics we calculate
-    #and how to calculate them, given a row in a df
-    #it is assumed that each will be a function that
-    # is called with a row of data and a simulation dir
-    #The function should output a tuple whose first value
-    #is the interence file name, and whose (optional) second
-    #value give further parameters to the metrics function
-    metrics_for = {
-        "fastARG": {'files_func': fastarg_name_from_msprime_row},
-        "Aweaver": {'files_func': argweaver_names_from_msprime_row},
-        "RentPls": {'files_func': rentplus_name_from_msprime_row},
-        "tsipoly": {'files_func': tsinfer_name_from_msprime_row},
-        "tsibiny": {'files_func': tsinfer_name_from_msprime_row,
-                    'param_func': ARGmetric_params_from_row}
-    }
+        # "fastARG"
+        "RentPlus",
+        "tsinfer"]
 
     def __init__(self):
         self.data_path = os.path.abspath(
@@ -746,10 +648,6 @@ class Dataset(object):
             self.data.to_csv(self.data_file, index=write_index)
             self.last_data_write_time = time.time()
 
-    def dump_setup(self, arg_dict):
-        with open(self.param_file , "w+") as setup:
-            json.dump(arg_dict, setup, sort_keys=True, indent=2)
-
     #
     # Main entry points.
     #
@@ -765,50 +663,32 @@ class Dataset(object):
         self.verbosity = args.verbosity
         logging.info("Creating dir {}".format(self.simulations_dir))
         self.data = self.run_simulations(args.replicates, args.seed)
-        # Add the result columns
-        extra_cols = collections.OrderedDict()
-        for tool in sorted(self.tools.keys()):
-            extra_cols[cpu_time_colname(tool)]=np.NaN
-            extra_cols[memory_colname(tool)]=np.NaN
-        # We need to store more information in the case of ARGweaver, since
-        # each ARGweaver run produces a whole set of iterations. We join these
-        # together in a single column
-        if "ARGweaver" in self.tools:
-            extra_cols["ARGweaver_iterations"]=""
-            extra_cols["ARGweaver_stats_file"]=""
-        # For tsinfer we want to look at the sizes of polytomies too
-        if "tsinfer" in self.tools:
-            extra_cols["tsinfer_mean_polytomy"]=""
-            extra_cols["tsinfer_var_polytomy"]=""
-            extra_cols["tsinfer_max_polytomy"]=""
-
-        #add the columns for the ARG metrics
-        extra_cols.update([(k,np.NaN) for k in metric_colnames(self.metrics_for.keys())])
-        for col, default in extra_cols.items():
-            self.data[col] = default
+        # Other result columns are added later during the infer step.
         self.dump_data(write_index=True)
-        self.dump_setup({k:v for k,v in vars(args).items() if k != "func"})
 
     def infer(
-            self, num_processes, num_threads, force=False, bespoke_rows=[],
-            specific_tool=None):
+            self, num_processes, num_threads, force=False, specific_tool=None,
+            specific_row=None):
         """
         Runs the main inference processes and stores results in the dataframe.
-        can 'force' all rows to be (re)run, or specify bespoke set of rows to infer
+        can 'force' all rows to be (re)run, or specify a specific row to run.
         """
         self.load_data()
+        tools = self.tools
+        if specific_tool is not None:
+            if specific_tool not in self.tools:
+                raise ValueError("Tool '{}' not recognised: options = {}".format(
+                    specific_tool, list(self.tools)))
+            tools = [specific_tool]
+        row_ids = self.data.index
+        if specific_row is not None:
+            if specific_row < 0 or specific_row > len(self.data.index):
+                raise ValueError("Row {} out of bounds".format(specific_row))
+            row_ids = [specific_row]
         work = []
-        for i in bespoke_rows if bespoke_rows else self.data.index:
-            row = self.data.iloc[i]
-            if specific_tool is None:
-                tools_to_use = [tool for tool,func in self.tools.items() if func(self, row)]
-            else:
-                if specific_tool not in self.tools:
-                    raise ValueError("Tool '{}' not recognised: options = {}".format(
-                        specific_tool, list(self.tools.keys())))
-                tools_to_use = [specific_tool]
-            random.shuffle(tools_to_use) #helps to avoid stalling on long-running tools
-            for tool in tools_to_use:
+        for row_id in row_ids:
+            row = self.data.iloc[row_id]
+            for tool in tools:
                 # All values that are unset should be NaN, so we only run those that
                 # haven't been filled in already. This allows us to stop and start the
                 # infer processes without having to start from scratch each time.
@@ -817,12 +697,17 @@ class Dataset(object):
                         (tool, row, self.simulations_dir, num_threads, len(self.data.index)))
                 else:
                     logging.info(
-                        "Data row {} is filled out for {} inference: skipping".format(i, tool))
+                        "Data row {} is filled out for {} inference: skipping".format(
+                            row_id, tool))
         logging.info(
             "running {} inference trials (max {} tools over {} of {} rows) with {} "
             "processes and {} threads".format(
                 len(work), len(self.tools), int(np.ceil(len(work)/len(self.tools))),
                 len(self.data.index), num_processes, num_threads))
+
+        # Randomise the order that work is done in so that we get results for all parts
+        # of the plots through rather than
+        random.shuffle(work)
         if num_processes > 1:
             with multiprocessing.Pool(processes=num_processes) as pool:
                 for row_id, updated in pool.imap_unordered(infer_worker, work):
@@ -837,7 +722,6 @@ class Dataset(object):
                     self.data.ix[row_id, k] = v
                 self.dump_data(force_flush=False)
         self.dump_data(force_flush=True)
-
 
     #
     # Utilities for running simulations and saving files.
@@ -925,50 +809,6 @@ class Dataset(object):
             #and the infer step will simply skip this simulation
             logging.info("No variants in this sample, so no files created for this simulation")
 
-    def process(self, num_processes, num_threads, force=False, bespoke_rows=[]):
-        """
-        Runs the main metric calculating processes and stores results in the dataframe.
-        Should be able to cope with missing nexus files, e.g. if inference only run
-        for a subset of tools
-        """
-        self.load_data()
-        work = []
-        metric_cols = metric_colnames(self.metrics_for.keys())
-        for i in bespoke_rows if bespoke_rows else self.data.index:
-            # Any row without the metrics columns unset should be NaN, so we only run those that
-            # haven't been filled in already. This allows us to stop and start the
-            # infer processes without having to start from scratch each time.
-            if force or np.all(pd.isnull(self.data.ix[i, metric_cols])):
-                work.append((self.metrics_for, self.data.iloc[i], self.simulations_dir, num_threads))
-            else:
-                logging.info("Data row {} has metrics (partially) filled: skipping".format(i))
-        logging.info("running metrics on {} rows with {} processes and {} threads".format(
-            len(work), num_processes, num_threads))
-        if num_processes > 1:
-            with multiprocessing.Pool(processes=num_processes) as pool:
-                for row_id, dataframe in pool.imap_unordered(metric_worker, work):
-                    try:
-                        for rowname, row in dataframe.iterrows():
-                            colnames = ["{}_{}".format(rowname,col) for col in row.index]
-                            self.data.ix[row_id, colnames] = tuple(row)
-                        self.dump_data(force_flush=False)
-                    except AttributeError:
-                        logging.debug("No dataframe returned from metric calculation")
-        else:
-            # When we have only one process it's easier to keep everything in the same
-            # process for debugging.
-            for row_id, dataframe in map(metric_worker, work):
-                try:
-                    for rowname, row in dataframe.iterrows():
-                        logging.debug("got {} for {}".format(tuple(row), rowname))
-                        colnames = ["{}_{}".format(rowname,col) for col in row.index]
-                        self.data.ix[row_id, colnames] = tuple(row)
-                    self.dump_data(force_flush=False)
-                except AttributeError:
-                    logging.debug("No dataframe returned from metric calculation")
-        self.dump_data(force_flush=True)
-
-
 
 class MetricsByMutationRateDataset(Dataset):
     """
@@ -987,11 +827,9 @@ class MetricsByMutationRateDataset(Dataset):
         if seed is None:
             seed = self.default_seed
         rng = random.Random(seed)
-        seeds = set()
         cols = [
             "sample_size", "Ne", "length", "recombination_rate", "mutation_rate",
-            "error_rate", "replicate", "seed", "aw_burnin_iters",
-            "aw_n_out_samples", "aw_iter_out_freq", "tsinfer_biforce_reps"]
+            "error_rate", "seed"]
         # Variable parameters
         mutation_rates = np.logspace(-8, -5, num=6)[:-1] * 1.5
         error_rates = [0, 0.01, 0.1]
@@ -1001,15 +839,9 @@ class MetricsByMutationRateDataset(Dataset):
         Ne = 5000
         length = 10000
         recombination_rate = 2.5e-8
-        ## argweaver params: aw_n_out_samples will be produced, every argweaver_iter_out_freq
-        aw_burnin_iters = 5000
-        aw_n_out_samples = 100
-        aw_iter_out_freq = 10
-        # TMP for development
-        ## tsinfer params: number of times to randomly resolve into bifurcating (binary) trees
-        tsinfer_biforce_reps = 20
         num_rows = replicates * len(mutation_rates) * len(error_rates) * len(sample_sizes)
         data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
+        print(data)
         row_id = 0
         for replicate in range(replicates):
             for mutation_rate in mutation_rates:
@@ -1026,7 +858,8 @@ class MetricsByMutationRateDataset(Dataset):
                         # Reject this instances if we got no mutations.
                         done = ts.get_num_mutations() > 0
                     with open(fn +".nex", "w+") as out:
-                        ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+                        ts.write_nexus_trees(
+                            out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
                     # Add the rows for each of the error rates in this replicate
                     for error_rate in error_rates:
                         row = data.iloc[row_id]
@@ -1038,16 +871,17 @@ class MetricsByMutationRateDataset(Dataset):
                         row.Ne = Ne
                         row.seed = replicate_seed
                         row.error_rate = error_rate
-                        row.replicate = replicate
-                        row.aw_n_out_samples = aw_n_out_samples
-                        row.aw_burnin_iters = aw_burnin_iters
-                        row.aw_iter_out_freq = aw_iter_out_freq
-                        row.tsinfer_biforce_reps = tsinfer_biforce_reps
                         self.save_variant_matrices(ts, fn, error_rate,
                             #infinite_sites=True)
                             infinite_sites=False)
         return data
 
+
+######################################
+#
+# Figures
+#
+######################################
 
 class Figure(object):
     """
@@ -1188,7 +1022,6 @@ class KCRootedMetricByMutationsRateFigure(MetricByMutationRateFigure):
     ylim = (0, 110)
 
 
-
 def run_setup(cls, args):
     f = cls()
     f.setup(args)
@@ -1196,7 +1029,7 @@ def run_setup(cls, args):
 def run_infer(cls, args):
     logging.info("Inferring {}".format(cls.name))
     f = cls()
-    f.infer(args.processes, args.threads, args.force, args.row, args.tool)
+    f.infer(args.processes, args.threads, args.force, args.tool, args.row)
 
 def run_plot(cls, args):
     f = cls()
@@ -1242,14 +1075,14 @@ def main():
         "--tool", '-T', default=None,
         help="Only run this specific tool")
     subparser.add_argument(
+        "--row", '-r', type=int, default=None,
+        help="Only run for a specific row")
+    subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
         help='the dataset identifier', choices=[d.name for d in datasets])
     subparser.add_argument(
-         '--force',  action='store_true',
+         '--force',  "-f", action='store_true',
          help="redo all the inferences, even if we have already filled out some", )
-    subparser.add_argument(
-         '--row', type=int,  nargs="*", default=[],
-         help="Only run inferences for this row of the data file (for debugging)", )
     subparser.set_defaults(func=run_infer)
 
     subparser = subparsers.add_parser('figure')
