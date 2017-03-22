@@ -47,9 +47,10 @@ def main():
     args = parser.parse_args()
     S = np.load(args.samples)
     pos = np.load(args.positions)
-    panel = tsinfer.ReferencePanel(S, pos, args.length)
-    P, mutations = panel.infer_paths(
-        args.recombination_rate, err=args.error_probability, num_workers=args.threads)
+    panel = tsinfer.ReferencePanel(
+        S, pos, args.length, args.recombination_rate, ancestor_error=0,
+        sample_error=args.error_probability)
+    P, mutations = panel.infer_paths(num_workers=args.threads)
     ts_new = panel.convert_records(P, mutations)
     ts_simplified = ts_new.simplify()
     ts_simplified.dump(args.output)
