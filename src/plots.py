@@ -841,7 +841,6 @@ class MetricsByMutationRateDataset(Dataset):
         recombination_rate = 2.5e-8
         num_rows = replicates * len(mutation_rates) * len(error_rates) * len(sample_sizes)
         data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
-        print(data)
         row_id = 0
         for replicate in range(replicates):
             for mutation_rate in mutation_rates:
