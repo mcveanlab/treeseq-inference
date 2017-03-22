@@ -78,6 +78,12 @@ class TestSingleTree(unittest.TestCase):
         d = self.verify_rf_metrics(ts1, ts2)
         self.assertGreater(d, 0)
 
+    def test_same_nonbinary_tree(self):
+        ts1 = get_single_nonbinary_example(1)
+        ts2 = get_single_nonbinary_example(1)
+        d = self.verify_rf_metrics(ts1, ts2)
+        self.assertEqual(d, 0)
+
     def test_nonbinary_tree(self):
         ts1 = get_single_nonbinary_example(1)
         ts2 = get_single_nonbinary_example(2)
