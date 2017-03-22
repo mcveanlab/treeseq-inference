@@ -13,3 +13,6 @@
 [submodule "tsinfer"]
 	path = tsinfer
 	url = git@github.com:mcveanlab/tsinfer.git
+[submodule "icytree"]
+	path = icytree
+	url = git@github.com:tgvaughan/icytree
