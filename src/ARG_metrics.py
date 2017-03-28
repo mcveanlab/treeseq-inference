@@ -1,5 +1,5 @@
+import os
 import logging
-import pandas as pd
 import warnings
 import rpy2.robjects as robjects
 import rpy2.rinterface as rinterface
@@ -9,11 +9,15 @@ from rpy2.robjects.packages import importr
 warnings.simplefilter("ignore", rinterface.RRuntimeWarning)
 
 ape=importr("ape")
-assert robjects.r('packageVersion("ape") >= "4.0.0.2"')[0], \
-    "You must install an 'ape' version in R > 4.0.0.2, e.g. by running" + \
-    'install.packages("ape", repos = "http://ape-package.ird.fr/", type="source")'
 importr("phangorn")
 ARGmetrics = importr("ARGmetrics")
+assert robjects.r('packageVersion("ARGmetrics") >= "0.0.1.0"')[0], (
+    "Your version of ARGmetrics installed in R is too old (requires >= 0.0.1.0)"
+    'Install the latest version using e.g.\n'
+    'library(devtools)\n'
+    'setwd("{}")\n'
+    'install("ARGmetrics")\n'
+    .format(os.path.join(os.path.basename(__file__),'..')))
 #NB the above requires your version of R to have the bespoke ARGmetrics package installed
 #Open R and set the working dir to treeseq-inference, then do
 # > install("ARGmetrics")
@@ -21,28 +25,25 @@ ARGmetrics = importr("ARGmetrics")
 
 def get_metric_names():
     """
-    Returns the list of the names of computed metrics.
+    Returns the list of the names of the computed metrics.
     """
     # We could do it with :
-    # return list(pd.DataFrame(columns=ARGmetrics.genome_trees_dist().names))
+    # return list(pandas.DataFrame(columns=ARGmetrics.genome_trees_dist().names))
     # but it's extremely slow. Just return the list of strings instead.
-    return [
-        'RFrooted', 'RFunrooted', 'wRFrooted', 'wRFunrooted', 'SPRunrooted',
-        'pathunrooted', 'KCrooted']
+    return list(ARGmetrics.genome_trees_dist().names)
 
 
-def get_metrics(true_nexus_fn, inferred_nexus_fn):
+def get_metrics(true_nexus_fn, inferred_nexus_fns, variant_positions = rinterface.NULL):
     """
     Returns a dictionary of metrics for the specified pair of nexus files.
     """
     logging.debug("get_ARG_metrics() is comparing {} against {}".format(
-        true_nexus_fn, inferred_nexus_fn))
+        true_nexus_fn, inferred_nexus_fns))
     # load the true_nexus into the R session (but don't convert it to a python obj)
     orig_tree = ape.read_nexus(true_nexus_fn, force_multi=True)
-    var_pos = rinterface.NULL
     weights = 1
     m = ARGmetrics.genome_trees_dist_multi(
-            orig_tree, [inferred_nexus_fn], variant_positions=var_pos, weights=1)
+            orig_tree, inferred_nexus_fns, variant_positions=variant_positions, weights=1)
     return dict(m.items())
 
 

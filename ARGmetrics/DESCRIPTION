@@ -1,11 +1,11 @@
 Package: ARGmetrics
 Title: Measure similarity between ancestral recombination graphs (ARGs)
-Version: 0.0.0.9000
+Version: 0.0.1.0
 Authors@R: person("Yan", "Wong", email = "yan@yanwong.me", role = c("aut", "cre"))
 Description: Routines to compare ARGs (represented by sequential tree sequences) by averaging tree comparison metrics over a genomic region
 Depends: R (>= 3.3.2)
 Imports:
-    ape,
+    ape (>= 4.1),
     phangorn,
     treescape
 License: CC-0

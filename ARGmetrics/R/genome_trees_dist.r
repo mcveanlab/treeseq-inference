@@ -28,7 +28,13 @@ genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FA
     results=data.frame(lft=numeric(), rgt=numeric(), RFrooted=numeric(), RFunrooted=numeric(),
         wRFrooted=numeric(), wRFunrooted=numeric(), SPRunrooted=numeric(), pathunrooted=numeric(), KCrooted=numeric())
     
-    if (!is.na(treeseq.a) && !is.na(treeseq.b)) {
+    if (is.na(treeseq.a) || is.na(treeseq.b)) {
+        #one or other is null, so simply return the column names for reference
+        if (output.full.table)
+            return(results)
+        else
+            return(results[-1:-2])
+    } else {
         require(ape)
         require(phangorn) #to use the various treedist metrics
     
