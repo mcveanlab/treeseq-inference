@@ -6,20 +6,31 @@ When run as a script, takes an msprime simulation in hdf5 format, saves to fastA
 E.g. ./msprime_fastARG.py ../test_files/4000.hdf5 -x ../fastARG/fastARG
 
 """
-import sys
 import os
-sys.path.insert(1,os.path.join(sys.path[0],'..','msprime')) # use the local copy of msprime in preference to the global one
-import msprime
-import warnings
+import sys
 import logging
 
-def msprime_hdf5_to_fastARG_in(msprime_hdf5, fastARG_filehandle):
-    logging.debug("== Saving to fastARG input format ==")
-    ts = msprime.load(msprime_hdf5.name)
-    msprime_to_fastARG_in(ts, fastARG_filehandle)
-    return(ts)
+import tempfile
+
+sys.path.insert(1,os.path.join(sys.path[0],'..','msprime')) # use the local copy of msprime in preference to the global one
+import msprime
 
 def msprime_to_fastARG_in(ts, fastARG_filehandle):
+    #temporary hack until https://github.com/jeromekelleher/msprime/issues/169 is solved
+    hack_around_variants = True
+    if hack_around_variants:
+        import numpy as np
+        #store in a single huge list of strings
+        out_arr = np.empty(ts.get_sample_size(), dtype=np.dtype((bytes, ts.num_sites)))
+        for i, s in enumerate(ts.haplotypes()):
+            out_arr[i]=s
+        #convert to 2d array of chars
+        out_arr = out_arr.view('S1').reshape((out_arr.size, -1))
+        for j, m in enumerate(ts.sites()):
+            print(m.position, b"".join(out_arr[:,j]).decode("utf-8") , sep="\t", file=fastARG_filehandle)
+        fastARG_filehandle.flush()
+        return
+    
     for v in ts.variants(as_bytes=True):
         print(v.position, v.genotypes.decode(), sep="\t", file=fastARG_filehandle)
     fastARG_filehandle.flush()
@@ -53,17 +64,18 @@ def variant_positions_from_fastARGin(fastARG_in_filehandle):
             pos = line.split()[0]
             vp.append(float(pos))
         except:
-            warnings.warn("Could not convert the title on the following line to a floating point value:\n {}".format(line))
+            logging.warning("Could not convert the title on the following line to a floating point value:\n {}".format(line))
     return(np.array(vp))
 
 def fastARG_out_to_msprime_txts(
-        fastARG_out_filehandle, variant_positions, tree_filehandle, mutations_filehandle,
+        fastARG_out_filehandle, variant_positions, 
+        nodes_filehandle, edges_filehandle,  sites_filehandle, mutations_filehandle,
         seq_len=None):
     """
-    convert the fastARG output format (plus a list of positions) to 2 text
-    files (tree and mutations) which can be read in to msprime we need to split
-    fastARG records that extend over the whole genome into sections that cover
-    just that coalescence point.
+    convert the fastARG output format (plus a list of positions) to 4 text
+    files (edges, nodes, mutations, and sites) which can be read in to msprime.
+    We need to split fastARG records that extend over the whole genome into 
+    sections that cover just that coalescence point.
     """
     import csv
     import numpy as np
@@ -75,10 +87,10 @@ def fastARG_out_to_msprime_txts(
     seq_len = seq_len if seq_len is not None else  variant_positions[-1]+1 #if not given, hack seq length to max variant pos +1
     try:
         breakpoints = np.concatenate([[0],np.diff(variant_positions)/2 + variant_positions[:-1], [seq_len]])
-    except:
-        assert False, \
-            "Some variant positions seem to lie outside the sequence length (l={}):\n{}".format(
-            seq_len, variant_positions)
+    except IndexError:
+        raise ValueError(
+            "Some variant positions seem to lie outside the sequence length "
+            "(l={}):\n{}".format(seq_len, variant_positions))
     for line_num, fields in enumerate(csv.reader(fastARG_out_filehandle, delimiter='\t')):
         if   fields[0]=='E':
             srand48seed = int(fields[1])
@@ -94,28 +106,33 @@ def fastARG_out_to_msprime_txts(
             #format is curr_node, child_node, seq_start_inclusive, seq_end_noninclusive, num_mutations, mut_loc1, mut_loc2, ....
             curr_node, child_node, left, right, n_mutations = [int(i) for i in fields[1:6]]
             if curr_node<child_node:
-                warnings.warn("Line " + str() + 
-                    " has an ancestor node_id less than the id of its children, so node ID cannot be used as a proxy for age")
-                sys.exit()
+                raise ValueError(
+                    "Line {} has an ancestor node_id less than the id of its "
+                    "children, so node ID cannot be used as a proxy for age"
+                    .format(line_num))
             #one record for each node
             if curr_node not in ARG_nodes:
                 ARG_nodes[curr_node] = {}
             if child_node in ARG_nodes[curr_node]:
-                warnings.warn("Child node {} already exists for node {} (line {})".format(child_node, curr_node, line_num))
+               raise ValueError(
+                   "Child node {} already exists for node {} (line {})"
+                   .format(child_node, curr_node, line_num))
+            if child_node not in ARG_nodes:
+                ARG_nodes[child_node]={}
             ARG_nodes[curr_node][child_node]=[breakpoints[left], breakpoints[right]]
             #mutations in msprime are placed as ancestral to a target node, rather than descending from a child node (as in fastARG)
             #we should check that (a) mutation at the same locus does not occur twice
             # (b) the same child node is not used more than once (NB this should be a fastARG restriction)
             if n_mutations:
                 if child_node in mutation_nodes:
-                    warnings.warn("Node {} already has some mutations: some more are being added from line {}.".format(child_node, line_num))
+                    logging.warning("Node {} already has some mutations: more are being added from line {}.".format(child_node, line_num))
                 mutation_nodes.add(child_node)
                 for pos in fields[6:(6+n_mutations)]:
-                    m = variant_positions[int(pos)]
-                    if m in mutations:
-                        warnings.warn("Duplicate mutations at a single locus: {}. One is from node {}.".format(m, child_node))
+                    p = int(pos)
+                    if p in mutations:
+                        logging.warning("Duplicate mutations at a single locus: {}. One is from node {}.".format(m, child_node))
                     else:
-                        mutations[m]=child_node
+                        mutations[p]=child_node
 
 
         elif fields[0]=='S':
@@ -123,139 +140,146 @@ def fastARG_out_to_msprime_txts(
             root_node = int(fields[1])
             base_sequence = fields[2]
         else:
-            warnings.warn("Bad line format - the fastARG file has a line that does not begin with E, N, C, R, or S:\n{}".format("\t".join(fields)))
+            raise ValueError(
+                "Bad line format - the fastARG file has a line that does not "
+                "begin with E, N, C, R, or S:\n{}"
+                .format("\t".join(fields)))
 
     #Done reading in
 
-    if min(ARG_nodes.keys()) != haplotypes:
-            warnings.warn("The smallest internal node id is expected to be the same as the number of haplotypes, " + 
-                "but it is not ({} vs {})".format(min(ARG_nodes.keys()), haplotypes))
+    if len([1 for k,v in ARG_nodes.items() if len(v)==0]) != haplotypes:
+        raise ValueError(
+            "We expect the same number of childless nodes as haplotypes "
+            "but they are different ({} vs {})"
+            .format(len([1 for k,v in ARG_nodes.items() if len(v)==0]), haplotypes))
 
+    nodes_cols = ["id","is_sample","time"]
+    edges_cols = ["left","right","parent","children"]
+    sites_cols = ["position","ancestral_state"]
+    mutations_cols = ["site","node","derived_state"]
+    print("\t".join(nodes_cols), file=nodes_filehandle)
+    print("\t".join(edges_cols), file=edges_filehandle)
+    print("\t".join(sites_cols), file=sites_filehandle)
+    print("\t".join(mutations_cols),file=mutations_filehandle)
     for node,children in sorted(ARG_nodes.items()): #sort by node number == time
         #look at the break points for all the child sequences, and break up into that number of records
+        print("\t".join(["{%s}" % n for n in nodes_cols]).format(id=node, is_sample=int(len(children)==0), time=node),
+            file=nodes_filehandle)
         breaks = set()
-        for leftright in children.values():
-            breaks.update(leftright)
-        breaks = sorted(breaks)
-        for i in range(1,len(breaks)):
-            leftbreak = breaks[i-1]
-            rightbreak = breaks[i]
-            #NB - here we could try to input the values straight into an msprime python structure,
-            #but until this feature is implemented in msprime, we simply output to a correctly formatted msprime text input file
-            tree_filehandle.write("{}\t{}\t{}\t".format(leftbreak, rightbreak,node))
-            tree_filehandle.write(",".join([str(cnode) for cnode, cspan in sorted(children.items()) if cspan[0]<rightbreak and cspan[1]>leftbreak]))
-            tree_filehandle.write("\t{}\t{}\n".format(node, 0))
+        if len(children):
+            for leftright in children.values():
+                breaks.update(leftright)
+            breaks = sorted(breaks)
+            for i in range(1,len(breaks)):
+                leftbreak = breaks[i-1]
+                rightbreak = breaks[i]
+                #NB - here we could try to input the values straight into an msprime python structure,
+                #but until this feature is implemented in msprime, we simply output to a correctly formatted msprime text input file
+                target_children = [str(cnode) for cnode, cspan in sorted(children.items()) if cspan[0]<rightbreak and cspan[1]>leftbreak]
+                print("\t".join(["{%s}" % e for e in edges_cols]).format(left=leftbreak, 
+                    right=rightbreak, parent=node, children=",".join(target_children)), file=edges_filehandle)
+
+    for i,base in enumerate(base_sequence):
+        if base not in ['1','0']:
+            raise ValueError('The ancestral sequence is not 0 or 1')
+        print("\t".join(["{%s}" % s for s in sites_cols]).format(
+            position=variant_positions[i], ancestral_state=base),
+            file=sites_filehandle)
 
     for pos, node in sorted(mutations.items()):
-        mutations_filehandle.write("{}\t{}\n".format(pos, node))
+        print("\t".join(["{%s}" % m for m in mutations_cols]).format(
+            site=pos, node=node, derived_state=1-int(base_sequence[pos])),
+            file=mutations_filehandle)
 
-    tree_filehandle.flush()
+    nodes_filehandle.flush()
+    edges_filehandle.flush()
+    sites_filehandle.flush()
     mutations_filehandle.flush()
-
-def fastARG_root_seq(fastARG_out_filehandle):
-    fastARG_out_filehandle.seek(0)
-    for line in fastARG_out_filehandle:
-        spl = line.split(None,3)
-        if spl[0]=="S":
-            root_seq = spl[2]
-            fastARG_out_filehandle.seek(0)
-            return([seq!="0" for seq in root_seq])
-    warnings.warn("No root sequence found in '{}'".format(fastARG_out_filehandle.name))
-    return([])
-
-def msprime_txts_to_fastARG_in_revised(
-        tree_filehandle, mutations_filehandle, root_seq, fastARG_filehandle=None,
-        hdf5_outname=None, simplify=True):
-    if hdf5_outname:
-        logging.debug("== Saving new msprime ARG as hdf5 and also as input format for fastARG ==")
-    else:
-        logging.debug("== Saving new msprime ARG as input format for fastARG ==")
-    tree_filehandle.seek(0)
+    nodes_filehandle.seek(0)
+    edges_filehandle.seek(0)
+    sites_filehandle.seek(0)
     mutations_filehandle.seek(0)
-
-    ts = msprime.load_txt(tree_filehandle.name, mutations_filehandle.name)
-    if simplify:
-        try:
-            ts = ts.simplify()
-        except:
-            ts.dump("bad.hdf5")
-            assert FALSE, "Failed to simplify the TreeSequence - original dumped to bad.hdf5"
-    if hdf5_outname:
-        ts.dump(hdf5_outname)
-    if fastARG_filehandle:
-        prepend_newline = ""
-        for j, v in enumerate(ts.variants(as_bytes=True)):
-            if root_seq[j]:
-                print(
-                    prepend_newline + str(v.position), 
-                    v.genotypes.decode().translate(str.maketrans('01','10')),
-                    sep="\t",  end="", file=fastARG_filehandle)
-            else:
-                print(prepend_newline + str(v.position),
-                    v.genotypes.decode(), 
-                    sep="\t",  end="", file=fastARG_filehandle)
-            prepend_newline = os.linesep
-        fastARG_filehandle.flush()
-    return(ts)
-
-
-def main(sim, fastARG_executable, fa_in, fa_out, tree, muts, fa_revised, hdf5_outname=None):
+    
+def fastARG_out_to_msprime(fastARG_out_filehandle, variant_positions, seq_len=None):
     """
-    pass sim as either a filehandle to an hdf5 file or a set of simulate params
+    The same as fastARG_out_to_msprime_txts, but use temporary files and return a ts.
     """
-    try:
-        ts = msprime.simulate(**sim)
-        logging.debug("Creating new simulation with {}".format(sim))
-        msprime_to_fastARG_in(ts, fa_in)
-    except:
-        ts = msprime_hdf5_to_fastARG_in(sim, fa_in)
-    run_fastARG(fastARG_executable, fa_in, fa_out)
-    root_seq = fastARG_root_seq(fa_out)
-    fastARG_out_to_msprime_txts(fa_out, variant_positions_from_fastARGin(fa_in.name), tree, muts)
-    new_ts = msprime_txts_to_fastARG_in_revised(tree, muts, root_seq, simplify=False)
-    simple_ts = msprime_txts_to_fastARG_in_revised(tree, muts, root_seq, fa_revised, hdf5_outname)
+    with tempfile.NamedTemporaryFile("w+") as nodes, \
+        tempfile.NamedTemporaryFile("w+") as edgesets, \
+        tempfile.NamedTemporaryFile("w+") as sites, \
+        tempfile.NamedTemporaryFile("w+") as mutations:
+        fastARG_out_to_msprime_txts(fastARG_out_filehandle, variant_positions, 
+            nodes, edgesets, sites, mutations, seq_len=seq_len)
+        return msprime.load_text(nodes=nodes, edgesets=edgesets, sites=sites, mutations=mutations)
+        
+def main(ts, fastARG_executable, fa_in, fa_out, nodes_fh, edgesets_fh, sites_fh, muts_fh, fa_revised):
+    """
+    This is just to test if fastarg produces the same haplotypes
+    """
+    import subprocess
+    seq_len = ts.get_sequence_length()
+    msprime_to_fastARG_in(ts, fa_in)
+    subprocess.call([fastARG_executable, 'build', fa_in.name], stdout=fa_out)
+    fastARG_out_to_msprime_txts(fa_out, variant_positions_from_fastARGin(fa_in), 
+        nodes_fh, edgesets_fh, sites_fh, muts_fh, seq_len=seq_len)
+    
+    new_ts = msprime.load_text(nodes=nodes_fh, edgesets=edgesets_fh, sites=sites_fh, mutations=muts_fh)
+    simple_ts = new_ts.simplify()
+    logging.debug("Simplified num_records should always be < unsimplified num_records.\n"
+        "For low mutationRate:recombinationRate ratio,"
+        " the initial num records will probably be higher than the"
+        " fastarg num_records, as the original simulation will have records"
+        " which leave no mutational trace. As the mutation rate increases,"
+        " we expect the fastarg num_records to equal, then exceed the original"
+        " as fastarg starts inferring the wrong (less parsimonious) set of trees")
     logging.debug(
         "Initial num records = {}, fastARG (simplified) = {}, fastARG (unsimplified) = {}".format(
         ts.get_num_records(), simple_ts.get_num_records(), new_ts.get_num_records()))
-    logging.debug("These numbers are expected to be in ascending order ")
-    if ts.get_num_records() > simple_ts.get_num_records() \
-            or simple_ts.get_num_records() > new_ts.get_num_records():
-        warnings.warn("Numbers not in ascending order!")
-    if os.stat(fa_in.name).st_size == 0:
-        warnings.warn("Initial fastARG input file is empty")
-    elif filecmp.cmp(fa_in.name, fa_revised.name, shallow=False) == False:
-        warnings.warn("Initial fastARG input file differs from processed fastARG file")
+    msprime_to_fastARG_in(simple_ts, fa_revised)
+    if filecmp.cmp(fa_in.name, fa_revised.name, shallow=False) == False:
+        raise ValueError("Initial fastARG input file differs from processed fastARG file")
     else:
-        print("Conversion via fastARG has worked! Input and output files are identical")
+        print("All input and output haplotypes are the same. Hurrah")
+    # check the haplotype files (in fastARG input format) are the same
 
 
 if __name__ == "__main__":
     import argparse
     import filecmp
     import os
-    default_sim={'sample_size':2000, 'Ne':1e4, 'length':1000000, 'mutation_rate':2e-8, 'recombination_rate':2e-8}
+    default_sim={'sample_size':20, 'Ne':1e4, 'length':10000, 'mutation_rate':2e-8, 'recombination_rate':2e-8}
     parser = argparse.ArgumentParser(description='Check fastARG imports by running msprime simulation through it and back out')
-    parser.add_argument('hdf5file', default=None, nargs="?", type=argparse.FileType('r', encoding='UTF-8'), help='an msprime hdf5 file. If none, a simulation is created with {}'.format(default_sim))
+    parser.add_argument('--hdf5file', '-hdf5', type=argparse.FileType('r', encoding='UTF-8'), help='an msprime hdf5 file. If none, a simulation is created with {}'.format(default_sim))
     parser.add_argument('--fastARG_executable', '-x', default="fastARG", help='the path & name of the fastARG executable')
-    parser.add_argument('outputdir', nargs="?", default=None, help='the directory in which to store the intermediate files. If None, files are saved under temporary names')
+    parser.add_argument('--outputdir', '-o', help='the directory in which to store the intermediate files. If None, files are saved under temporary names')
     args = parser.parse_args()
-
-
-    if args.outputdir == None:
-        print("Saving everything to temporary files")
-        from tempfile import NamedTemporaryFile
-        with NamedTemporaryFile("w+") as fa_in, \
-             NamedTemporaryFile("w+") as fa_out, \
-             NamedTemporaryFile("w+") as tree, \
-             NamedTemporaryFile("w+") as muts, \
-             NamedTemporaryFile("w+") as fa_revised:
-            main(args.hdf5file or default_sim, args.fastARG_executable, fa_in, fa_out, tree, muts, fa_revised)
-    else:
+    logging.basicConfig(
+        format='%(asctime)s %(message)s', level=logging.DEBUG, stream=sys.stdout)
+    if args.hdf5file:
+        ts = msprime.load(args.hdf5file)
         prefix = os.path.splitext(os.path.basename(args.hdf5file.name))[0]
+    else:
+        logging.debug("Creating new simulation with {}".format(default_sim))
+        ts = msprime.simulate(**default_sim)
+        prefix = "sim"
+        logging.debug("mutationRate:recombinationRate ratio is {}".format(default_sim['mutation_rate']/default_sim['recombination_rate']))
+    if args.outputdir == None:
+        logging.info("Saving everything to temporary files")
+        with tempfile.NamedTemporaryFile("w+") as fa_in, \
+             tempfile.NamedTemporaryFile("w+") as fa_out, \
+             tempfile.NamedTemporaryFile("w+") as nodes, \
+             tempfile.NamedTemporaryFile("w+") as edgesets, \
+             tempfile.NamedTemporaryFile("w+") as sites, \
+             tempfile.NamedTemporaryFile("w+") as mutations,\
+             tempfile.NamedTemporaryFile("w+") as fa_revised:
+            main(ts, args.fastARG_executable, fa_in, fa_out, nodes, edgesets, sites, mutations, fa_revised)
+    else:
         full_prefix = os.path.join(args.outputdir, prefix)
         with open(full_prefix + ".haps", "w+") as fa_in, \
              open(full_prefix + ".fastarg", "w+") as fa_out, \
-             open(full_prefix + ".msprime", "w+") as tree, \
-             open(full_prefix + ".msmuts", "w+") as muts, \
+             open(full_prefix + ".TSnodes", "w+") as nodes, \
+             open(full_prefix + ".TSedges", "w+") as edgesets, \
+             open(full_prefix + ".TSsites", "w+") as sites, \
+             open(full_prefix + ".TSmuts", "w+") as mutations, \
              open(full_prefix + ".haps_revised", "w+") as fa_revised:
-            main(args.hdf5file or default_sim, args.fastARG_executable, fa_in, fa_out, tree, muts, fa_revised, full_prefix + ".hdf5_revised")
+            main(ts, args.fastARG_executable, fa_in, fa_out, nodes, edgesets, sites, mutations, fa_revised)
