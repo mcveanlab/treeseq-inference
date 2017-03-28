@@ -20,6 +20,7 @@ assert robjects.r('packageVersion("ARGmetrics") >= "0.0.1.0"')[0], (
     .format(os.path.join(os.path.basename(__file__),'..')))
 #NB the above requires your version of R to have the bespoke ARGmetrics package installed
 #Open R and set the working dir to treeseq-inference, then do
+# > library(devtools)
 # > install("ARGmetrics")
 
 
