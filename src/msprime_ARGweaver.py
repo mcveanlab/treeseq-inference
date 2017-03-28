@@ -120,7 +120,7 @@ def variant_matrix_to_ARGweaver_in(var_matrix, var_positions, seq_length, ARGwea
     ARGweaver_filehandle.seek(0)
         
     
-def ARGweaver_smc_to_msprime_txts(smc2bin_executable, prefix, tree_filehandle, override_assertions=False):
+def ARGweaver_smc_to_msprime_txts(smc2bin_executable, prefix, nodes_fh, edgesets_fh, override_assertions=False):
     """
     convert the ARGweaver smc representation to coalescence records format
     """
@@ -131,9 +131,9 @@ def ARGweaver_smc_to_msprime_txts(smc2bin_executable, prefix, tree_filehandle, o
         prefix + ".smc.gz", smc2bin_executable))
     call([smc2bin_executable, prefix + ".smc.gz", prefix + ".arg"])
     with open(prefix + ".arg", "r+") as arg_fh:
-        return(ARGweaver_arg_to_msprime_txts(arg_fh, tree_filehandle))
+        return(ARGweaver_arg_to_msprime_txts(arg_fh, nodes_fh, edgesets_fh))
 
-def ARGweaver_arg_to_msprime_txts(ARGweaver_arg_filehandle, tree_filehandle):
+def ARGweaver_arg_to_msprime_txts(ARGweaver_arg_filehandle, nodes_fh, edgesets_fh):
     """
     convert the ARGweaver arg representation to coalescence records format
     
@@ -212,9 +212,21 @@ def ARGweaver_arg_to_msprime_txts(ARGweaver_arg_filehandle, tree_filehandle):
         for epsilon, nm in enumerate(node_order):
             ARG_node_times[nm] += 0.001 * (epsilon+1) / max_epsilon
         
-        
+        cols = {
+            'nodes':     ["id","is_sample","time"],
+            'edgesets':  ["left","right","parent","children"]
+        }
+        lines = {k:"\t".join(["{%s}" % s for s in v] for k,v in cols.items())}
+        for k,v in cols.items():
+            #print the header lines
+            print("\t".join(v), file=locals()[k+'_filehandle'])
+
         for node_name in sorted(ARG_node_times, key=ARG_node_times.get): #sort by time
             #look at the break points for all the child sequences, and break up into that number of records
+            print(line['nodes'].format(id=node_name, 
+                is_sample=int(node_name in tips), 
+                time=ARG_node_times[node_name]),
+                file=nodes_filehandle)
             try:
                 children = ARG_nodes[node_name]
                 assert all([ARG_node_times[child]<ARG_node_times[node_name] for child in children]), "ARGweaver node {} has an adjusted time of {} but its children ({}) are not strictly younger (times @ {}).".format(node_name, str(ARG_node_times[node_name]), ", ".join(children), ", ".join([str(ARG_node_times[c]) for c in children]))
@@ -227,9 +239,10 @@ def ARGweaver_arg_to_msprime_txts(ARGweaver_arg_filehandle, tree_filehandle):
                     rightbreak = breaks[i]
                     #NB - here we could try to input the values straight into an msprime python structure,
                     #but until this feature is implemented in msprime, we simply output to a correctly formatted text file
-                    tree_filehandle.write("{}\t{}\t{}\t".format(leftbreak, rightbreak, node_names[node_name]))
-                    tree_filehandle.write(",".join([str(x) for x in sorted([node_names[cnode] for cnode, cspan in children.items() if cspan[0]<rightbreak and cspan[1]>leftbreak])]))
-                    tree_filehandle.write("\t{}\t{}\n".format(ARG_node_times[node_name], 0))
+                    print(line['edgesets'].format(left=leftbreak, right=rightbreak, 
+                        parent=node_names[node_name],
+                        children=",".join([str(x) for x in sorted([node_names[cnode] for cnode, cspan in children.items() if cspan[0]<rightbreak and cspan[1]>leftbreak])])),
+                        file=edgesets_filehandle)
             except KeyError:
                 #these should all be the tips
                 assert node_name in tips, "The node {} is not a parent of any other node, but is not a tip either".format(node_name)
@@ -243,7 +256,8 @@ def ARGweaver_arg_to_msprime_txts(ARGweaver_arg_filehandle, tree_filehandle):
                   "A copy of the directory '{}' has been compressed to 'bad.zip' for debugging purposes\n".format(ARGweaver_arg_filehandle.name) +
                   "You should inspect the file '{}' within that archive".format(os.path.basename(ARGweaver_arg_filehandle.name))).with_traceback(sys.exc_info()[2])
     
-    tree_filehandle.flush()
+    nodes_filehandle.flush()
+    edgesets_filehandle.flush()
     return(node_names)
     
 def ARGweaver_smc_to_nexus(smc_filename, outfilehandle, zero_based_tip_numbers=True):
@@ -318,12 +332,13 @@ def main(args):
         with open(smc_nex, "w+") as smc_nex_out:
             ARGweaver_smc_to_nexus(smc, smc_nex_out, zero_based_tip_numbers=False)
         arg_nex=smc.replace(".smc.gz", ".msp_nex")
-        with open(smc.replace(".smc.gz", ".msp_recs"), "w+") as tree, \
+        with open(smc.replace(".smc.gz", ".TSnodes"), "w+") as nodes, \
+            open(smc.replace(".smc.gz", ".TSedgesets"), "w+") as edgesets, \
             open(arg_nex, "w+") as msp_nex:
             ARGweaver_smc_to_msprime_txts(
                 os.path.join(args.ARGweaver_executable_dir, args.ARGweaver_smc2arg_executable), 
                 smc.replace(".smc.gz", ""),
-                tree,
+                nodes, edgesets,
                 override_assertions=True)
             ts = msprime_txts_to_hdf5(tree)
             ts.write_nexus_trees(msp_nex, zero_based_tip_numbers=False)

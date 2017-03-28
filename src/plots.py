@@ -445,11 +445,14 @@ class InferenceRunner(object):
                 msprime_ARGweaver.ARGweaver_smc_to_nexus(
                     base+".smc.gz", out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
             try:
-                with open(base+".msp", "w+") as msprime_txtrecs:
+                #if we want to record number of coalescence records we need
+                #to convert the ARGweaver output to msprime, which is buggy
+                with open(base+".TSnodes", "w+") as msprime_nodes, \
+                    open(base+".TSedgesets", "w+") as msprime_edgesets:
                     msprime_ARGweaver.ARGweaver_smc_to_msprime_txts(
-                        smc2arg_executable, base, msprime_txtrecs,
+                        smc2arg_executable, base, msprime_nodes, msprime_edgesets,
                         override_assertions=True)
-                    inferred_ts = msprime.load_txt(msprime_txtrecs.name).simplify()
+                    inferred_ts = msprime.load_text(nodes=msprime_nodes, edgesets=msprime_edgesets).simplify()
                     c_records.append(inferred_ts.num_edgesets)
             except AssertionError:
                 logging.warning("smc2arg bug encountered converting '{}' to TS. Ignoring this row".format(
