@@ -191,14 +191,9 @@ def fastARG_out_to_msprime_txts(
             site=pos, node=node, derived_state=1-int(base_sequence[pos])),
             file=mutations_filehandle)
 
-    nodes_filehandle.flush()
-    edges_filehandle.flush()
-    sites_filehandle.flush()
-    mutations_filehandle.flush()
-    nodes_filehandle.seek(0)
-    edges_filehandle.seek(0)
-    sites_filehandle.seek(0)
-    mutations_filehandle.seek(0)
+    for k in cols.keys():
+        locals()[k+'_filehandle'].flush()
+        locals()[k+'_filehandle'].seek(0)
     
 def fastARG_out_to_msprime(fastARG_out_filehandle, variant_positions, seq_len=None):
     """

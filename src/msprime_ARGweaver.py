@@ -219,14 +219,14 @@ def ARGweaver_arg_to_msprime_txts(ARGweaver_arg_filehandle, nodes_fh, edgesets_f
         lines = {k:"\t".join(["{%s}" % s for s in v]) for k,v in cols.items()}
         for k,v in cols.items():
             #print the header lines
-            print("\t".join(v), file=locals()[k+'_filehandle'])
+            print("\t".join(v), file=locals()[k+'_fh'])
 
         for node_name in sorted(ARG_node_times, key=ARG_node_times.get): #sort by time
             #look at the break points for all the child sequences, and break up into that number of records
             print(line['nodes'].format(id=node_name, 
                 is_sample=int(node_name in tips), 
                 time=ARG_node_times[node_name]),
-                file=nodes_filehandle)
+                file=nodes_fh)
             try:
                 children = ARG_nodes[node_name]
                 assert all([ARG_node_times[child]<ARG_node_times[node_name] for child in children]), "ARGweaver node {} has an adjusted time of {} but its children ({}) are not strictly younger (times @ {}).".format(node_name, str(ARG_node_times[node_name]), ", ".join(children), ", ".join([str(ARG_node_times[c]) for c in children]))
@@ -242,7 +242,7 @@ def ARGweaver_arg_to_msprime_txts(ARGweaver_arg_filehandle, nodes_fh, edgesets_f
                     print(line['edgesets'].format(left=leftbreak, right=rightbreak, 
                         parent=node_names[node_name],
                         children=",".join([str(x) for x in sorted([node_names[cnode] for cnode, cspan in children.items() if cspan[0]<rightbreak and cspan[1]>leftbreak])])),
-                        file=edgesets_filehandle)
+                        file=edgesets_fh)
             except KeyError:
                 #these should all be the tips
                 assert node_name in tips, "The node {} is not a parent of any other node, but is not a tip either".format(node_name)
@@ -256,8 +256,9 @@ def ARGweaver_arg_to_msprime_txts(ARGweaver_arg_filehandle, nodes_fh, edgesets_f
                   "A copy of the directory '{}' has been compressed to 'bad.zip' for debugging purposes\n".format(ARGweaver_arg_filehandle.name) +
                   "You should inspect the file '{}' within that archive".format(os.path.basename(ARGweaver_arg_filehandle.name))).with_traceback(sys.exc_info()[2])
     
-    nodes_filehandle.flush()
-    edgesets_filehandle.flush()
+    for k in cols.keys():
+        locals()[k+'_fh'].flush()
+        locals()[k+'_fh'].seek(0)
     return(node_names)
     
 def ARGweaver_smc_to_nexus(smc_filename, outfilehandle, zero_based_tip_numbers=True):
