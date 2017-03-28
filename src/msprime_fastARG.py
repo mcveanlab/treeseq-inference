@@ -66,7 +66,7 @@ def variant_positions_from_fastARGin(fastARG_in_filehandle):
 
 def fastARG_out_to_msprime_txts(
         fastARG_out_filehandle, variant_positions, 
-        nodes_filehandle, edges_filehandle,  sites_filehandle, mutations_filehandle,
+        nodes_filehandle, edgesets_filehandle, sites_filehandle, mutations_filehandle,
         seq_len=None):
     """
     convert the fastARG output format (plus a list of positions) to 4 text
@@ -150,17 +150,20 @@ def fastARG_out_to_msprime_txts(
             "but they are different ({} vs {})"
             .format(len([1 for k,v in ARG_nodes.items() if len(v)==0]), haplotypes))
 
-    nodes_cols = ["id","is_sample","time"]
-    edges_cols = ["left","right","parent","children"]
-    sites_cols = ["position","ancestral_state"]
-    mutations_cols = ["site","node","derived_state"]
-    print("\t".join(nodes_cols), file=nodes_filehandle)
-    print("\t".join(edges_cols), file=edges_filehandle)
-    print("\t".join(sites_cols), file=sites_filehandle)
-    print("\t".join(mutations_cols),file=mutations_filehandle)
+    cols = {
+        'nodes':     ["id","is_sample","time"],
+        'edgesets':  ["left","right","parent","children"],
+        'sites':     ["position","ancestral_state"],
+        'mutations': ["site","node","derived_state"]
+    }
+    lines = {k:"\t".join(["{%s}" % s for s in v] for k,v in cols.items())}
+    for k,v in cols.items():
+        #print the header lines
+        print("\t".join(v), file=locals()[k+'_filehandle'])
     for node,children in sorted(ARG_nodes.items()): #sort by node number == time
         #look at the break points for all the child sequences, and break up into that number of records
-        print("\t".join(["{%s}" % n for n in nodes_cols]).format(id=node, is_sample=int(len(children)==0), time=node),
+        
+        print(lines['nodes'].format(id=node, is_sample=int(len(children)==0), time=node),
             file=nodes_filehandle)
         breaks = set()
         if len(children):
@@ -173,18 +176,18 @@ def fastARG_out_to_msprime_txts(
                 #NB - here we could try to input the values straight into an msprime python structure,
                 #but until this feature is implemented in msprime, we simply output to a correctly formatted msprime text input file
                 target_children = [str(cnode) for cnode, cspan in sorted(children.items()) if cspan[0]<rightbreak and cspan[1]>leftbreak]
-                print("\t".join(["{%s}" % e for e in edges_cols]).format(left=leftbreak, 
-                    right=rightbreak, parent=node, children=",".join(target_children)), file=edges_filehandle)
+                print(lines['edgesets'].format(left=leftbreak, right=rightbreak, 
+                    parent=node, children=",".join(target_children)), file=edgesets_filehandle)
 
     for i,base in enumerate(base_sequence):
         if base not in ['1','0']:
             raise ValueError('The ancestral sequence is not 0 or 1')
-        print("\t".join(["{%s}" % s for s in sites_cols]).format(
+        print(lines['sites'].format(
             position=variant_positions[i], ancestral_state=base),
             file=sites_filehandle)
 
     for pos, node in sorted(mutations.items()):
-        print("\t".join(["{%s}" % m for m in mutations_cols]).format(
+        print(lines['mutations'].format(
             site=pos, node=node, derived_state=1-int(base_sequence[pos])),
             file=mutations_filehandle)
 
