@@ -42,7 +42,7 @@ def get_nonbinary_example(random_seed=1, sample_size=20, length=10):
         msprime.SimpleBottleneck(time=0.5, proportion=0.9)]
     ts = msprime.simulate(
         sample_size, random_seed=random_seed, demographic_events=demographic_events,
-        recombination_rate=2)
+        recombination_rate=2, length=length)
     nonbinary = False
     for e in ts.edgesets():
         if len(e.children) > 2:
@@ -210,7 +210,7 @@ class TestMultipleTrees(unittest.TestCase):
         self.assertGreater(d, 0)
 
     def test_binary_nonbinary_trees(self):
-        ts1 = get_binary_example(1, sample_size=20)
-        ts2 = get_nonbinary_example(3, sample_size=20)
+        ts1 = get_binary_example(1, length=10, sample_size=20)
+        ts2 = get_nonbinary_example(3, length=10, sample_size=20)
         d = self.verify_rf_metrics(ts1, ts2)
         self.assertGreater(d, 0)
