@@ -16,6 +16,7 @@ importr("phangorn")
 ARGmetrics = importr("ARGmetrics")
 #NB the above requires your version of R to have the bespoke ARGmetrics package installed
 #Open R and set the working dir to treeseq-inference, then do
+# > library(devtools)
 # > install("ARGmetrics")
 
 
