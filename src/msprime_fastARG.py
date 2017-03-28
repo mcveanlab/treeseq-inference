@@ -37,11 +37,8 @@ def msprime_to_fastARG_in(ts, fastARG_filehandle):
 
 def variant_matrix_to_fastARG_in(var_matrix, var_positions, fastARG_filehandle):
     assert len(var_matrix)==len(var_positions)
-    iterator = zip(var_positions, var_matrix)
-    pos, row = next(iterator) #first line does not begin with newline
-    fastARG_filehandle.write(str(pos) + "\t" + "".join((str(v) for v in row)))
-    for pos, row in iterator:
-        fastARG_filehandle.write("\n" + str(pos) + "\t" + "".join((str(v) for v in row)))
+    for pos, row in zip(var_positions, var_matrix):
+        print(str(pos), "".join((str(v) for v in row)), sep= "\t", file=fastARG_filehandle)
     fastARG_filehandle.flush()
 
 def get_cmd(executable, fastARG_in, seed):
@@ -210,9 +207,29 @@ def fastARG_out_to_msprime(fastARG_out_filehandle, variant_positions, seq_len=No
         tempfile.NamedTemporaryFile("w+") as mutations:
         fastARG_out_to_msprime_txts(fastARG_out_filehandle, variant_positions, 
             nodes, edgesets, sites, mutations, seq_len=seq_len)
-        return msprime.load_text(nodes=nodes, edgesets=edgesets, sites=sites, mutations=mutations)
+        return msprime.load_text(nodes=nodes, edgesets=edgesets, sites=sites, mutations=mutations).simplify()
+
+def compare_fastARG_haplotypes(fastARG_fn_in, ts_in, save=False):
+    """
+    check that the fn_in (a haplotype list) is the same as the
+    equivalent haplotype file when output from the treesequence ts_in
+    """
+    import filecmp
+    import shutil
+    with tempfile.NamedTemporaryFile("w+") as fastARG_from_ts:
+        msprime_to_fastARG_in(ts_in, fastARG_from_ts)
+        fastARG_from_ts.flush()
+        files_identical = filecmp.cmp(fastARG_fn_in, fastARG_from_ts.name, shallow=False)
+        if save and files_identical==False:
+            debug_file = os.path.join(os.path.dirname(fastARG_from_ts.name), "bad.hap")
+            shutil.copyfile(fastARG_from_ts.name, debug_file)
+            logging.warning("File '{}' differs from '{}'"
+                "(temp file copied to '{}' for debugging)"
+                .format(fastARG_from_ts.name, fastARG_fn_in, debug_file))
+        return files_identical
+
         
-def main(ts, fastARG_executable, fa_in, fa_out, nodes_fh, edgesets_fh, sites_fh, muts_fh, fa_revised):
+def main(ts, fastARG_executable, fa_in, fa_out, nodes_fh, edgesets_fh, sites_fh, muts_fh):
     """
     This is just to test if fastarg produces the same haplotypes
     """
@@ -235,17 +252,16 @@ def main(ts, fastARG_executable, fa_in, fa_out, nodes_fh, edgesets_fh, sites_fh,
     logging.debug(
         "Initial num records = {}, fastARG (simplified) = {}, fastARG (unsimplified) = {}".format(
         ts.get_num_records(), simple_ts.get_num_records(), new_ts.get_num_records()))
-    msprime_to_fastARG_in(simple_ts, fa_revised)
-    if filecmp.cmp(fa_in.name, fa_revised.name, shallow=False) == False:
-        raise ValueError("Initial fastARG input file differs from processed fastARG file")
-    else:
+    
+    if compare_fastARG_haplotypes(fa_in.name, simple_ts):
         print("All input and output haplotypes are the same. Hurrah")
+    else:
+        raise ValueError("Initial fastARG input file differs from processed fastARG file")
     # check the haplotype files (in fastARG input format) are the same
 
 
 if __name__ == "__main__":
     import argparse
-    import filecmp
     import os
     default_sim={'sample_size':20, 'Ne':1e4, 'length':10000, 'mutation_rate':2e-8, 'recombination_rate':2e-8}
     parser = argparse.ArgumentParser(description='Check fastARG imports by running msprime simulation through it and back out')
@@ -270,9 +286,8 @@ if __name__ == "__main__":
              tempfile.NamedTemporaryFile("w+") as nodes, \
              tempfile.NamedTemporaryFile("w+") as edgesets, \
              tempfile.NamedTemporaryFile("w+") as sites, \
-             tempfile.NamedTemporaryFile("w+") as mutations,\
-             tempfile.NamedTemporaryFile("w+") as fa_revised:
-            main(ts, args.fastARG_executable, fa_in, fa_out, nodes, edgesets, sites, mutations, fa_revised)
+             tempfile.NamedTemporaryFile("w+") as mutations:
+            main(ts, args.fastARG_executable, fa_in, fa_out, nodes, edgesets, sites, mutations)
     else:
         full_prefix = os.path.join(args.outputdir, prefix)
         with open(full_prefix + ".haps", "w+") as fa_in, \
@@ -280,6 +295,5 @@ if __name__ == "__main__":
              open(full_prefix + ".TSnodes", "w+") as nodes, \
              open(full_prefix + ".TSedges", "w+") as edgesets, \
              open(full_prefix + ".TSsites", "w+") as sites, \
-             open(full_prefix + ".TSmuts", "w+") as mutations, \
-             open(full_prefix + ".haps_revised", "w+") as fa_revised:
-            main(ts, args.fastARG_executable, fa_in, fa_out, nodes, edgesets, sites, mutations, fa_revised)
+             open(full_prefix + ".TSmuts", "w+") as mutations:
+            main(ts, args.fastARG_executable, fa_in, fa_out, nodes, edgesets, sites, mutations)
