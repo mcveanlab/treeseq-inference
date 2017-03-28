@@ -12,11 +12,11 @@ ape=importr("ape")
 importr("phangorn")
 ARGmetrics = importr("ARGmetrics")
 assert robjects.r('packageVersion("ARGmetrics") >= "0.0.1.0"')[0], (
-    "Your version of ARGmetrics installed in R is too old (requires >= 0.0.1.0)"
-    'Install the latest version using e.g.\n'
-    'library(devtools)\n'
-    'setwd("{}")\n'
-    'install("ARGmetrics")\n'
+    "Your version of ARGmetrics installed in R is too old (requires >= 0.0.1.0). "
+    'Install the latest version from within R by typing e.g.\n'
+    '> library(devtools)\n'
+    '> setwd("{}")\n'
+    '> install("ARGmetrics")\n'
     .format(os.path.join(os.path.basename(__file__),'..')))
 #NB the above requires your version of R to have the bespoke ARGmetrics package installed
 #Open R and set the working dir to treeseq-inference, then do
