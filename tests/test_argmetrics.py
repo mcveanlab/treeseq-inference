@@ -2,10 +2,13 @@
 Tests for the argmetrics code. Compare the results obtained using the
 module with those from ETE and dendropy.
 """
-
+import os
+import sys
 import unittest
 import tempfile
 
+curr_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(1,os.path.join(curr_dir,'..','msprime'))
 import msprime
 import dendropy
 
