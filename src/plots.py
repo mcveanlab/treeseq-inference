@@ -52,6 +52,9 @@ tree_tip_labels_start_at_0 = False
 if sys.version_info[0] < 3:
     raise Exception("Python 3 only")
 
+def completed_colname(tool):
+    return tool + "_completed"
+
 def cpu_time_colname(tool):
     return tool + "_cputime"
 
@@ -315,7 +318,7 @@ class InferenceRunner(object):
                 'subsample')
         self.source_nexus_file = msprime_name_from_row(row, simulations_dir) + ".nex"
         # This should be set by the run_inference methods.
-        self.inferred_nexus_file = None
+        self.inferred_nexus_files = None
 
     def run(self):
         logging.info("Row {}/~{}: running {} inference".format(
@@ -331,7 +334,9 @@ class InferenceRunner(object):
             ret = self.__run_RentPlus()
         else:
             raise KeyError("unknown tool {}".format(self.tool))
-        metrics = ARG_metrics.get_metrics(self.source_nexus_file, self.inferred_nexus_file)
+        #NB Jerome thinks it may be clearer to have get_metrics() return a single set of metrics
+        #rather than an average over multiple inferred_nexus_files, and do the averaging in python
+        metrics = ARG_metrics.get_metrics(self.source_nexus_file, self.inferred_nexus_files)
         for metric, value in metrics.items():
             ret[self.tool + "_" + metric] = value
         logging.debug("returning infer results for {} row {} = {}".format(
@@ -357,11 +362,12 @@ class InferenceRunner(object):
         else:
             out_fn = construct_tsinfer_name(self.base_fn)
         inferred_ts.dump(out_fn + ".hdf5")
-        self.inferred_nexus_file = out_fn + ".nex"
-        with open(self.inferred_nexus_file, "w+") as out:
-            #tree metrics assume tips are numbered from 1 not 0
-            inferred_ts.write_nexus_trees(out, tree_labels_between_variants=True,
-                zero_based_tip_numbers=tree_tip_labels_start_at_0)
+        self.inferred_nexus_files = [out_fn + ".nex"] #only one nexus file output
+        for fn in self.inferred_nexus_files:
+            with open(fn, "w+") as out:
+                #tree metrics assume tips are numbered from 1 not 0
+                inferred_ts.write_nexus_trees(out, tree_labels_between_variants=True,
+                    zero_based_tip_numbers=tree_tip_labels_start_at_0)
         poly_sum = poly_ssq = poly_max = 0
         for e in inferred_ts.edgesets():
             poly_sum += len(e.children)
@@ -385,11 +391,12 @@ class InferenceRunner(object):
         memory = None
         c_records = None
         logging.debug("reading: {} for fastARG inference".format(infile))
-        out_fn = construct_fastarg_name(self.base_fn, inference_seed) + ".nex"
         inferred_ts, time, memory = self.run_fastarg(infile, self.row.length, inference_seed)
-        with open(out_fn , "w+") as out:
+        self.inferred_nexus_files = [construct_fastarg_name(self.base_fn, inference_seed) + ".nex"]
+        for fn in self.inferred_nexus_files:
+            with open(fn, "w+") as out:
             #the treeseq output by run_fastarg() is already averaged between regions
-            inferred_ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+                inferred_ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
         c_records = inferred_ts.num_edgesets
         return {
             cpu_time_colname(self.tool): time,
@@ -404,10 +411,11 @@ class InferenceRunner(object):
         logging.debug("reading: {} for RentPlus inference".format(infile))
         treefile, num_tips, time, memory = self.run_rentplus(infile, self.row.length)
         if treefile:
-            self.inferred_nexus_file = construct_rentplus_name(self.base_fn) + ".nex"
-            with open(self.inferred_nexus_file, "w+") as out:
-                msprime_RentPlus.RentPlus_trees_to_nexus(treefile, out, self.row.length,
-                    num_tips, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+            self.inferred_nexus_files = [construct_rentplus_name(self.base_fn) + ".nex"]
+            for fn in self.inferred_nexus_files:
+                with open(fn, "w+") as out:
+                    msprime_RentPlus.RentPlus_trees_to_nexus(treefile, out, self.row.length,
+                        num_tips, zero_based_tip_numbers=tree_tip_labels_start_at_0)
         return {
             cpu_time_colname(self.tool): time,
             memory_colname(self.tool): memory,
@@ -473,26 +481,14 @@ class InferenceRunner(object):
     def run_fastarg(file_name, seq_length, seed):
         with tempfile.NamedTemporaryFile("w+") as fa_out, \
                 tempfile.NamedTemporaryFile("w+") as tree, \
-                tempfile.NamedTemporaryFile("w+") as muts, \
-                tempfile.NamedTemporaryFile("w+") as fa_revised:
+                tempfile.NamedTemporaryFile("w+") as muts:
             cmd = msprime_fastARG.get_cmd(fastARG_executable, file_name, seed)
             cpu_time, memory_use = time_cmd(cmd, fa_out)
             logging.debug("ran fastarg for seq length {} [{} s]: '{}'".format(seq_length, cpu_time, cmd))
             var_pos = msprime_fastARG.variant_positions_from_fastARGin_name(file_name)
-            root_seq = msprime_fastARG.fastARG_root_seq(fa_out)
-            msprime_fastARG.fastARG_out_to_msprime_txts(
-                    fa_out, var_pos, tree, muts, seq_len=seq_length)
-            inferred_ts = msprime_fastARG.msprime_txts_to_fastARG_in_revised(
-                    tree, muts, root_seq, fa_revised, simplify=True)
-            try:
-                assert filecmp.cmp(file_name, fa_revised.name, shallow=False), \
-                    "{} and {} differ".format(file_name, fa_revised.name)
-            except Exception as e:
-                debug_file = os.path.join(os.path.dirname(fa_revised.name), "bad.hap")
-                shutil.copyfile(fa_revised.name, debug_file)
-                e.args = (e.args[0] + ". File '{}' copied to '{}' for debugging".format(
-                    fa_revised.name, debug_file),)
-                raise
+            inferred_ts = msprime_fastARG.fastARG_out_to_msprime(fa_out, var_pos, seq_len=seq_length)
+            #check fastARG conversion give same haplotypes
+            assert msprime_fastARG.compare_fastARG_haplotypes(file_name, inferred_ts, save=True)
             return inferred_ts, cpu_time, memory_use
 
     @staticmethod
@@ -601,6 +597,7 @@ def infer_worker(work):
     tool, row, simulations_dir, num_threads, n_rows = work
     runner = InferenceRunner(tool, row, simulations_dir, num_threads, n_rows)
     result = runner.run()
+    result[completed_colname(tool)]=True
     return int(row[0]), result
 
 
@@ -621,7 +618,7 @@ class Dataset(object):
         # Disabling ARGweaver initially as it's too slow.
         # "ARGweaver":
         # Disabling FastARG until the input mechanism is fixed.
-        # "fastARG"
+        "fastARG",
         "RentPlus",
         "tsinfer"]
 
@@ -663,6 +660,8 @@ class Dataset(object):
         self.verbosity = args.verbosity
         logging.info("Creating dir {}".format(self.simulations_dir))
         self.data = self.run_simulations(args.replicates, args.seed)
+        for t in self.tools:
+            self.data[completed_colname(t)]=False
         # Other result columns are added later during the infer step.
         self.dump_data(write_index=True)
 
@@ -692,7 +691,7 @@ class Dataset(object):
                 # All values that are unset should be NaN, so we only run those that
                 # haven't been filled in already. This allows us to stop and start the
                 # infer processes without having to start from scratch each time.
-                if force or pd.isnull(row[cpu_time_colname(tool)]):
+                if force or row[completed_colname(tool)]==False:
                     work.append(
                         (tool, row, self.simulations_dir, num_threads, len(self.data.index)))
                 else:
