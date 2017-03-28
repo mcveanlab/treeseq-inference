@@ -216,7 +216,7 @@ def ARGweaver_arg_to_msprime_txts(ARGweaver_arg_filehandle, nodes_fh, edgesets_f
             'nodes':     ["id","is_sample","time"],
             'edgesets':  ["left","right","parent","children"]
         }
-        lines = {k:"\t".join(["{%s}" % s for s in v] for k,v in cols.items())}
+        lines = {k:"\t".join(["{%s}" % s for s in v]) for k,v in cols.items()}
         for k,v in cols.items():
             #print the header lines
             print("\t".join(v), file=locals()[k+'_filehandle'])

@@ -156,7 +156,7 @@ def fastARG_out_to_msprime_txts(
         'sites':     ["position","ancestral_state"],
         'mutations': ["site","node","derived_state"]
     }
-    lines = {k:"\t".join(["{%s}" % s for s in v] for k,v in cols.items())}
+    lines = {k:"\t".join(["{%s}" % s for s in v]) for k,v in cols.items()}
     for k,v in cols.items():
         #print the header lines
         print("\t".join(v), file=locals()[k+'_filehandle'])
