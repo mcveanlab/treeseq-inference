@@ -13,7 +13,7 @@ importr("phangorn")
 ARGmetrics = importr("ARGmetrics")
 assert robjects.r('packageVersion("ARGmetrics") >= "0.0.1.0"')[0], (
     "Your version of ARGmetrics installed in R is too old (requires >= 0.0.1.0). "
-    'Install the latest version from within R by typing e.g.\n'
+    'Install the latest version from within R by syncing with git and typing e.g.\n'
     '> library(devtools)\n'
     '> setwd("{}")\n'
     '> install("ARGmetrics")\n'
