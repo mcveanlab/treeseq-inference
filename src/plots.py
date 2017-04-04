@@ -442,6 +442,7 @@ class InferenceRunner(object):
         c_records = []
         iteration_ids = []
         stats_file = None
+        self.inferred_nexus_files = []
         logging.debug("reading: {} for ARGweaver inference".format(infile))
         out_fn = construct_argweaver_name(self.base_fn, inference_seed)
         iteration_ids, stats_file, time, memory = self.run_argweaver(
@@ -452,9 +453,11 @@ class InferenceRunner(object):
         #now must convert all of the .smc files to .nex format
         for it in iteration_ids:
             base = construct_argweaver_name(self.base_fn, inference_seed, it)
-            with open(base + ".nex", "w+") as out:
+            nexus = base + ".nex"
+            with open(nexus, "w+") as out:
                 msprime_ARGweaver.ARGweaver_smc_to_nexus(
                     base+".smc.gz", out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+            self.inferred_nexus_files.append(nexus)
             try:
                 #if we want to record number of coalescence records we need
                 #to convert the ARGweaver output to msprime, which is buggy
