@@ -470,7 +470,6 @@ class InferenceRunner(object):
             memory_colname(self.tool): memory,
             n_coalescence_records_colname(self.tool): statistics.mean(c_records) if len(c_records) else None,
             "ARGweaver_iterations": ",".join(iteration_ids),
-            "ARGweaver_stats_file":stats_file,
         }
         return results
 
