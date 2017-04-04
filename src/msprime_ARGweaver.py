@@ -221,12 +221,16 @@ def ARGweaver_arg_to_msprime_txts(ARGweaver_arg_filehandle, nodes_fh, edgesets_f
             #print the header lines
             print("\t".join(v), file=locals()[k+'_fh'])
 
-        for node_name in sorted(ARG_node_times, key=ARG_node_times.get): #sort by time
-            #look at the break points for all the child sequences, and break up into that number of records
-            print(lines['nodes'].format(id=node_name, 
+
+        for node_name in sorted(node_names, key=node_names.get): #sort by id
+            print(lines['nodes'].format(id=node_names[node_name], 
                 is_sample=int(node_name in tips), 
                 time=ARG_node_times[node_name]),
                 file=nodes_fh)
+
+
+        for node_name in sorted(ARG_node_times, key=ARG_node_times.get): #sort by time
+            #look at the break points for all the child sequences, and break up into that number of records
             try:
                 children = ARG_nodes[node_name]
                 assert all([ARG_node_times[child]<ARG_node_times[node_name] for child in children]), "ARGweaver node {} has an adjusted time of {} but its children ({}) are not strictly younger (times @ {}).".format(node_name, str(ARG_node_times[node_name]), ", ".join(children), ", ".join([str(ARG_node_times[c]) for c in children]))
@@ -288,17 +292,18 @@ def main(args):
     import subprocess
     from dendropy import TreeList, calculate
     import msprime_extras
-    def msprime_txts_to_hdf5(tree_filehandle, hdf5_outname=None):
+    def msprime_txts_to_hdf5(msprime_nodes, msprime_edgesets, hdf5_outname=None):
         import shutil
         import msprime
         logging.info("== Converting new msprime ARG as hdf5 ===")
         try:
-            ts = msprime.load_txt(tree_filehandle.name)
+            ts = msprime.load_text(nodes=msprime_nodes, edgesets=msprime_edgesets).simplify()
         except:
-            logging.warning("Can't load the txt file properly. Saved a copy to 'bad.msprime' for inspection")
-            shutil.copyfile(tree_filehandle.name, "bad.msprime")
+            logging.warning("Can't load the texts file properly. Saved copied to 'bad.nodes' & 'bad.edgesets' for inspection")
+            shutil.copyfile(msprime_nodes.name, "bad.nodes")
+            shutil.copyfile(msprime_edgesets.name, "bad.edgesets")
             raise
-        logging.info("== loaded {} ===".format(tree_filehandle.name))
+        logging.info("== loaded {}, {}===".format(msprime_nodes.name, msprime_edgesets.name))
         try:
             simple_ts = ts.simplify()
         except:
@@ -310,7 +315,7 @@ def main(args):
         return(simple_ts)
 
     msprime.TreeSequence.write_nexus_trees = msprime_extras.write_nexus_trees
-    iterations = 50
+    iterations = 20
     full_prefix = os.path.join(args.outputdir, os.path.splitext(os.path.basename(args.hdf5file))[0])
     with open(full_prefix+".sites", "w+") as aw_in:
         msprime_hdf5_to_ARGweaver_in(args.hdf5file, aw_in)
@@ -341,7 +346,8 @@ def main(args):
                 smc.replace(".smc.gz", ""),
                 nodes, edgesets,
                 override_assertions=True)
-            ts = msprime_txts_to_hdf5(tree)
+                
+            ts = msprime_txts_to_hdf5(nodes, edgesets)
             ts.write_nexus_trees(msp_nex, zero_based_tip_numbers=False)
         smc_trees = TreeList.get(path=smc_nex, schema="nexus")
         arg_trees = TreeList.get(path=arg_nex, schema='nexus') 
