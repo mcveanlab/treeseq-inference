@@ -223,7 +223,7 @@ def ARGweaver_arg_to_msprime_txts(ARGweaver_arg_filehandle, nodes_fh, edgesets_f
 
         for node_name in sorted(ARG_node_times, key=ARG_node_times.get): #sort by time
             #look at the break points for all the child sequences, and break up into that number of records
-            print(line['nodes'].format(id=node_name, 
+            print(lines['nodes'].format(id=node_name, 
                 is_sample=int(node_name in tips), 
                 time=ARG_node_times[node_name]),
                 file=nodes_fh)
@@ -239,7 +239,7 @@ def ARGweaver_arg_to_msprime_txts(ARGweaver_arg_filehandle, nodes_fh, edgesets_f
                     rightbreak = breaks[i]
                     #NB - here we could try to input the values straight into an msprime python structure,
                     #but until this feature is implemented in msprime, we simply output to a correctly formatted text file
-                    print(line['edgesets'].format(left=leftbreak, right=rightbreak, 
+                    print(lines['edgesets'].format(left=leftbreak, right=rightbreak, 
                         parent=node_names[node_name],
                         children=",".join([str(x) for x in sorted([node_names[cnode] for cnode, cspan in children.items() if cspan[0]<rightbreak and cspan[1]>leftbreak])])),
                         file=edgesets_fh)
