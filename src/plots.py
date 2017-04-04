@@ -336,7 +336,12 @@ class InferenceRunner(object):
             raise KeyError("unknown tool {}".format(self.tool))
         #NB Jerome thinks it may be clearer to have get_metrics() return a single set of metrics
         #rather than an average over multiple inferred_nexus_files, and do the averaging in python
-        metrics = ARG_metrics.get_metrics(self.source_nexus_file, self.inferred_nexus_files)
+        try:
+            metrics = ARG_metrics.get_metrics(self.source_nexus_file, self.inferred_nexus_files)
+        except:
+            logging.warning("Error trying to compare metrics for {} against {}".format(
+                self.source_nexus_file,self.inferred_nexus_files))
+            raise
         for metric, value in metrics.items():
             ret[self.tool + "_" + metric] = value
         logging.debug("returning infer results for {} row {} = {}".format(
@@ -926,6 +931,8 @@ class AllMetricsByMutationRateFigure(Figure):
         tools = collections.OrderedDict([
             ("tsinfer", "blue"),
             ("RentPlus", "red"),
+            ("ARGweaver", "green"),
+            ("fastARG", "magenta"),
         ])
         metrics = ARG_metrics.get_metric_names()
         fig, axes = pyplot.subplots(len(metrics), 3, figsize=(12, 30))
@@ -1071,10 +1078,10 @@ def main():
     subparser = subparsers.add_parser('infer')
     subparser.add_argument(
         "--processes", '-p', type=int, default=1,
-        help="number of worker processes")
+        help="number of worker processes, e.g. 40")
     subparser.add_argument(
         "--threads", '-t', type=int, default=1,
-        help="number of threads per worker process (for supporting tools)")
+        help="number of threads per worker process (for supporting tools), e.g. 8")
     subparser.add_argument(
         "--tool", '-T', default=None,
         help="Only run this specific tool")
