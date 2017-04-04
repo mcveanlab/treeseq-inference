@@ -336,12 +336,8 @@ class InferenceRunner(object):
             raise KeyError("unknown tool {}".format(self.tool))
         #NB Jerome thinks it may be clearer to have get_metrics() return a single set of metrics
         #rather than an average over multiple inferred_nexus_files, and do the averaging in python
-        try:
-            metrics = ARG_metrics.get_metrics(self.source_nexus_file, self.inferred_nexus_files)
-        except:
-            logging.warning("Error trying to compare metrics for {} against {}".format(
-                self.source_nexus_file,self.inferred_nexus_files))
-            raise
+        assert self.hasattr('inferred_nexus_files')
+        metrics = ARG_metrics.get_metrics(self.source_nexus_file, self.inferred_nexus_files)
         for metric, value in metrics.items():
             ret[self.tool + "_" + metric] = value
         logging.debug("returning infer results for {} row {} = {}".format(
@@ -978,10 +974,14 @@ class MetricByMutationRateFigure(Figure):
         tool_colours = collections.OrderedDict([
             ("tsinfer", "blue"),
             ("RentPlus", "red"),
+            ("ARGweaver", "green"),
+            ("fastARG", "magenta"),
         ])
         tool_markers = collections.OrderedDict([
-            ("tsinfer", "o"),
+            ("tsinfer", "*"),
             ("RentPlus", "s"),
+            ("ARGweaver", "o"),
+            ("fastARG", "^"),
         ])
         tools = list(tool_colours.keys())
         linestyles = ["-", ":"]
