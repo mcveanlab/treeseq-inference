@@ -423,7 +423,13 @@ class InferenceRunner(object):
         }
 
 
-    def __run_ARGweaver(self):
+    def __run_ARGweaver(self, 
+        #hard code some parameters
+        n_out_samples=10,
+        sample_step=20,
+        burnin_iterations=1000,
+        ):
+        
         inference_seed = self.row.seed  # TODO do we need to specify this separately?
         infile = self.base_fn + ".sites"
         time = None
@@ -435,8 +441,8 @@ class InferenceRunner(object):
         out_fn = construct_argweaver_name(self.base_fn, inference_seed)
         iteration_ids, stats_file, time, memory = self.run_argweaver(
             infile, self.row.Ne, self.row.recombination_rate, self.row.mutation_rate,
-            out_fn, inference_seed, int(self.row.aw_n_out_samples),
-            self.row.aw_iter_out_freq, int(self.row.aw_burnin_iters),
+            out_fn, inference_seed, n_out_samples,
+            sample_step, burnin_iterations,
             verbose = logging.getLogger().isEnabledFor(logging.DEBUG))
         #now must convert all of the .smc files to .nex format
         for it in iteration_ids:
@@ -618,9 +624,7 @@ class Dataset(object):
     data_dir = "data"
 
     tools = [
-        # Disabling ARGweaver initially as it's too slow.
-        # "ARGweaver":
-        # Disabling FastARG until the input mechanism is fixed.
+        "ARGweaver",
         "fastARG",
         "RentPlus",
         "tsinfer"]
