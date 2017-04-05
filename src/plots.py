@@ -52,22 +52,14 @@ tree_tip_labels_start_at_0 = False
 if sys.version_info[0] < 3:
     raise Exception("Python 3 only")
 
-def completed_colname(tool):
-    return tool + "_completed"
-
-def cpu_time_colname(tool):
-    return tool + "_cputime"
-
-def memory_colname(tool):
-    return tool + "_memory"
-
-def n_coalescence_records_colname(tool):
-    return tool + "_crecords"
-
-def metric_colnames(metrics_for):
-    metric_names = ARG_metrics.get_metric_names()
-    return ["{}_{}".format(f, metric) for f in metrics_for for metric in metric_names]
-
+save_stats = dict(
+        cpu = "cputime",
+        mem =  "memory",
+        n_edgesets = "edgesets",
+        n_edges = "edges",
+        ts_filesize = "TSfilesize"
+        )
+        
 def nanblank(val):
     """hack around a horrible pandas syntax, which puts nan instead of blank strings"""
     return "" if pd.isnull(val) else val
@@ -338,8 +330,7 @@ class InferenceRunner(object):
         #rather than an average over multiple inferred_nexus_files, and do the averaging in python
         assert self.hasattr('inferred_nexus_files')
         metrics = ARG_metrics.get_metrics(self.source_nexus_file, self.inferred_nexus_files)
-        for metric, value in metrics.items():
-            ret[self.tool + "_" + metric] = value
+        ret.update(metrics)
         logging.debug("returning infer results for {} row {} = {}".format(
             self.tool, int(self.row[0]), ret))
         return ret
@@ -348,7 +339,7 @@ class InferenceRunner(object):
 
         samples_fn = self.base_fn + ".npy"
         positions_fn = self.base_fn + ".pos.npy"
-        time = memory = c_records = poly_sum = poly_ssq = poly_max = n = None
+        time = memory = fs = poly_sum = poly_ssq = poly_max = n = None
         logging.debug("reading: variant matrix {} & positions {} for msprime inference".format(
             samples_fn, positions_fn))
         scaled_recombination_rate = 4 * self.row.recombination_rate * self.row.Ne
@@ -363,6 +354,7 @@ class InferenceRunner(object):
         else:
             out_fn = construct_tsinfer_name(self.base_fn)
         inferred_ts.dump(out_fn + ".hdf5")
+        fs = os.path.size(out_fn + ".hdf5")
         self.inferred_nexus_files = [out_fn + ".nex"] #only one nexus file output
         for fn in self.inferred_nexus_files:
             with open(fn, "w+") as out:
@@ -377,38 +369,44 @@ class InferenceRunner(object):
         poly_mean = poly_sum / inferred_ts.num_edgesets
         n = inferred_ts.num_edgesets
         return  {
-            cpu_time_colname(self.tool): time,
-            memory_colname(self.tool): memory,
-            n_coalescence_records_colname(self.tool): c_records,
-            'tsinfer_mean_polytomy': poly_mean if n else None,
-            'tsinfer_var_polytomy': ((poly_ssq - poly_sum**2/n)/ (n-1)) if n and n>1 else None,
-            'tsinfer_max_polytomy': poly_max
+            colnames['cpu']: time,
+            colnames['mem']: memory,
+            colnames['edgesets']: n,
+            colnames['edges']: poly_sum,
+            colnames['ts_filesize']: fs,
+            'mean_polytomy': poly_mean if n else None,
+            'var_polytomy': ((poly_ssq - poly_sum**2/n)/ (n-1)) if n and n>1 else None,
+            'max_polytomy': poly_max
         }
 
     def __run_fastARG(self):
         inference_seed = self.row.seed  # TODO do we need to specify this separately?
         infile = self.base_fn + ".hap"
-        time = None
-        memory = None
-        c_records = None
+        out_fn = construct_fastarg_name(self.base_fn, inference_seed)
+        time = memory = edgesets = None
         logging.debug("reading: {} for fastARG inference".format(infile))
         inferred_ts, time, memory = self.run_fastarg(infile, self.row.length, inference_seed)
-        self.inferred_nexus_files = [construct_fastarg_name(self.base_fn, inference_seed) + ".nex"]
+        edgesets = inferred_ts.num_edgesets
+        edges = sum(len(e.children) for e in inferred_ts.edgesets())
+        inferred_ts.dump(out_fn + ".hdf5")
+        fs = os.path.size(out_fn + ".hdf5")
+
+        self.inferred_nexus_files = [out_fn + ".nex"]
         for fn in self.inferred_nexus_files:
             with open(fn, "w+") as out:
             #the treeseq output by run_fastarg() is already averaged between regions
                 inferred_ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
-        c_records = inferred_ts.num_edgesets
         return {
-            cpu_time_colname(self.tool): time,
-            memory_colname(self.tool): memory,
-            n_coalescence_records_colname(self.tool): c_records
+            colnames['cpu']: time,
+            colnames['mem']: memory,
+            colnames['edgesets']: edgesets,
+            colnames['edges']: edges,
+            colnames['ts_filesize']: fs,
         }
 
     def __run_RentPlus(self):
         infile = self.base_fn + ".dat"
-        time = None
-        memory = None
+        time = memory = None
         logging.debug("reading: {} for RentPlus inference".format(infile))
         treefile, num_tips, time, memory = self.run_rentplus(infile, self.row.length)
         if treefile:
@@ -418,9 +416,8 @@ class InferenceRunner(object):
                     msprime_RentPlus.RentPlus_trees_to_nexus(treefile, out, self.row.length,
                         num_tips, zero_based_tip_numbers=tree_tip_labels_start_at_0)
         return {
-            cpu_time_colname(self.tool): time,
-            memory_colname(self.tool): memory,
-            n_coalescence_records_colname(self.tool): None
+            colnames['cpu']: time,
+            colnames['mem']: memory,
         }
 
 
@@ -433,9 +430,10 @@ class InferenceRunner(object):
         
         inference_seed = self.row.seed  # TODO do we need to specify this separately?
         infile = self.base_fn + ".sites"
-        time = None
-        memory = None
-        c_records = []
+        time = memory = None
+        filesizes = []
+        edgesets = []
+        edges = []
         iteration_ids = []
         stats_file = None
         self.inferred_nexus_files = []
@@ -463,16 +461,21 @@ class InferenceRunner(object):
                         smc2arg_executable, base, msprime_nodes, msprime_edgesets,
                         override_assertions=True)
                     inferred_ts = msprime.load_text(nodes=msprime_nodes, edgesets=msprime_edgesets).simplify()
-                    c_records.append(inferred_ts.num_edgesets)
+                    inferred_ts.dump(base + ".hdf5")
+                    filesizes.append(os.path.size(base + ".hdf5"))
+                    edgesets.append(inferred_ts.num_edgesets)
+                    edges.append(sum(len(e.children) for e in inferred_ts.edgesets()))
             except AssertionError:
                 logging.warning("smc2arg bug encountered converting '{}' to TS. Ignoring this row".format(
                     base+".msp"))
                 #smc2arg cyclical bug: ignore this conversion
                 pass
         results = {
-            cpu_time_colname(self.tool): time,
-            memory_colname(self.tool): memory,
-            n_coalescence_records_colname(self.tool): statistics.mean(c_records) if len(c_records) else None,
+            colnames['cpu']: time,
+            colnames['mem']: memory,
+            colnames['edgesets']: statistics.mean(edgesets) if len(edgesets) else None,
+            colnames['edges']: statistics.mean(edges) if len(edges) else None,
+            colnames['ts_filesize']: statistics.mean(filesizes) if len(filesizes) else None,
             "ARGweaver_iterations": ",".join(iteration_ids),
         }
         return results
@@ -609,8 +612,8 @@ def infer_worker(work):
     tool, row, simulations_dir, num_threads, n_rows = work
     runner = InferenceRunner(tool, row, simulations_dir, num_threads, n_rows)
     result = runner.run()
-    result[completed_colname(tool)]=True
-    return int(row[0]), result
+    result['completed']=True
+    return int(row[0]), tool, result
 
 
 class Dataset(object):
@@ -631,6 +634,8 @@ class Dataset(object):
         "fastARG",
         "RentPlus",
         "tsinfer"]
+
+    colnames = save_stats
 
     def __init__(self):
         self.data_path = os.path.abspath(
@@ -671,7 +676,7 @@ class Dataset(object):
         logging.info("Creating dir {}".format(self.simulations_dir))
         self.data = self.run_simulations(args.replicates, args.seed)
         for t in self.tools:
-            self.data[completed_colname(t)]=False
+            self.data[t+"_completed"]=False
         # Other result columns are added later during the infer step.
         self.dump_data(write_index=True)
 
@@ -701,7 +706,7 @@ class Dataset(object):
                 # All values that are unset should be NaN, so we only run those that
                 # haven't been filled in already. This allows us to stop and start the
                 # infer processes without having to start from scratch each time.
-                if force or row[completed_colname(tool)]==False:
+                if force or row[tool+"_completed"]==False:
                     work.append(
                         (tool, row, self.simulations_dir, num_threads, len(self.data.index)))
                 else:
@@ -719,16 +724,18 @@ class Dataset(object):
         random.shuffle(work)
         if num_processes > 1:
             with multiprocessing.Pool(processes=num_processes) as pool:
-                for row_id, updated in pool.imap_unordered(infer_worker, work):
-                    for k, v in updated.items():
-                        self.data.ix[row_id, k] = v
+                for row_id, tool, cols in pool.imap_unordered(infer_worker, work):
+                    for k, v in cols.items():
+                        if k in self.colnames.values():
+                            self.data.ix[row_id, tool+"_"+k] = v
                     self.dump_data(force_flush=False)
         else:
             # When we have only one process it's easier to keep everything in the same
             # process for debugging.
-            for row_id, updated in map(infer_worker, work):
-                for k, v in updated.items():
-                    self.data.ix[row_id, k] = v
+            for row_id, tool, cols in map(infer_worker, work):
+                for k, v in cols.items():
+                    if k in self.colnames.values():
+                        self.data.ix[row_id, tool+"_"+k] = v
                 self.dump_data(force_flush=False)
         self.dump_data(force_flush=True)
 
@@ -829,7 +836,10 @@ class MetricsByMutationRateDataset(Dataset):
 
     default_replicates = 10
     default_seed = 123
-
+    colnames = Dataset.colnames
+    del colnames['n_edgesets'] #e.g. don't save n edgesets here
+    
+    
     def run_simulations(self, replicates, seed):
         if replicates is None:
             replicates = self.default_replicates
