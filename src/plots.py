@@ -369,11 +369,11 @@ class InferenceRunner(object):
         poly_mean = poly_sum / inferred_ts.num_edgesets
         n = inferred_ts.num_edgesets
         return  {
-            colnames['cpu']: time,
-            colnames['mem']: memory,
-            colnames['edgesets']: n,
-            colnames['edges']: poly_sum,
-            colnames['ts_filesize']: fs,
+            save_stats['cpu']: time,
+            save_stats['mem']: memory,
+            save_stats['edgesets']: n,
+            save_stats['edges']: poly_sum,
+            save_stats['ts_filesize']: fs,
             'mean_polytomy': poly_mean if n else None,
             'var_polytomy': ((poly_ssq - poly_sum**2/n)/ (n-1)) if n and n>1 else None,
             'max_polytomy': poly_max
@@ -397,11 +397,11 @@ class InferenceRunner(object):
             #the treeseq output by run_fastarg() is already averaged between regions
                 inferred_ts.write_nexus_trees(out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
         return {
-            colnames['cpu']: time,
-            colnames['mem']: memory,
-            colnames['edgesets']: edgesets,
-            colnames['edges']: edges,
-            colnames['ts_filesize']: fs,
+            save_stats['cpu']: time,
+            save_stats['mem']: memory,
+            save_stats['edgesets']: edgesets,
+            save_stats['edges']: edges,
+            save_stats['ts_filesize']: fs,
         }
 
     def __run_RentPlus(self):
@@ -416,8 +416,8 @@ class InferenceRunner(object):
                     msprime_RentPlus.RentPlus_trees_to_nexus(treefile, out, self.row.length,
                         num_tips, zero_based_tip_numbers=tree_tip_labels_start_at_0)
         return {
-            colnames['cpu']: time,
-            colnames['mem']: memory,
+            save_stats['cpu']: time,
+            save_stats['mem']: memory,
         }
 
 
@@ -471,11 +471,11 @@ class InferenceRunner(object):
                 #smc2arg cyclical bug: ignore this conversion
                 pass
         results = {
-            colnames['cpu']: time,
-            colnames['mem']: memory,
-            colnames['edgesets']: statistics.mean(edgesets) if len(edgesets) else None,
-            colnames['edges']: statistics.mean(edges) if len(edges) else None,
-            colnames['ts_filesize']: statistics.mean(filesizes) if len(filesizes) else None,
+            save_stats['cpu']: time,
+            save_stats['mem']: memory,
+            save_stats['edgesets']: statistics.mean(edgesets) if len(edgesets) else None,
+            save_stats['edges']: statistics.mean(edges) if len(edges) else None,
+            save_stats['ts_filesize']: statistics.mean(filesizes) if len(filesizes) else None,
             "ARGweaver_iterations": ",".join(iteration_ids),
         }
         return results
