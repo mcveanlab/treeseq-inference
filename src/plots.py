@@ -354,7 +354,7 @@ class InferenceRunner(object):
         else:
             out_fn = construct_tsinfer_name(self.base_fn)
         inferred_ts.dump(out_fn + ".hdf5")
-        fs = os.path.size(out_fn + ".hdf5")
+        fs = os.path.getsize(out_fn + ".hdf5")
         self.inferred_nexus_files = [out_fn + ".nex"] #only one nexus file output
         for fn in self.inferred_nexus_files:
             with open(fn, "w+") as out:
@@ -389,7 +389,7 @@ class InferenceRunner(object):
         edgesets = inferred_ts.num_edgesets
         edges = sum(len(e.children) for e in inferred_ts.edgesets())
         inferred_ts.dump(out_fn + ".hdf5")
-        fs = os.path.size(out_fn + ".hdf5")
+        fs = os.path.getsize(out_fn + ".hdf5")
 
         self.inferred_nexus_files = [out_fn + ".nex"]
         for fn in self.inferred_nexus_files:
@@ -462,7 +462,7 @@ class InferenceRunner(object):
                         override_assertions=True)
                     inferred_ts = msprime.load_text(nodes=msprime_nodes, edgesets=msprime_edgesets).simplify()
                     inferred_ts.dump(base + ".hdf5")
-                    filesizes.append(os.path.size(base + ".hdf5"))
+                    filesizes.append(os.path.getsize(base + ".hdf5"))
                     edgesets.append(inferred_ts.num_edgesets)
                     edges.append(sum(len(e.children) for e in inferred_ts.edgesets()))
             except AssertionError:
