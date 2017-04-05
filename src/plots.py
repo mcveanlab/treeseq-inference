@@ -371,8 +371,8 @@ class InferenceRunner(object):
         return  {
             save_stats['cpu']: time,
             save_stats['mem']: memory,
-            save_stats['edgesets']: n,
-            save_stats['edges']: poly_sum,
+            save_stats['n_edgesets']: n,
+            save_stats['n_edges']: poly_sum,
             save_stats['ts_filesize']: fs,
             'mean_polytomy': poly_mean if n else None,
             'var_polytomy': ((poly_ssq - poly_sum**2/n)/ (n-1)) if n and n>1 else None,
@@ -399,8 +399,8 @@ class InferenceRunner(object):
         return {
             save_stats['cpu']: time,
             save_stats['mem']: memory,
-            save_stats['edgesets']: edgesets,
-            save_stats['edges']: edges,
+            save_stats['n_edgesets']: edgesets,
+            save_stats['n_edges']: edges,
             save_stats['ts_filesize']: fs,
         }
 
@@ -473,10 +473,10 @@ class InferenceRunner(object):
         results = {
             save_stats['cpu']: time,
             save_stats['mem']: memory,
-            save_stats['edgesets']: statistics.mean(edgesets) if len(edgesets) else None,
-            save_stats['edges']: statistics.mean(edges) if len(edges) else None,
+            save_stats['n_edgesets']: statistics.mean(edgesets) if len(edgesets) else None,
+            save_stats['n_edges']: statistics.mean(edges) if len(edges) else None,
             save_stats['ts_filesize']: statistics.mean(filesizes) if len(filesizes) else None,
-            "ARGweaver_iterations": ",".join(iteration_ids),
+            "iterations": ",".join(iteration_ids),
         }
         return results
 
