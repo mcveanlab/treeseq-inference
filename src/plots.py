@@ -59,7 +59,7 @@ save_stats = dict(
         n_edges = "edges",
         ts_filesize = "TSfilesize"
         )
-        
+
 def nanblank(val):
     """hack around a horrible pandas syntax, which puts nan instead of blank strings"""
     return "" if pd.isnull(val) else val
@@ -421,13 +421,13 @@ class InferenceRunner(object):
         }
 
 
-    def __run_ARGweaver(self, 
+    def __run_ARGweaver(self,
         #hard code some parameters
         n_out_samples=10,
         sample_step=20,
         burnin_iterations=1000,
         ):
-        
+
         inference_seed = self.row.seed  # TODO do we need to specify this separately?
         infile = self.base_fn + ".sites"
         time = memory = None
@@ -612,7 +612,7 @@ def infer_worker(work):
     tool, row, simulations_dir, num_threads, n_rows = work
     runner = InferenceRunner(tool, row, simulations_dir, num_threads, n_rows)
     result = runner.run()
-    result['completed']=True
+    result['completed'] = True
     return int(row[0]), tool, result
 
 
@@ -676,13 +676,13 @@ class Dataset(object):
         logging.info("Creating dir {}".format(self.simulations_dir))
         self.data = self.run_simulations(args.replicates, args.seed)
         for t in self.tools:
-            self.data[t+"_completed"]=False
+            self.data[t + "_completed"] = False
         # Other result columns are added later during the infer step.
         self.dump_data(write_index=True)
 
     def infer(
             self, num_processes, num_threads, force=False, specific_tool=None,
-            specific_row=None):
+            specific_row=None, flush_all=False):
         """
         Runs the main inference processes and stores results in the dataframe.
         can 'force' all rows to be (re)run, or specify a specific row to run.
@@ -703,10 +703,9 @@ class Dataset(object):
         for row_id in row_ids:
             row = self.data.iloc[row_id]
             for tool in tools:
-                # All values that are unset should be NaN, so we only run those that
-                # haven't been filled in already. This allows us to stop and start the
-                # infer processes without having to start from scratch each time.
-                if force or row[tool+"_completed"]==False:
+                # Only run for a particular tool if it has not already completed
+                # of if --force is specified.
+                if force or not row[tool+"_completed"]:
                     work.append(
                         (tool, row, self.simulations_dir, num_threads, len(self.data.index)))
                 else:
@@ -726,17 +725,15 @@ class Dataset(object):
             with multiprocessing.Pool(processes=num_processes) as pool:
                 for row_id, tool, cols in pool.imap_unordered(infer_worker, work):
                     for k, v in cols.items():
-                        if k in self.colnames.values():
-                            self.data.ix[row_id, tool+"_"+k] = v
-                    self.dump_data(force_flush=False)
+                        self.data.ix[row_id, tool+"_"+k] = v
+                    self.dump_data(force_flush=flush_all)
         else:
             # When we have only one process it's easier to keep everything in the same
             # process for debugging.
             for row_id, tool, cols in map(infer_worker, work):
                 for k, v in cols.items():
-                    if k in self.colnames.values():
-                        self.data.ix[row_id, tool+"_"+k] = v
-                self.dump_data(force_flush=False)
+                    self.data.ix[row_id, tool+"_"+k] = v
+                self.dump_data(force_flush=flush_all)
         self.dump_data(force_flush=True)
 
     #
@@ -838,8 +835,8 @@ class MetricsByMutationRateDataset(Dataset):
     default_seed = 123
     colnames = Dataset.colnames
     del colnames['n_edgesets'] #e.g. don't save n edgesets here
-    
-    
+
+
     def run_simulations(self, replicates, seed):
         if replicates is None:
             replicates = self.default_replicates
@@ -930,7 +927,7 @@ class AllMetricsByMutationRateFigure(Figure):
     Simple figure that shows all the metrics at the same time.
     """
     datasetClass = MetricsByMutationRateDataset
-    name = "all_metrics_vs_mutrate"
+    name = "all_metrics_by_mutation_rate"
 
     def plot(self):
         df = self.dataset.data
@@ -1053,7 +1050,9 @@ def run_setup(cls, args):
 def run_infer(cls, args):
     logging.info("Inferring {}".format(cls.name))
     f = cls()
-    f.infer(args.processes, args.threads, args.force, args.tool, args.row)
+    f.infer(
+        args.processes, args.threads, force=args.force, specific_tool=args.tool,
+        specific_row=args.row, flush_all=args.flush_all)
 
 def run_plot(cls, args):
     f = cls()
@@ -1107,6 +1106,9 @@ def main():
     subparser.add_argument(
          '--force',  "-f", action='store_true',
          help="redo all the inferences, even if we have already filled out some", )
+    subparser.add_argument(
+         '--flush-all',  "-F", action='store_true',
+         help="flush the result file after every result.", )
     subparser.set_defaults(func=run_infer)
 
     subparser = subparsers.add_parser('figure')
@@ -1138,11 +1140,11 @@ def main():
         else:
             try:
                 cls = name_map[k]
-                args.func(cls, args)
             except KeyError as e:
                 e.args = (e.args[0] + ". Select from datasets={} or figures={}".format(
                         [d.name for d in datasets], [f.name for f in figures]),)
                 raise
+            args.func(cls, args)
     except KeyboardInterrupt:
         print("Interrupted! Trying to kill subprocesses")
         os.killpg(0, signal.SIGINT)
