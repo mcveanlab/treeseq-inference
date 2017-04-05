@@ -635,7 +635,7 @@ class Dataset(object):
         "RentPlus",
         "tsinfer"]
 
-    colnames = save_stats
+    colnames = save_stats.copy()
 
     def __init__(self):
         self.data_path = os.path.abspath(
