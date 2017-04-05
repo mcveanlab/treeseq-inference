@@ -328,7 +328,7 @@ class InferenceRunner(object):
             raise KeyError("unknown tool {}".format(self.tool))
         #NB Jerome thinks it may be clearer to have get_metrics() return a single set of metrics
         #rather than an average over multiple inferred_nexus_files, and do the averaging in python
-        assert self.hasattr('inferred_nexus_files')
+        assert self.inferred_nexus_files is not None
         metrics = ARG_metrics.get_metrics(self.source_nexus_file, self.inferred_nexus_files)
         ret.update(metrics)
         logging.debug("returning infer results for {} row {} = {}".format(
