@@ -419,13 +419,8 @@ class InferenceRunner(object):
         }
 
 
-    def __run_ARGweaver(self,
-        #hard code some parameters
-        n_out_samples=10,
-        sample_step=20,
-        burnin_iterations=1000,
-        ):
-
+    def __run_ARGweaver(
+            self, n_out_samples=10, sample_step=20, burnin_iterations=1000):
         inference_seed = self.row.seed  # TODO do we need to specify this separately?
         infile = self.base_fn + ".sites"
         time = memory = None
@@ -454,20 +449,20 @@ class InferenceRunner(object):
                 #if we want to record number of coalescence records we need
                 #to convert the ARGweaver output to msprime, which is buggy
                 with open(base+".TSnodes", "w+") as msprime_nodes, \
-                    open(base+".TSedgesets", "w+") as msprime_edgesets:
+                        open(base+".TSedgesets", "w+") as msprime_edgesets:
                     msprime_ARGweaver.ARGweaver_smc_to_msprime_txts(
-                        smc2arg_executable, base, msprime_nodes, msprime_edgesets,
-                        override_assertions=True)
-                    inferred_ts = msprime.load_text(nodes=msprime_nodes, edgesets=msprime_edgesets).simplify()
+                        smc2arg_executable, base, msprime_nodes, msprime_edgesets)
+                    msprime_nodes.seek(0)
+                    msprime_edgesets.seek(0)
+                    inferred_ts = msprime.load_text(
+                        nodes=msprime_nodes, edgesets=msprime_edgesets).simplify()
                     inferred_ts.dump(base + ".hdf5")
                     filesizes.append(os.path.getsize(base + ".hdf5"))
                     edgesets.append(inferred_ts.num_edgesets)
                     edges.append(sum(len(e.children) for e in inferred_ts.edgesets()))
-            except AssertionError:
-                logging.warning("smc2arg bug encountered converting '{}' to TS. Ignoring this row".format(
-                    base+".msp"))
-                #smc2arg cyclical bug: ignore this conversion
-                pass
+            except msprime_ARGweaver.CyclicalARGError as e:
+                logging.info("Exceptions caught convering {}: {}".format(
+                    base + ".msp", e))
         results = {
             save_stats['cpu']: time,
             save_stats['mem']: memory,
