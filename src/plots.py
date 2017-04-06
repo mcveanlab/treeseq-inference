@@ -27,6 +27,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as pyplot
 import pandas as pd
+import tqdm
 
 # import the local copy of msprime in preference to the global one
 curr_dir = os.path.dirname(os.path.abspath(__file__))
@@ -301,10 +302,9 @@ class InferenceRunner(object):
     also for each tool, convert these into nexus files that can be used for comparing
     metrics.
     """
-    def __init__(self, tool, row, simulations_dir, num_threads, n_rows=None):
+    def __init__(self, tool, row, simulations_dir, num_threads):
         self.tool = tool
         self.row = row
-        self.n_rows = n_rows
         self.num_threads = num_threads
         self.base_fn = msprime_name_from_row(row, simulations_dir, 'error_rate',
                 'subsample')
@@ -313,8 +313,6 @@ class InferenceRunner(object):
         self.inferred_nexus_files = None
 
     def run(self):
-        logging.info("Row {}/~{}: running {} inference".format(
-            int(self.row[0]),self.n_rows,self.tool))
         logging.debug("parameters = {}".format(self.row.to_dict()))
         if self.tool == "tsinfer":
             ret = self.__run_tsinfer()
@@ -609,8 +607,8 @@ def infer_worker(work):
     """
     Entry point for running a single inference task in a worker process.
     """
-    tool, row, simulations_dir, num_threads, n_rows = work
-    runner = InferenceRunner(tool, row, simulations_dir, num_threads, n_rows)
+    tool, row, simulations_dir, num_threads = work
+    runner = InferenceRunner(tool, row, simulations_dir, num_threads)
     result = runner.run()
     result['completed'] = True
     return int(row[0]), tool, result
@@ -682,7 +680,7 @@ class Dataset(object):
 
     def infer(
             self, num_processes, num_threads, force=False, specific_tool=None,
-            specific_row=None, flush_all=False):
+            specific_row=None, flush_all=False, show_progress=False):
         """
         Runs the main inference processes and stores results in the dataframe.
         can 'force' all rows to be (re)run, or specify a specific row to run.
@@ -700,14 +698,15 @@ class Dataset(object):
                 raise ValueError("Row {} out of bounds".format(specific_row))
             row_ids = [specific_row]
         work = []
+        tool_work_total = {tool: 0 for tool in tools}
         for row_id in row_ids:
             row = self.data.iloc[row_id]
             for tool in tools:
                 # Only run for a particular tool if it has not already completed
                 # of if --force is specified.
                 if force or not row[tool+"_completed"]:
-                    work.append(
-                        (tool, row, self.simulations_dir, num_threads, len(self.data.index)))
+                    work.append((tool, row, self.simulations_dir, num_threads))
+                    tool_work_total[tool] += 1
                 else:
                     logging.info(
                         "Data row {} is filled out for {} inference: skipping".format(
@@ -715,25 +714,41 @@ class Dataset(object):
         logging.info(
             "running {} inference trials (max {} tools over {} of {} rows) with {} "
             "processes and {} threads".format(
-                len(work), len(self.tools), int(np.ceil(len(work)/len(self.tools))),
+                len(work), len(tools), int(np.ceil(len(work)/len(self.tools))),
                 len(self.data.index), num_processes, num_threads))
 
         # Randomise the order that work is done in so that we get results for all parts
-        # of the plots through rather than
+        # of the plots through rather than get complete results for the initial data
+        # points.
         random.shuffle(work)
+        tool_work_completed = {tool: 0 for tool in tools}
+        if show_progress:
+            width = max(len(tool) for tool in tools)
+            progress = {
+                tool:tqdm.tqdm(
+                    desc="{:>{}}".format(tool, width),
+                    total=tool_work_total[tool]) for tool in tools}
+
+        def store_result(row_id, tool, results):
+            tool_work_completed[tool] += 1
+            logging.info("Inference {}/{} completed for {}".format(
+                tool_work_completed[tool], tool_work_total[tool], tool))
+            for k, v in results.items():
+                self.data.ix[row_id, tool + "_" + k] = v
+            self.dump_data(force_flush=flush_all)
+            # Update the progress meters
+            if show_progress:
+                progress[tool].update()
+
         if num_processes > 1:
             with multiprocessing.Pool(processes=num_processes) as pool:
-                for row_id, tool, cols in pool.imap_unordered(infer_worker, work):
-                    for k, v in cols.items():
-                        self.data.ix[row_id, tool+"_"+k] = v
-                    self.dump_data(force_flush=flush_all)
+                for result in pool.imap_unordered(infer_worker, work):
+                    store_result(*result)
         else:
             # When we have only one process it's easier to keep everything in the same
             # process for debugging.
-            for row_id, tool, cols in map(infer_worker, work):
-                for k, v in cols.items():
-                    self.data.ix[row_id, tool+"_"+k] = v
-                self.dump_data(force_flush=flush_all)
+            for result in map(infer_worker, work):
+                store_result(*result)
         self.dump_data(force_flush=True)
 
     #
@@ -1052,7 +1067,7 @@ def run_infer(cls, args):
     f = cls()
     f.infer(
         args.processes, args.threads, force=args.force, specific_tool=args.tool,
-        specific_row=args.row, flush_all=args.flush_all)
+        specific_row=args.row, flush_all=args.flush_all, show_progress=args.progress)
 
 def run_plot(cls, args):
     f = cls()
@@ -1106,6 +1121,9 @@ def main():
     subparser.add_argument(
          '--force',  "-f", action='store_true',
          help="redo all the inferences, even if we have already filled out some", )
+    subparser.add_argument(
+         '--progress',  "-P", action='store_true',
+         help="Show a progress bar.", )
     subparser.add_argument(
          '--flush-all',  "-F", action='store_true',
          help="flush the result file after every result.", )

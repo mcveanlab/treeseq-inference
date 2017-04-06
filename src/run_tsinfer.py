@@ -54,6 +54,11 @@ def main():
     ts_new = panel.convert_records(P, mutations)
     ts_simplified = ts_new.simplify()
     ts_simplified.dump(args.output)
+    # Quickly verify that we get the sample output.
+    Sp = np.zeros(S.shape)
+    for j, h in enumerate(ts_simplified.haplotypes()):
+        Sp[j] = np.fromstring(h, np.uint8) - ord('0')
+    assert np.all(Sp == S)
 
 if __name__ == "__main__":
     main()
