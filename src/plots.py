@@ -740,7 +740,7 @@ class Dataset(object):
             logging.info("Inference {}/{} completed for {}".format(
                 tool_work_completed[tool], tool_work_total[tool], tool))
             for k, v in results.items():
-                if v not in self.exclude_colnames
+                if k not in self.exclude_colnames
                     self.data.ix[row_id, tool + "_" + k] = v
             self.dump_data(force_flush=flush_all)
             # Update the progress meters
