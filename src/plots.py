@@ -636,7 +636,8 @@ class Dataset(object):
         TSINFER,
     ]
 
-    colnames = save_stats.copy()
+    #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
+    exclude_colnames = []
 
     def __init__(self):
         self.data_path = os.path.abspath(
@@ -739,7 +740,8 @@ class Dataset(object):
             logging.info("Inference {}/{} completed for {}".format(
                 tool_work_completed[tool], tool_work_total[tool], tool))
             for k, v in results.items():
-                self.data.ix[row_id, tool + "_" + k] = v
+                if v not in self.exclude_colnames
+                    self.data.ix[row_id, tool + "_" + k] = v
             self.dump_data(force_flush=flush_all)
             # Update the progress meters
             if show_progress:
@@ -853,8 +855,9 @@ class MetricsByMutationRateDataset(Dataset):
     default_replicates = 10
     default_seed = 123
     compute_tree_metrics = True
-    colnames = dict(Dataset.colnames)
-    del colnames['n_edgesets'] #e.g. don't save n edgesets here
+
+    #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
+    exclude_colnames =[save_stats['n_edgesets'],] 
 
 
     def run_simulations(self, replicates, seed, show_progress):
@@ -926,7 +929,6 @@ class TsinferPerformance(Dataset):
     compute_tree_metrics = False
     default_replicates = 10
     default_seed = 123
-    colnames = dict(Dataset.colnames)
     tools = ["tsinfer"]
     fixed_length = 500 * 10**3
     fixed_sample_size = 500
