@@ -100,7 +100,7 @@ node_relabelling = np.full(copying_matrix.shape[0]+1, bad_parent_id, dtype=np.in
 node_relabelling[-1] = -1
 node_relabelling[~is_unused_node]=np.arange(np.count_nonzero(~is_unused_node))
 P = node_relabelling[copying_matrix[:,~is_singleton][~is_unused_node,:]]
-assert not np.any(P == unreferenced_parent_id)
+assert not np.any(P == bad_parent_id)
 assert not np.any(P >= P.shape[0])
 
 print("True haplotype matrix (singletons & blank rows removed)")
