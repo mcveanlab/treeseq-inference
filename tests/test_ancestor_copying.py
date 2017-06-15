@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
-Use msprime to create a simulation, and reconstruct the ancestral haplotype matrix, H from the simulation
-Also keep track of which parts are from which ancestors (i.e. the true copying matrix P), so that we can compare
-how we do in *infering* a copying matrix from the ancestral haplotype matrix
+Use msprime to create a simulation, and reconstruct the ancestral haplotype matrix, 
+H from the simulation
+Also keep track of which parts are from which ancestors (i.e. the true copying matrix P),
+so that we can compare how we do in *infering* a copying matrix from the ancestral 
+haplotype matrix
 """
 import sys
 import os
@@ -10,8 +12,10 @@ import string
 
 import numpy as np
 script_path = __file__ if "__file__" in locals() else "./dummy.py"
-sys.path.insert(1,os.path.join(os.path.dirname(os.path.abspath(script_path)),'..','msprime')) # use the local copy of msprime in preference to the global one
-sys.path.insert(1,os.path.join(os.path.dirname(os.path.abspath(script_path)),'..','tsinfer')) # use the local copy of tsinfer in preference to the global one
+# use the local copy of msprime in preference to the global one
+sys.path.insert(1,os.path.join(os.path.dirname(os.path.abspath(script_path)),'..','msprime'))
+# use the local copy of tsinfer in preference to the global one
+sys.path.insert(1,os.path.join(os.path.dirname(os.path.abspath(script_path)),'..','tsinfer')) 
 
 import msprime
 import tsinfer
@@ -21,8 +25,10 @@ ts = msprime.simulate(
     4, mutation_rate=1, recombination_rate=rho, random_seed=6)
 
 #We want to construct a new ancestor for each non-sample node
-# afterwards we could delete ancestors to create polytomies (if there are no mutations on a branch)
-# or create new ancestors (if there are multiple mutations or separated lengths of genome)
+# afterwards we could delete ancestors to create polytomies
+#  (if there are no mutations on a branch)
+# or create new ancestors 
+#  (if there are multiple mutations or separated lengths of genome)
 
 #make the array - should be a row for each node
 column_mapping = np.zeros(ts.num_sites)
@@ -71,22 +77,26 @@ for es in ts.edgesets():
 for c in range(ts.num_sites):
     col = haplotype_matrix[:,c]
     filled = col[col != -1]
-    assert filled[-1] == root[c], "the ancestral state does not match the oldest variant for column {}".format(c)
+    assert filled[-1] == root[c], \
+        "the ancestral state does not match the oldest variant for column {}".format(c)
 
 #identify singletons, so we can exclude singleton sites (columns)
-is_singleton = np.array([np.count_nonzero(v.genotypes!=int(v.site.ancestral_state)) <= 1 for v in ts.variants(as_bytes=False)], dtype=np.bool)
+is_singleton = np.array([
+    np.count_nonzero(v.genotypes != int(v.site.ancestral_state)) <= 1 \
+        for v in ts.variants(as_bytes=False) \
+    ], dtype=np.bool)
 
 #identify nodes that are not used (or only used for singletons)
 #these are cases where the node is used in the Treeseq, but since the
 #genome span does not have any variable sites, it is not filled in the H matrix
 is_unused_node = np.all(haplotype_matrix[:,~is_singleton] == -1, 1)
 
-H = haplotype_matrix[:,~is_singleton][~is_unused_node,:] #why can't we do H = haplotype_matrix[~is_unused_node, ~is_singleton]?
+H = haplotype_matrix[:,~is_singleton][~is_unused_node,:]
 
-#copying matrix is more tricky, as we will need to renumber the contents if we remove rows
-unreferenced_parent_id = -2 #to distingish from -1 which means N/A
-#use -2 to label rows we should have deleted, and add an extra on the end so that -1 maps to -1
-node_relabelling = np.full(copying_matrix.shape[0]+1, unreferenced_parent_id, dtype=np.int)
+#copying matrix is more tricky, as we need to renumber contents if we remove rows
+bad_parent_id = -2 #used to relabel refs to rows we have removed (not -1 which is N/A)
+#make the index one longer than the rows to allow mapping -1 -> -1
+node_relabelling = np.full(copying_matrix.shape[0]+1, bad_parent_id, dtype=np.int)
 node_relabelling[-1] = -1
 node_relabelling[~is_unused_node]=np.arange(np.count_nonzero(~is_unused_node))
 P = node_relabelling[copying_matrix[:,~is_singleton][~is_unused_node,:]]
@@ -97,13 +107,16 @@ print("True haplotype matrix (singletons & blank rows removed)")
 for row in range(H.shape[0]):
     if row == ts.sample_size:
         print()
-    print("{:>3}  ".format(row)+ " ".join(["{:>2}".format(x if x!=-1 else '*') for x in H[row,:]]))
+    print("{:>3}  ".format(row) + \
+        " ".join(["{:>2}".format(x if x!=-1 else '*') for x in H[row,:]]))
 
-print("True copying matrix (no singletons, blank rows removed and nodes renumbered accordingly)")
+print("True copying matrix "
+    "(no singletons, blank rows removed and nodes renumbered accordingly)")
 for row in range(P.shape[0]):
     if row == ts.sample_size:
         print()
-    print("{:>3}  ".format(row)+ " ".join(["{:>2}".format(x if x!=-1 else '*') for x in P[row,:]]))
+    print("{:>3}  ".format(row) + \
+        " ".join(["{:>2}".format(x if x!=-1 else '*') for x in P[row,:]]))
 
 
 '''
