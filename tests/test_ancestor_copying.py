@@ -84,15 +84,26 @@ is_unused_node = np.all(haplotype_matrix[:,~is_singleton] == -1, 1)
 H = haplotype_matrix[:,~is_singleton][~is_unused_node,:] #why can't we do H = haplotype_matrix[~is_unused_node, ~is_singleton]?
 
 #copying matrix is more tricky, as we will need to renumber the contents if we remove rows
-#use -2 to label rows we should have deleted
-node_relabelling = -2*np.ones(copying_matrix.shape[0], dtype=np.int)
+unreferenced_parent_id = -2 #to distingish from -1 which means N/A
+#use -2 to label rows we should have deleted, and add an extra on the end so that -1 maps to -1
+node_relabelling = np.full(copying_matrix.shape[0]+1, unreferenced_parent_id, dtype=np.int)
+node_relabelling[-1] = -1
 node_relabelling[~is_unused_node]=np.arange(np.count_nonzero(~is_unused_node))
-#P = copying_matrix[:,~is_singleton]
+P = node_relabelling[copying_matrix[:,~is_singleton][~is_unused_node,:]]
+assert not np.any(P == unreferenced_parent_id)
+assert not np.any(P >= P.shape[0])
 
+print("Haplotype matrix (singletons & blank rows removed)")
 for row in range(H.shape[0]):
     if row == ts.sample_size:
         print()
-    print("{:>3}  ".format(row)+ " ".join([(str(x) if x!=-1 else '*') for x in H[row,:]]))
+    print("{:>3}  ".format(row)+ " ".join(["{:>2}".format(x if x!=-1 else '*') for x in H[row,:]]))
+
+print("Copying matrix (no singletons, blank rows removed and nodes renumbered accordingly)")
+for row in range(P.shape[0]):
+    if row == ts.sample_size:
+        print()
+    print("{:>3}  ".format(row)+ " ".join(["{:>2}".format(x if x!=-1 else '*') for x in P[row,:]]))
 
 
 '''
