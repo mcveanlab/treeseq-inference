@@ -93,13 +93,13 @@ P = node_relabelling[copying_matrix[:,~is_singleton][~is_unused_node,:]]
 assert not np.any(P == unreferenced_parent_id)
 assert not np.any(P >= P.shape[0])
 
-print("Haplotype matrix (singletons & blank rows removed)")
+print("True haplotype matrix (singletons & blank rows removed)")
 for row in range(H.shape[0]):
     if row == ts.sample_size:
         print()
     print("{:>3}  ".format(row)+ " ".join(["{:>2}".format(x if x!=-1 else '*') for x in H[row,:]]))
 
-print("Copying matrix (no singletons, blank rows removed and nodes renumbered accordingly)")
+print("True copying matrix (no singletons, blank rows removed and nodes renumbered accordingly)")
 for row in range(P.shape[0]):
     if row == ts.sample_size:
         print()
