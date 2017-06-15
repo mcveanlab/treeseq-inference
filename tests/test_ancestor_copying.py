@@ -26,12 +26,13 @@ ts = msprime.simulate(
 
 #make the array - should be a row for each node
 column_mapping = np.zeros(ts.num_sites)
-H = -np.ones((ts.num_nodes, ts.num_sites), dtype=np.int)
+haplotype_matrix = -np.ones((ts.num_nodes, ts.num_sites), dtype=np.int)
+copying_matrix   = -np.ones((ts.num_nodes, ts.num_sites), dtype=np.int)
 root = np.zeros(ts.num_sites, dtype=np.int)
 mutations = {k:[] for k in range(ts.num_nodes)}
 for v in ts.variants(as_bytes=False):
     column_mapping[v.index] = v.position
-    H[0:ts.sample_size,v.site.index] = v.genotypes
+    haplotype_matrix[0:ts.sample_size,v.site.index] = v.genotypes
     root[v.site.index] = int(v.site.ancestral_state)
     mutation_state = v.site.ancestral_state
     for m in v.site.mutations:
@@ -46,21 +47,47 @@ for es in ts.edgesets():
     mask = (es.left <= column_mapping) & (column_mapping < es.right)
     previous_child = -1
     for child in es.children:
+        #fill in the copying matrix
+        copying_matrix[child,mask] = es.parent
+        #create row for the haplotype matrix
         genotype = -np.ones(ts.num_sites, dtype=np.int)
-        genotype[mask] = H[child,mask]
+        genotype[mask] = haplotype_matrix[child,mask]
         # add mutations. These are in oldest -> youngest order, so as we are working from
         # child->parent, we need to reverse
         for site, prev_state, new_state in reversed(mutations[child]):
             if mask[site]: #only set mutations on sites contained in this edgeset
                 assert genotype[site] == int(new_state)
                 genotype[site] = int(prev_state)
-
+        
         if previous_child != -1:
-            assert np.array_equal(genotype[mask],H[es.parent,mask]), \
+            assert np.array_equal(genotype[mask], haplotype_matrix[es.parent,mask]), \
                 "children {} and {} disagree".format(previous_child, child)
-
-        H[es.parent,mask] = genotype[mask]
+        
+        haplotype_matrix[es.parent,mask] = genotype[mask]
         previous_child = child
+
+
+#Check that the ancestral state matches the oldest variant for each column
+for c in range(ts.num_sites):
+    col = haplotype_matrix[:,c]
+    filled = col[col != -1]
+    assert filled[-1] == root[c], "the ancestral state does not match the oldest variant for column {}".format(c)
+
+#identify singletons, so we can exclude singleton sites (columns)
+is_singleton = np.array([np.count_nonzero(v.genotypes!=int(v.site.ancestral_state)) <= 1 for v in ts.variants(as_bytes=False)], dtype=np.bool)
+
+#identify nodes that are not used (or only used for singletons)
+#these are cases where the node is used in the Treeseq, but since the
+#genome span does not have any variable sites, it is not filled in the H matrix
+is_unused_node = np.all(haplotype_matrix[:,~is_singleton] == -1, 1)
+
+H = haplotype_matrix[:,~is_singleton][~is_unused_node,:] #why can't we do H = haplotype_matrix[~is_unused_node, ~is_singleton]?
+
+#copying matrix is more tricky, as we will need to renumber the contents if we remove rows
+#use -2 to label rows we should have deleted
+node_relabelling = -2*np.ones(copying_matrix.shape[0], dtype=np.int)
+node_relabelling[~is_unused_node]=np.arange(np.count_nonzero(~is_unused_node))
+#P = copying_matrix[:,~is_singleton]
 
 for row in range(H.shape[0]):
     if row == ts.sample_size:
