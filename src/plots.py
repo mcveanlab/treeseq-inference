@@ -482,6 +482,7 @@ class InferenceRunner(object):
                 sys.executable, tsinfer_executable, sample_fn, positions_fn,
                 "--length", str(int(length)), "--recombination-rate", str(rho),
                 "--error-probability", str(error_probability),
+                "--new-version", # TODO remove
                 "--threads", str(num_threads), ts_out.name]
             cpu_time, memory_use = time_cmd(cmd)
             ts_simplified = msprime.load(ts_out.name)
@@ -740,7 +741,7 @@ class Dataset(object):
             logging.info("Inference {}/{} completed for {}".format(
                 tool_work_completed[tool], tool_work_total[tool], tool))
             for k, v in results.items():
-                if k not in self.exclude_colnames
+                if k not in self.exclude_colnames:
                     self.data.ix[row_id, tool + "_" + k] = v
             self.dump_data(force_flush=flush_all)
             # Update the progress meters
@@ -857,7 +858,7 @@ class MetricsByMutationRateDataset(Dataset):
     compute_tree_metrics = True
 
     #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
-    exclude_colnames =[save_stats['n_edgesets'],] 
+    exclude_colnames =[save_stats['n_edgesets'],]
 
 
     def run_simulations(self, replicates, seed, show_progress):
