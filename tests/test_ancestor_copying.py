@@ -95,10 +95,10 @@ H = haplotype_matrix[:,~is_singleton][~is_unused_node,:]
 
 #copying matrix is more tricky, as we need to renumber contents if we remove rows
 bad_parent_id = -2 #used to relabel refs to rows we have removed (not -1 which is N/A)
-#make the index one longer than the rows to allow mapping -1 -> -1
-node_relabelling = np.full(copying_matrix.shape[0]+1, bad_parent_id, dtype=np.int)
-node_relabelling[-1] = -1
+node_relabelling = np.full(copying_matrix.shape[0], bad_parent_id, dtype=np.int)
 node_relabelling[~is_unused_node]=np.arange(np.count_nonzero(~is_unused_node))
+#make the index one longer than the rows to allow mapping node_relabelling[-1] -> -1
+node_relabelling = np.append(node_relabelling, [-1])
 P = node_relabelling[copying_matrix[:,~is_singleton][~is_unused_node,:]]
 assert not np.any(P == bad_parent_id)
 assert not np.any(P >= P.shape[0])
