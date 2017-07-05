@@ -51,7 +51,9 @@ def main():
     if args.new_version:
         S = S.astype(np.int8)
         ts_new = tsinfer.infer(
-            S, pos, args.recombination_rate, 1e-200)
+            S, pos, args.length,
+            args.recombination_rate, args.error_probability,
+            num_threads=args.threads)
     else:
         panel = tsinfer.ReferencePanel(
             S, pos, args.length, args.recombination_rate, ancestor_error=0,
