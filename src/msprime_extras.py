@@ -143,3 +143,9 @@ def write_nexus_trees(
             # index by rightmost genome position
             print("TREE " + str(t.get_interval()[1]) + " = " + newick, file=treefile)
     print("END;", file=treefile)
+
+def calculate_polytomies(ts):
+    """
+    Given a treeseq, work out the distribution of polytomies, i.e. the number of edges from each node once edges without mutations have been collapsed.
+    """
+    pass
