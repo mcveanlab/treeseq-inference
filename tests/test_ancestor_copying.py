@@ -8,7 +8,7 @@ haplotype matrix
 """
 import sys
 import os
-import string
+import operator
 
 import numpy as np
 script_path = __file__ if "__file__" in locals() else "./dummy.py"
@@ -19,116 +19,59 @@ sys.path.insert(1,os.path.join(os.path.dirname(os.path.abspath(script_path)),'..
 
 import msprime
 import tsinfer
+import msprime_to_inference_matrices
 
-rho = 2
+def print_matrix(M, break_at):
+    for row in range(M.shape[0]):
+        if row == break_at:
+            print()
+        print("{:>3}  ".format(row) + \
+            " ".join(["{:>2}".format(x if x!=-1 else '*') for x in M[row,:]]))
+
+
+rho = 4
 ts = msprime.simulate(
-    4, mutation_rate=1, recombination_rate=rho, random_seed=6)
+    6, mutation_rate=2, recombination_rate=rho, random_seed=6)
+
+
+#make haplotype (h) & sequence (p) matrices
+h, p = msprime_to_inference_matrices.make_ancestral_matrices(ts)
+
+#simplify down
+is_singleton = msprime_to_inference_matrices.singleton_sites(ts)
+is_unused_row = msprime_to_inference_matrices.unused_ancestors(h[:,~is_singleton])
+H = h[:,~is_singleton][~is_unused_row,:]
+P, row_map = msprime_to_inference_matrices.relabel_copy_matrix(p[:,~is_singleton], ~is_unused_row)
+    
+#check if any mutations are no longer covered
+mutated_nodes = [m.node for m in ts.mutations()]
+assert not np.any(row_map[mutated_nodes] < 0)
+
+print("True haplotype matrix (singletons & blank rows removed)")
+print_matrix(H, ts.sample_size)
+print("True copying matrix "
+    "(no singletons, blank rows removed and nodes renumbered accordingly)")
+print_matrix(P, ts.sample_size)
+
+
+#an alternative simplification
+inf_order = [(m.node, np.sum(v.genotypes), v.site.index) for v in ts.variants() for m in v.site.mutations]
+inf_order.sort(key=operator.itemgetter(1), reverse=True)
+#exclude ancestors of singletons
+freq_ordered_mutation_nodes = np.array([i[0] for i in inf_order if i[1] > 1], dtype=np.int)
+#add the samples
+keep_nodes = np.append(freq_ordered_mutation_nodes, range(ts.sample_size))
+H = h[keep_nodes,:]
+P, row_map = msprime_to_inference_matrices.relabel_copy_matrix(p, keep_nodes)
+
+print("True haplotype matrix (nodes without mutations removed)")
+print_matrix(H, H.shape[0]-ts.sample_size)
+print("True copying matrix "
+    "(nodes without mutations removed and nodes renumbered accordingly)")
+print_matrix(P, P.shape[0]-ts.sample_size)
 
 #We want to construct a new ancestor for each non-sample node
 # afterwards we could delete ancestors to create polytomies
 #  (if there are no mutations on a branch)
 # or create new ancestors 
 #  (if there are multiple mutations or separated lengths of genome)
-
-#make the array - should be a row for each node
-column_mapping = np.zeros(ts.num_sites)
-haplotype_matrix = -np.ones((ts.num_nodes, ts.num_sites), dtype=np.int)
-copying_matrix   = -np.ones((ts.num_nodes, ts.num_sites), dtype=np.int)
-root = np.zeros(ts.num_sites, dtype=np.int)
-mutations = {k:[] for k in range(ts.num_nodes)}
-for v in ts.variants(as_bytes=False):
-    column_mapping[v.index] = v.position
-    haplotype_matrix[0:ts.sample_size,v.site.index] = v.genotypes
-    root[v.site.index] = int(v.site.ancestral_state)
-    mutation_state = v.site.ancestral_state
-    for m in v.site.mutations:
-        # (site, prev state, new state)
-        mutations[m.node].append((m.site, mutation_state,m.derived_state))
-        mutation_state = m.derived_state
-
-
-for es in ts.edgesets():
-    # these are in youngest -> oldest order, so by iterating in the order given,
-    # we should always be able to fill out parents from their children
-    mask = (es.left <= column_mapping) & (column_mapping < es.right)
-    previous_child = -1
-    for child in es.children:
-        #fill in the copying matrix
-        copying_matrix[child,mask] = es.parent
-        #create row for the haplotype matrix
-        genotype = -np.ones(ts.num_sites, dtype=np.int)
-        genotype[mask] = haplotype_matrix[child,mask]
-        # add mutations. These are in oldest -> youngest order, so as we are working from
-        # child->parent, we need to reverse
-        for site, prev_state, new_state in reversed(mutations[child]):
-            if mask[site]: #only set mutations on sites contained in this edgeset
-                assert genotype[site] == int(new_state)
-                genotype[site] = int(prev_state)
-        
-        if previous_child != -1:
-            assert np.array_equal(genotype[mask], haplotype_matrix[es.parent,mask]), \
-                "children {} and {} disagree".format(previous_child, child)
-        
-        haplotype_matrix[es.parent,mask] = genotype[mask]
-        previous_child = child
-
-
-#Check that the ancestral state matches the oldest variant for each column
-for c in range(ts.num_sites):
-    col = haplotype_matrix[:,c]
-    filled = col[col != -1]
-    assert filled[-1] == root[c], \
-        "the ancestral state does not match the oldest variant for column {}".format(c)
-
-#identify singletons, so we can exclude singleton sites (columns)
-is_singleton = np.array([
-    np.count_nonzero(v.genotypes != int(v.site.ancestral_state)) <= 1 \
-        for v in ts.variants(as_bytes=False) \
-    ], dtype=np.bool)
-
-#identify nodes that are not used (or only used for singletons)
-#these are cases where the node is used in the Treeseq, but since the
-#genome span does not have any variable sites, it is not filled in the H matrix
-is_unused_node = np.all(haplotype_matrix[:,~is_singleton] == -1, 1)
-
-H = haplotype_matrix[:,~is_singleton][~is_unused_node,:]
-
-#copying matrix is more tricky, as we need to renumber contents if we remove rows
-bad_parent_id = -2 #used to relabel refs to rows we have removed (not -1 which is N/A)
-node_relabelling = np.full(copying_matrix.shape[0], bad_parent_id, dtype=np.int)
-node_relabelling[~is_unused_node]=np.arange(np.count_nonzero(~is_unused_node))
-#make the index one longer than the rows to allow mapping node_relabelling[-1] -> -1
-node_relabelling = np.append(node_relabelling, [-1])
-P = node_relabelling[copying_matrix[:,~is_singleton][~is_unused_node,:]]
-assert not np.any(P == bad_parent_id)
-assert not np.any(P >= P.shape[0])
-
-print("True haplotype matrix (singletons & blank rows removed)")
-for row in range(H.shape[0]):
-    if row == ts.sample_size:
-        print()
-    print("{:>3}  ".format(row) + \
-        " ".join(["{:>2}".format(x if x!=-1 else '*') for x in H[row,:]]))
-
-print("True copying matrix "
-    "(no singletons, blank rows removed and nodes renumbered accordingly)")
-for row in range(P.shape[0]):
-    if row == ts.sample_size:
-        print()
-    print("{:>3}  ".format(row) + \
-        " ".join(["{:>2}".format(x if x!=-1 else '*') for x in P[row,:]]))
-
-
-'''
-
-S = np.zeros((ts.sample_size, ts.num_sites), dtype="u1")
-for variant in ts.variants():
-    S[:, variant.index] = variant.genotypes
-
-sites = [mut.position for mut in ts.mutations()]
-panel = tsinfer.ReferencePanel(S, sites, ts.sequence_length, rho=rho)
-
-
-
-P, mutations = panel.infer_paths(num_workers=1)
-'''
