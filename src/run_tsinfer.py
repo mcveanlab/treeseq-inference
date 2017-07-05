@@ -22,6 +22,7 @@ def main():
         description=description,
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--verbosity', '-v', action='count', default=0)
+    parser.add_argument('--new-version', '-n', action='store_true', default=False)
     parser.add_argument(
         "samples",
         help="The observed haplotypes as a numpy array file")
@@ -47,13 +48,21 @@ def main():
     args = parser.parse_args()
     S = np.load(args.samples)
     pos = np.load(args.positions)
-    panel = tsinfer.ReferencePanel(
-        S, pos, args.length, args.recombination_rate, ancestor_error=0,
-        sample_error=args.error_probability)
-    P, mutations = panel.infer_paths(num_workers=args.threads)
-    ts_new = panel.convert_records(P, mutations)
+    if args.new_version:
+        S = S.astype(np.int8)
+        ts_new = tsinfer.infer(
+            S, pos, args.length,
+            args.recombination_rate, args.error_probability,
+            num_threads=args.threads)
+    else:
+        panel = tsinfer.ReferencePanel(
+            S, pos, args.length, args.recombination_rate, ancestor_error=0,
+            sample_error=args.error_probability)
+        P, mutations = panel.infer_paths(num_workers=args.threads)
+        ts_new = panel.convert_records(P, mutations)
     ts_simplified = ts_new.simplify()
     ts_simplified.dump(args.output)
+
     # Quickly verify that we get the sample output.
     Sp = np.zeros(S.shape)
     for j, h in enumerate(ts_simplified.haplotypes()):
