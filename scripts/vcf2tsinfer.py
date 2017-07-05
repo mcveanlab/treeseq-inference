@@ -25,8 +25,6 @@ data = []
 output_status_bases = 1e6 #how many bases between status outputs
 curr_output_after = output_status_bases
 
-print(len(vcf_in.header.records))
-
 for rec in vcf_in.fetch():
     #restrict to cases where ancestral state contains only letters ATCG
     # i.e. where the ancestral state is certain (see ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/phase1/analysis_results/supporting/ancestral_alignments/human_ancestor_GRCh37_e59.README
@@ -51,3 +49,4 @@ for rec in vcf_in.fetch():
             while curr_output_after < rec.pos:
                 curr_output_after += output_status_bases
 np.savez(sys.argv[2], data=np.array(data), samples=np.array(sorted(rows, key= rows.get),dtype='|U{}'.format(max([len(n) for n in rows.keys()]))), positions=np.array(positions))
+print("Saved {} biallelic loci for {} samples into {}".format(len(positions), len(rows), sys.argv[2]))
