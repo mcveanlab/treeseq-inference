@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
 Take a vcf file with ancestral information (e.g. from 1000 genomes phase 1, such as
-ALL.chr22.phase1_release_v3.20101123.snps_indels_svs.genotypes.vcf
-and convert it to a huge numpy array. Also output the variant positions and the sample names
+ALL.chr22.phase1_release_v3.20101123.snps_indels_svs.genotypes.vcf.gz
+and convert it to a huge numpy array. Also output the variant positions and the sample names. Use as
+
+vcf2tsinfer.py 1000G_chr22.vcf.gz outputarrays.npz
 """
 import sys
 
@@ -45,6 +47,7 @@ for rec in vcf_in.fetch():
                 positions.append(rec.pos)
                 data.append(column)
         if rec.pos > curr_output_after:
-            print("@ base position {} (alleles per site: {})".format(rec.pos, allele_count))
-            curr_output_after += output_status_bases
-np.array(data)
+            print("@ base position {} Mb (alleles per site: {})".format(rec.pos/1e6, allele_count))
+            while curr_output_after < rec.pos:
+                curr_output_after += output_status_bases
+np.savez(sys.argv[2], data=np.array(data), samples=np.array(sorted(rows, key= rows.get),dtype='|U{}'.format(max([len(n) for n in rows.keys()]))), positions=np.array(positions))
