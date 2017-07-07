@@ -5,6 +5,7 @@ Take an .hdf5 file from vcf2tsinfer.py and run tsinfer on it.
 """
 import sys
 import os
+import argparse
 
 import h5py
 import numpy as np
@@ -15,19 +16,25 @@ sys.path.insert(1,os.path.join(os.path.dirname(os.path.abspath(script_path)),'..
 
 import tsinfer
 
+parser = argparse.ArgumentParser(description='Take an .hdf5 file from vcf2tsinfer.py and run tsinfer on it.')
+parser.add_argument('infile', 
+                    help='an hdf5 file output by vcf2tsinfer.py')
+parser.add_argument('outfile',
+                    help='the output file, in hdf5 treesequence format (see msprime)')
+parser.add_argument('--restrict_sites', '-s', type=int, default=1000,
+                    help='only use the first s sites (set to 0 to use all)')
 
-#To do - use argparse module 
+args = parser.parse_args()
 
-n_variants = 1000 #take the first 1000 variants
-
-with h5py.File(sys.argv[1], "r") as f:
+select = slice(args.restrict_sites or None) #if 0, select all
+with h5py.File(args.infile, "r") as f:
     data = f['data']
     inferred_ts = tsinfer.infer(
-        samples   = data['variants'][()][:,:n_variants], 
-        positions = data['position'][:n_variants], 
-        length    = max(data['position'][:n_variants])+1,
+        samples   = data['variants'][()][:,select], 
+        positions = data['position'][select], 
+        length    = max(data['position'][select])+1,
         recombination_rate = 1e-8, 
         error_rate = 1e-50,
         num_threads=10,
         show_progress=True)
-    inferred_ts.dump(sys.argv[2])
+    inferred_ts.dump(args.outfile)
