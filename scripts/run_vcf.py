@@ -22,11 +22,13 @@ parser.add_argument('infile',
 parser.add_argument('outfile',
                     help='the output file, in hdf5 treesequence format (see msprime)')
 parser.add_argument('--restrict_sites', '-s', type=int, default=1000,
-                    help='only use the first s sites (set to 0 to use all)')
+                    help='only use s sites from the total (set to 0 to use all)')
+parser.add_argument('--start_at_site', '-start', type=int, default=0,
+                    help='omit this many sites at the start')
 
 args = parser.parse_args()
 
-select = slice(args.restrict_sites or None) #if 0, select all
+select = slice(args.start_at_site, args.restrict_sites or None) #if 0, select all
 with h5py.File(args.infile, "r") as f:
     data = f['data']
     inferred_ts = tsinfer.infer(
