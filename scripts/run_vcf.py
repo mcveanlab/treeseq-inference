@@ -21,8 +21,8 @@ parser.add_argument('infile',
                     help='an hdf5 file output by vcf2tsinfer.py')
 parser.add_argument('outfile',
                     help='the output file, in hdf5 treesequence format (see msprime)')
-parser.add_argument('--restrict_sites', '-s', type=int, default=1000,
-                    help='only use s sites from the total (set to 0 to use all)')
+parser.add_argument('--stop_at_site', '-s', type=int, default=1000,
+                    help='only use variants up to site number s (set to 0 to use sites until the end of all available)')
 parser.add_argument('--start_at_site', '-start', type=int, default=0,
                     help='omit this many sites at the start')
 
