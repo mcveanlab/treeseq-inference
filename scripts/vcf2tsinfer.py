@@ -32,10 +32,12 @@ for sample_name in vcf_in.header.samples:
 position = collections.OrderedDict()
 n_vars = 400000 #fill in from https://groups.google.com/forum/#!topic/pysam-user-group/-Obv5ggp9tk
 sites_by_samples = np.zeros((n_vars, len(rows)), dtype="i1")
-output_status_bases = 1e6 #how many bases between status outputs
-curr_output_after = output_status_bases
+output_freq_variants = 1e3 #output status after multiples of this many variants read
 
-for rec in vcf_in.fetch():
+def process_variant(rec):
+    """
+    return True only when
+    """
     allele_count[len(rec.alleles)] = allele_count.get(len(rec.alleles),0) + 1
     #restrict to cases where ancestral state contains only letters ATCG
     # i.e. where the ancestral state is certain (see ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/phase1/analysis_results/supporting/ancestral_alignments/human_ancestor_GRCh37_e59.README
@@ -49,21 +51,21 @@ for rec in vcf_in.fetch():
             else:
                 omit=False
                 #check for duplicate positions, often causes e.g. by C/CAT as opposed to -/AT
-                if rec.pos in position:
-                    print("More than one set of variants at position {}. ".format(rec.pos))
-                    #check if the first x letters are the same, if so, we might be OK (e.g. could be a later indel)
-                    for allele_start in range(min(len(rec.allele[0]), len(rec.allele[1]))):
-                        if rec.allele[0][allele_start]!=rec.allele[0][allele_start]:
-                            break
-                    if allele_start != 0:
-                        pos = rec.pos+allele_start
-                    else:
-                        print("Previous was {}. Omitting a subsequent duplicate (id {})".format(
-                            position[rec.pos], {rec.id:rec.alleles}))
-                        omit=True
+                #(if the first x letters are the same, we have the wrong position
+                for allele_start in range(min(len(rec.alleles[0]), len(rec.alleles[1]))):
+                    if rec.alleles[0][allele_start]!=rec.alleles[0][allele_start]:
+                        break
+                if allele_start != 0:
+                    pos = rec.pos+allele_start
                 else:
                     allele_start=0
                     pos = rec.pos
+
+                if rec.pos in position:                    
+                    print("More than one set of variants at position {}. ".format(rec.pos))
+                    print("Previous was {}. Omitting a subsequent duplicate (id {})".format(
+                        position[rec.pos], {rec.id:rec.alleles}))
+                    return False
 
                 column = np.zeros((len(rows),), dtype="i1")
                 for label, samp in rec.samples.items():
@@ -73,15 +75,18 @@ for rec in vcf_in.fetch():
                         if samp.alleles[i] not in rec.alleles:
                             print("@ position {}{}, sample allele {} is not in {} - could be missing data. Omitting this row".format(
                                 rec.pos, "+{}".format(allele_start) if allele_start else "", samp.alleles[i], rec.alleles))
-                            omit=True
+                            return False
                         column[rows[label+suffix]] = samp.alleles[i][allele_start:]!=rec.info["AA"][allele_start:]
-                if not omit:
-                    sites_by_samples[len(position)]=column
-                    position[pos]={rec.id:rec.alleles}
-        if rec.pos > curr_output_after:
-            print("@ base position {} Mb (alleles per site: {})".format(rec.pos/1e6, [(k, allele_count[k]) for k in sorted(allele_count.keys())]))
-            while curr_output_after < rec.pos:
-                curr_output_after += output_status_bases
+                
+                sites_by_samples[len(position)]=column
+                position[pos]={rec.id:rec.alleles}
+                return True
+    return False
+
+for j, variant in enumerate(vcf_in.fetch()):
+    process_variant(variant)
+    if j % output_freq_variants == 0:
+        print("{} variants read ({} saved). Base position {} Mb (alleles per site: {})".format(j+1, len(position), variant.pos/1e6, [(k, allele_count[k]) for k in sorted(allele_count.keys())]))
 
 with h5py.File(sys.argv[2], "w") as f:
     g = f.create_group("data")
