@@ -64,7 +64,7 @@ for rec in vcf_in.fetch():
                     sites_by_samples[len(position)]=column
                     position[rec.pos]=rec.id
         if rec.pos > curr_output_after:
-            print("@ base position {} Mb (alleles per site: {})".format(rec.pos/1e6, [(k, allele_count[k]), for k in sorted(allele_count.keys())])
+            print("@ base position {} Mb (alleles per site: {})".format(rec.pos/1e6, [(k, allele_count[k]) for k in sorted(allele_count.keys())]))
             while curr_output_after < rec.pos:
                 curr_output_after += output_status_bases
 
