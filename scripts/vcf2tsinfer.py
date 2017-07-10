@@ -57,6 +57,8 @@ def process_variant(rec):
                         break
                 if allele_start != 0:
                     pos = rec.pos+allele_start
+                    print("Starting allele at an incremented position ({} not {}) for {} (alleles:{})".format(
+                        pos, rec.pos, rec.id, rec.alleles))
                 else:
                     allele_start=0
                     pos = rec.pos
