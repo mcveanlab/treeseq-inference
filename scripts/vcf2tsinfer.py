@@ -44,6 +44,7 @@ for rec in vcf_in.fetch():
             if rec.info["AA"] not in rec.alleles:
                 print("Ancestral state {} not in allele list ({}) for position {}".format(\
                     rec.info["AA"], rec.alleles, rec.pos))
+                pass
             else:
                 omit=False
                 column = np.zeros((len(rows),), dtype="i1")
@@ -55,6 +56,9 @@ for rec in vcf_in.fetch():
                             print("@ position {}, sample allele {} is not in {} - could be missing data. Omitting this row".format(rec.pos, samp.alleles[i], rec.alleles))
                             omit=True
                         column[rows[label+suffix]] = samp.alleles[i]!=rec.info["AA"]
+                if rec.pos in position:
+                    print("Duplicate positions ({}). Omitting".format(rec.pos))
+                    omit=True
                 if not omit:
                     sites_by_samples[len(position)]=column
                     position.append(rec.pos)
