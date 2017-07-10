@@ -51,9 +51,9 @@ def process_variant(rec):
             else:
                 omit=False
                 #check for duplicate positions, often causes e.g. by C/CAT as opposed to -/AT
-                #(if the first x letters are the same, we have the wrong position
-                for allele_start in range(min(len(rec.alleles[0]), len(rec.alleles[1]))):
-                    if rec.alleles[0][allele_start]!=rec.alleles[0][allele_start]:
+                #(if the first x letters are the same, we have the wrong position)
+                for allele_start in range(min([len(a) for a in rec.alleles])):
+                    if len(set([a[allele_start] for a in rec.alleles])) > 1:
                         break
                 if allele_start != 0:
                     pos = rec.pos+allele_start
