@@ -23,7 +23,7 @@ import pysam
 
 vcf_in = pysam.VariantFile(sys.argv[1])
 
-allele_count = {1:0,2:0,3:0,4:0}
+allele_count = {}
 rows, row = {}, 0
 for sample_name in vcf_in.header.samples:
     for suffix in ('a','b'):
@@ -36,7 +36,7 @@ output_status_bases = 1e6 #how many bases between status outputs
 curr_output_after = output_status_bases
 
 for rec in vcf_in.fetch():
-    allele_count[len(rec.alleles)] += 1
+    allele_count[len(rec.alleles)] = allele_count.get(len(rec.alleles),0) + 1
     #restrict to cases where ancestral state contains only letters ATCG
     # i.e. where the ancestral state is certain (see ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/phase1/analysis_results/supporting/ancestral_alignments/human_ancestor_GRCh37_e59.README
     if "AA" in rec.info and all(letter in "ATCG" for letter in rec.info["AA"]):
@@ -64,7 +64,7 @@ for rec in vcf_in.fetch():
                     sites_by_samples[len(position)]=column
                     position[rec.pos]=rec.id
         if rec.pos > curr_output_after:
-            print("@ base position {} Mb (alleles per site: {})".format(rec.pos/1e6, allele_count))
+            print("@ base position {} Mb (alleles per site: {})".format(rec.pos/1e6, [(k, allele_count[k]), for k in sorted(allele_count.keys())])
             while curr_output_after < rec.pos:
                 curr_output_after += output_status_bases
 
