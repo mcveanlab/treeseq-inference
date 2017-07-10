@@ -48,21 +48,36 @@ for rec in vcf_in.fetch():
                 pass
             else:
                 omit=False
+                #check for duplicate positions, often causes e.g. by C/CAT as opposed to -/AT
+                if rec.pos in position:
+                    print("More than one set of variants at position {}. ".format(rec.pos))
+                    #check if the first x letters are the same, if so, we might be OK (e.g. could be a later indel)
+                    for allele_start in range(min(len(rec.allele[0]), len(rec.allele[1]))):
+                        if rec.allele[0][allele_start]!=rec.allele[0][allele_start]:
+                            break
+                    if allele_start != 0:
+                        pos = rec.pos+allele_start
+                    else:
+                        print("Previous was {}. Omitting a subsequent duplicate (id {})".format(
+                            position[rec.pos], {rec.id:rec.alleles}))
+                        omit=True
+                else:
+                    allele_start=0
+                    pos = rec.pos
+
                 column = np.zeros((len(rows),), dtype="i1")
                 for label, samp in rec.samples.items():
                     for i,suffix in enumerate(('a','b')):
                         #print("allele {} (pos {}, sample {}, ancestral state {}, alleles {})".format( \
-                        #    data.alleles[i], rec.pos, label+suffix, rec.info["AA"], rec.alleles))
+                        #    rec.alleles[i], rec.pos, label+suffix, rec.info["AA"], rec.alleles))
                         if samp.alleles[i] not in rec.alleles:
-                            print("@ position {}, sample allele {} is not in {} - could be missing data. Omitting this row".format(rec.pos, samp.alleles[i], rec.alleles))
+                            print("@ position {}{}, sample allele {} is not in {} - could be missing data. Omitting this row".format(
+                                rec.pos, "+{}".format(allele_start) if allele_start else "", samp.alleles[i], rec.alleles))
                             omit=True
-                        column[rows[label+suffix]] = samp.alleles[i]!=rec.info["AA"]
-                if rec.pos in position:
-                    print("More than one set of variants at position {} (first is id {}). Omitting a subsequent duplicate (id {})".format(rec.pos, position[rec.pos], rec.id))
-                    omit=True
+                        column[rows[label+suffix]] = samp.alleles[i][allele_start:]!=rec.info["AA"][allele_start:]
                 if not omit:
                     sites_by_samples[len(position)]=column
-                    position[rec.pos]=rec.id
+                    position[pos]={rec.id:rec.alleles}
         if rec.pos > curr_output_after:
             print("@ base position {} Mb (alleles per site: {})".format(rec.pos/1e6, [(k, allele_count[k]) for k in sorted(allele_count.keys())]))
             while curr_output_after < rec.pos:
