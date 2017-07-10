@@ -74,7 +74,7 @@ def process_variant(rec, data):
                         column[data['rows'][label+suffix]] = samp.alleles[i][allele_start:]!=rec.info["AA"][allele_start:]
                 if data['sites_by_samples'].shape[0] <= len(data['position']):
                     #need more storage
-                    data['sites_by_samples'] = data['sites_by_samples'].append((data['extend_amount'], len(data['rows'])), dtype="i1")
+                    data['sites_by_samples'] = np.append(data['sites_by_samples'], np.zeros((data['extend_amount'], len(data['rows'])), dtype="i1"), axis=0)
                 data['sites_by_samples'][len(data['position'])]=column
                 data['position'][pos]={rec.id:rec.alleles}
                 return True
