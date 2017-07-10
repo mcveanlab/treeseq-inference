@@ -50,8 +50,9 @@ def process_variant(rec):
                 pass
             else:
                 omit=False
-                #check for duplicate positions, often causes e.g. by C/CAT as opposed to -/AT
-                #(if the first x letters are the same, we have the wrong position)
+                #check for duplicate positions, often caused e.g. by C/CAT as opposed to -/AT
+                #if the first x letters are the same, we have an intermediate position, e.g.
+                #if C is at position 123, we can place the indel AT at position 123.5
                 allele_start = 0
                 for i in range(min([len(a) for a in rec.alleles])):
                     if len(set([a[i] for a in rec.alleles])) > 1:
@@ -59,7 +60,7 @@ def process_variant(rec):
                         break
                     allele_start += 1
                 if allele_start != 0:
-                    pos = rec.pos+allele_start
+                    pos = rec.pos+allele_start-0.5
                     #print("Starting allele at an incremented position ({} not {}) for {} (alleles:{})".format(
                     #    pos, rec.pos, rec.id, rec.alleles))
                 else:
