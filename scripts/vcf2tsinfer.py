@@ -14,10 +14,11 @@ with h5py.File(filename, 'r') as f:
     print(f['data']['variants'][()])
 """
 import sys
+import collections
+
+import numpy as np
 import h5py
 import pysam
-import numpy as np
-
 #To do - use argparse module 
 
 vcf_in = pysam.VariantFile(sys.argv[1])
@@ -28,7 +29,7 @@ for sample_name in vcf_in.header.samples:
     for suffix in ('a','b'):
         rows[sample_name+suffix]=row
         row+=1
-position = []
+position = collections.OrderedDict()
 n_vars = 400000 #fill in from https://groups.google.com/forum/#!topic/pysam-user-group/-Obv5ggp9tk
 sites_by_samples = np.zeros((n_vars, len(rows)), dtype="i1")
 output_status_bases = 1e6 #how many bases between status outputs
@@ -57,11 +58,11 @@ for rec in vcf_in.fetch():
                             omit=True
                         column[rows[label+suffix]] = samp.alleles[i]!=rec.info["AA"]
                 if rec.pos in position:
-                    print("Duplicate positions ({}). Omitting".format(rec.pos))
+                    print("More than one set of variants at position {} (first is id {}). Omitting a subsequent duplicate (id {})".format(rec.pos, position[rec.pos], rec.id))
                     omit=True
                 if not omit:
                     sites_by_samples[len(position)]=column
-                    position.append(rec.pos)
+                    position[rec.pos]=rec.id
         if rec.pos > curr_output_after:
             print("@ base position {} Mb (alleles per site: {})".format(rec.pos/1e6, allele_count))
             while curr_output_after < rec.pos:
@@ -69,7 +70,7 @@ for rec in vcf_in.fetch():
 
 with h5py.File(sys.argv[2], "w") as f:
     g = f.create_group("data")
-    g.create_dataset("position", data=position)
+    g.create_dataset("position", data=position.keys())
     g.create_dataset("samples", data=[s.encode() for s in sorted(rows, key= rows.get)])
     g.create_dataset("variants", data=np.transpose(sites_by_samples[:len(position)]))
 print("Saved {} biallelic loci for {} samples into {}".format(len(position), len(rows), sys.argv[2]))
