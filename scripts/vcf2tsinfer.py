@@ -68,9 +68,9 @@ def process_variant(rec):
                     pos = rec.pos
 
                 if pos in position:                    
-                    print("More than one set of variants at position {}. ".format(rec.pos))
+                    print("More than one set of variants at position {}. ".format(pos))
                     print("Previous was {}. Omitting a subsequent duplicate (id {})".format(
-                        position[rec.pos], {rec.id:rec.alleles}))
+                        position[pos], {rec.id:rec.alleles}))
                     return False
 
                 column = np.zeros((len(rows),), dtype="i1")
@@ -92,7 +92,9 @@ def process_variant(rec):
 for j, variant in enumerate(vcf_in.fetch()):
     process_variant(variant)
     if j % output_freq_variants == 0:
-        print("{} variants read ({} saved). Base position {} Mb (alleles per site: {})".format(j+1, len(position), variant.pos/1e6, [(k, allele_count[k]) for k in sorted(allele_count.keys())]))
+        print("{} variants read ({} saved). Base position {} Mb (alleles per site: {})".format(
+            j+1, len(position), variant.pos/1e6, [(k, allele_count[k]) for k in sorted(allele_count.keys())]), 
+            flush=True)
 
 with h5py.File(sys.argv[2], "w") as f:
     g = f.create_group("data")
