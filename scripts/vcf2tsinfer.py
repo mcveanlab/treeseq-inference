@@ -48,7 +48,15 @@ def process_variant(rec, rows, site_data):
                         break
                     allele_start += 1
                 if allele_start != 0:
-                    pos = rec.pos+allele_start-0.5
+                    pos = rec.pos+allele_start
+                    if len(set([len(a) for a in rec.alleles])) == 1:
+                        #all alleles are the same length, => this is not an indel
+                        print("The variants at {} share sequence, but are not an indel: {}".format({rec.id:rec.pos}, rec.alleles))
+                    else:
+                        pos-=0.5
+                    if allele_start > 1:
+                        print("The variants at {} share more than one sytarting letter: {}".format({rec.id:rec.pos}, rec.alleles))
+                        
                     #print("Starting allele at an incremented position ({} not {}) for {} (alleles:{})".format(
                     #    pos, rec.pos, rec.id, rec.alleles))
                 else:
