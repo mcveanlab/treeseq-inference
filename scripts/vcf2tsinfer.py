@@ -52,18 +52,21 @@ def process_variant(rec):
                 omit=False
                 #check for duplicate positions, often causes e.g. by C/CAT as opposed to -/AT
                 #(if the first x letters are the same, we have the wrong position)
-                for allele_start in range(min([len(a) for a in rec.alleles])):
-                    if len(set([a[allele_start] for a in rec.alleles])) > 1:
+                allele_start = 0
+                for i in range(min([len(a) for a in rec.alleles])):
+                    if len(set([a[i] for a in rec.alleles])) > 1:
+                        #alleles differ here
                         break
+                    allele_start += 1
                 if allele_start != 0:
                     pos = rec.pos+allele_start
-                    print("Starting allele at an incremented position ({} not {}) for {} (alleles:{})".format(
-                        pos, rec.pos, rec.id, rec.alleles))
+                    #print("Starting allele at an incremented position ({} not {}) for {} (alleles:{})".format(
+                    #    pos, rec.pos, rec.id, rec.alleles))
                 else:
                     allele_start=0
                     pos = rec.pos
 
-                if rec.pos in position:                    
+                if pos in position:                    
                     print("More than one set of variants at position {}. ".format(rec.pos))
                     print("Previous was {}. Omitting a subsequent duplicate (id {})".format(
                         position[rec.pos], {rec.id:rec.alleles}))
