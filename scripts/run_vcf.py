@@ -39,4 +39,4 @@ with h5py.File(args.infile, "r") as f:
         error_rate = 1e-50,
         num_threads=10,
         show_progress=True)
-    inferred_ts.dump(args.outfile)
+    inferred_ts.simplify().dump(args.outfile)
