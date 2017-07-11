@@ -15,11 +15,21 @@ with h5py.File(filename, 'r') as f:
 """
 import sys
 import collections
+import argparse
 
 import numpy as np
 import h5py
 import pysam
-#To do - use argparse module 
+
+parser = argparse.ArgumentParser(description='Take an .hdf5 file from vcf2tsinfer.py and run tsinfer on it.')
+parser.add_argument('infile', 
+                    help='a vcf or vcf.gz file')
+parser.add_argument('outfile',
+                    help='the output file, in hdf5 format')
+parser.add_argument('--only_use_n_variants', '-n', type=int, default=None,
+                    help='For testing purposes, only use the first n variants')
+
+args = parser.parse_args()
 
 vcf_in = pysam.VariantFile(sys.argv[1])
 
@@ -55,7 +65,7 @@ def process_variant(rec, rows, site_data):
                     else:
                         pos-=0.5
                     if allele_start > 1:
-                        print("The variants at {} share more than one sytarting letter: {}".format({rec.id:rec.pos}, rec.alleles))
+                        print("The variants at {} share more than one starting letter: {}".format({rec.id:rec.pos}, rec.alleles))
                         
                     #print("Starting allele at an incremented position ({} not {}) for {} (alleles:{})".format(
                     #    pos, rec.pos, rec.id, rec.alleles))
@@ -89,6 +99,8 @@ output_freq_variants = 1e3 #output status after multiples of this many variants 
 locus_data = np.zeros((len(rows),), dtype="i1")
 
 for j, variant in enumerate(vcf_in.fetch()):
+    if j==args.only_use_n_variants:
+        break
     #keep track of allele numbers
     allele_count[len(variant.alleles)] = allele_count.get(len(variant.alleles),0) + 1
     #check if we now need more storage
@@ -101,7 +113,7 @@ for j, variant in enumerate(vcf_in.fetch()):
         if actual_position in position or actual_position == previous_position:
             print("Trying to store more than one set of variants at position {}. ".format(actual_position))
             print("Previous was {}, this is {}.".format(
-                position.get(actual_position, prev_data), {variant.id:variant.alleles}))
+                position.get(actual_position, previous_position), {variant.id:variant.alleles}))
             if actual_position in position:
                 previous_position, prev_data = position.popitem()
                 print("Deleting original at postion {} as well as duplicates.".format(previous_position))
@@ -119,7 +131,7 @@ for j, variant in enumerate(vcf_in.fetch()):
 
 with h5py.File(sys.argv[2], "w") as f:
     g = f.create_group("data")
-    g.create_dataset("position", data=position.keys())
+    g.create_dataset("position", data=list(position.keys()))
     g.create_dataset("samples", data=[s.encode() for s in sorted(rows, key= rows.get)])
     g.create_dataset("variants", data=np.transpose(sites_by_samples[:len(position)]))
 print("Saved {} biallelic loci for {} samples into {}".format(len(position), len(rows), sys.argv[2]))
