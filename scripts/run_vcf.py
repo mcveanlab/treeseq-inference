@@ -28,7 +28,7 @@ parser.add_argument('--start_at_site', '-start', type=int, default=0,
 
 args = parser.parse_args()
 
-select = slice(args.start_at_site, args.restrict_sites or None) #if 0, select all
+select = slice(args.start_at_site, args.stop_at_site or None) #if 0, select all
 with h5py.File(args.infile, "r") as f:
     data = f['data']
     inferred_ts = tsinfer.infer(
