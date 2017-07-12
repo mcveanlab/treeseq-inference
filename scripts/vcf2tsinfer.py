@@ -133,5 +133,5 @@ with h5py.File(sys.argv[2], "w") as f:
     g = f.create_group("data")
     g.create_dataset("position", data=list(position.keys()))
     g.create_dataset("samples", data=[s.encode() for s in sorted(rows, key= rows.get)])
-    g.create_dataset("variants", data=np.transpose(sites_by_samples[:len(position)]))
+    g.create_dataset("variants", data=np.transpose(sites_by_samples[:len(position)]), compression='gzip', compression_opts=9)
 print("Saved {} biallelic loci for {} samples into {}".format(len(position), len(rows), sys.argv[2]))
