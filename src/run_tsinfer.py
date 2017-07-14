@@ -52,7 +52,11 @@ def main():
         S = S.astype(np.int8)
         ts_new = tsinfer.infer(
             S, pos, args.length,
-            args.recombination_rate, args.error_probability,
+            args.recombination_rate,
+            1e-200,
+            # NOTE we are turning off error handling here because the new bottom
+            # up building method makes this a little more difficult.
+            #args.error_probability,
             num_threads=args.threads)
     else:
         panel = tsinfer.ReferencePanel(
