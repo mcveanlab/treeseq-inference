@@ -352,8 +352,8 @@ class InferenceRunner(object):
             samples_fn, positions_fn, self.row.length, scaled_recombination_rate,
             self.row.error_rate, self.num_threads)
         out_fn = construct_tsinfer_name(self.base_fn)
-        inferred_ts.dump(out_fn + ".hdf5")
-        fs = os.path.getsize(out_fn + ".hdf5")
+        inferred_ts.dump(out_fn + ".inferred.hdf5")
+        fs = os.path.getsize(out_fn + ".inferred.hdf5")
         if self.compute_tree_metrics:
             self.inferred_nexus_files = [out_fn + ".nex"]
             with open(self.inferred_nexus_files[0], "w+") as out:
@@ -931,8 +931,8 @@ class TsinferPerformance(Dataset):
     default_replicates = 10
     default_seed = 123
     tools = ["tsinfer"]
-    fixed_length = 500 * 10**3
-    fixed_sample_size = 500
+    fixed_length = 5 * 10**6
+    fixed_sample_size = 5000
 
     def run_simulations(self, replicates, seed, show_progress):
         # TODO abstract some of this functionality up into the superclass.
@@ -1170,24 +1170,31 @@ class PerformanceFigure(Figure):
         dfp = df[df.sample_size == self.datasetClass.fixed_sample_size]
         group = dfp.groupby(["length"])
         group_mean = group.mean()
-        ax1.plot(group_mean[self.plotted_column],
+        ax1.plot(group_mean["tsinfer_" + self.plotted_column] /
+                group_mean[self.plotted_column],
                 color=source_colour, linestyle="-", label="Source")
-        ax1.plot(
-            group_mean["tsinfer_" + self.plotted_column],
-            color=inferred_colour, linestyle="-", label="Inferred")
-        ax1.legend(
-            loc="upper left", numpoints=1, fontsize="small")
+
+        # ax1.plot(group_mean[self.plotted_column],
+        #         color=source_colour, linestyle="-", label="Source")
+        # ax1.plot(
+        #     group_mean["tsinfer_" + self.plotted_column],
+        #     color=inferred_colour, linestyle="-", label="Inferred")
+        # ax1.legend(
+        #     loc="upper left", numpoints=1, fontsize="small")
         ax1.set_xlabel("Length (KB)")
         ax1.set_ylabel(self.y_axis_label)
 
         dfp = df[df.length == self.datasetClass.fixed_length / 1000]
         group = dfp.groupby(["sample_size"])
         group_mean = group.mean()
-        ax2.plot(
-            group_mean[self.plotted_column], color=source_colour, linestyle="-")
-        ax2.plot(
-            group_mean["tsinfer_" + self.plotted_column], color=inferred_colour,
-            linestyle="-")
+        ax2.plot(group_mean["tsinfer_" + self.plotted_column] /
+                group_mean[self.plotted_column],
+                color=source_colour, linestyle="-", label="Source")
+        # ax2.plot(
+        #     group_mean[self.plotted_column], color=source_colour, linestyle="-")
+        # ax2.plot(
+        #     group_mean["tsinfer_" + self.plotted_column], color=inferred_colour,
+        #     linestyle="-")
 
         ax2.set_xlabel("Sample size")
         # ax1.set_xlim(-5, 105)
@@ -1204,8 +1211,64 @@ class PerformanceFigure(Figure):
 
 class EdgesPerformanceFigure(PerformanceFigure):
     name = "edges_performance"
-    plotted_column = "edges"
-    y_axis_label = "Edges"
+
+    def plot(self):
+        df = self.dataset.data
+        # Rescale the length to KB
+        df.length /= 1000
+        fig, (ax1, ax2) = pyplot.subplots(1, 2, sharey=True, figsize=(8, 5.5))
+        source_colour = "red"
+        inferred_colour = "blue"
+        dfp = df[df.sample_size == self.datasetClass.fixed_sample_size]
+        group = dfp.groupby(["length"])
+        group_mean = group.mean()
+
+        print(group_mean)
+
+        ax1.plot(group_mean["tsinfer_edges"] /
+                group_mean["tsinfer_edgesets"],
+                color=source_colour, linestyle="-", label="Source")
+
+        # ax1.plot(group_mean[self.plotted_column],
+        #         color=source_colour, linestyle="-", label="Source")
+        # ax1.plot(
+        #     group_mean["tsinfer_" + self.plotted_column],
+        #     color=inferred_colour, linestyle="-", label="Inferred")
+        # ax1.legend(
+        #     loc="upper left", numpoints=1, fontsize="small")
+        ax1.set_xlabel("Length (KB)")
+        ax1.set_ylabel("Mean #children")
+        ax1.set_ylim(0, 15)
+
+        dfp = df[df.length == self.datasetClass.fixed_length / 1000]
+        group = dfp.groupby(["sample_size"])
+        group_mean = group.mean()
+
+        ax2.plot(group_mean["tsinfer_edges"] /
+                group_mean["tsinfer_edgesets"],
+                color=source_colour, linestyle="-", label="Source")
+
+#         ax2.plot(group_mean["tsinfer_" + self.plotted_column] /
+#                 group_mean[self.plotted_column],
+#                 color=source_colour, linestyle="-", label="Source")
+        # ax2.plot(
+        #     group_mean[self.plotted_column], color=source_colour, linestyle="-")
+        # ax2.plot(
+        #     group_mean["tsinfer_" + self.plotted_column], color=inferred_colour,
+        #     linestyle="-")
+
+        ax2.set_xlabel("Sample size")
+        # ax1.set_xlim(-5, 105)
+        # ax1.set_ylim(-5, 250)
+        # ax2.set_xlim(-5, 105)
+
+        fig.tight_layout()
+        # fig.text(0.19, 0.97, "Sample size = 1000")
+        # fig.text(0.60, 0.97, "Sequence length = 50Mb")
+        # pyplot.savefig("plots/simulators.pdf")
+        self.savefig(fig)
+
+
 
 class EdgesetsPerformanceFigure(PerformanceFigure):
     name = "edgesets_performance"
