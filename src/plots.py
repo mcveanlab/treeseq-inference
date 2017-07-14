@@ -972,6 +972,15 @@ class TsinferPerformance(Dataset):
                     sample_size, Ne, length, recombination_rate, mutation_rate,
                     replicate_seed, replicate_seed, discretise_mutations=False)
                 assert ts.get_num_mutations() > 0
+                # Tsinfer should be robust to this, but it currently isn't. Fail
+                # noisily now rather than obscurely later. This will only ever happen
+                # in trivially small data sets, so it doesn't matter.
+                non_singletons = False
+                for v in ts.variants():
+                    if np.sum(v.genotypes) > 1:
+                        non_singletons = True
+                if not non_singletons:
+                    raise ValueError("No non-single mutations present")
                 row = data.iloc[row_id]
                 row_id += 1
                 row.sample_size = sample_size
