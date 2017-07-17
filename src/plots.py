@@ -948,7 +948,7 @@ class TsinferPerformance(Dataset):
         # Variable parameters
         num_points = 20
         sample_sizes = np.linspace(10, 2 * self.fixed_sample_size, num_points).astype(int)
-        lengths = np.linspace(10**3, 2 * self.fixed_length, num_points).astype(int)
+        lengths = np.linspace(self.fixed_length / 10, 2 * self.fixed_length, num_points).astype(int)
 
         # Fixed parameters
         Ne = 5000
@@ -1162,8 +1162,8 @@ class PerformanceFigure(Figure):
 
     def plot(self):
         df = self.dataset.data
-        # Rescale the length to KB
-        df.length /= 1000
+        # Rescale the length to MB
+        df.length /= 10**6
         fig, (ax1, ax2) = pyplot.subplots(1, 2, sharey=True, figsize=(8, 5.5))
         source_colour = "red"
         inferred_colour = "blue"
@@ -1181,10 +1181,10 @@ class PerformanceFigure(Figure):
         #     color=inferred_colour, linestyle="-", label="Inferred")
         # ax1.legend(
         #     loc="upper left", numpoints=1, fontsize="small")
-        ax1.set_xlabel("Length (KB)")
+        ax1.set_xlabel("Length (MB)")
         ax1.set_ylabel(self.y_axis_label)
 
-        dfp = df[df.length == self.datasetClass.fixed_length / 1000]
+        dfp = df[df.length == self.datasetClass.fixed_length / 10**6]
         group = dfp.groupby(["sample_size"])
         group_mean = group.mean()
         ax2.plot(group_mean["tsinfer_" + self.plotted_column] /
@@ -1215,7 +1215,7 @@ class EdgesPerformanceFigure(PerformanceFigure):
     def plot(self):
         df = self.dataset.data
         # Rescale the length to KB
-        df.length /= 1000
+        df.length /= 10**6
         fig, (ax1, ax2) = pyplot.subplots(1, 2, sharey=True, figsize=(8, 5.5))
         source_colour = "red"
         inferred_colour = "blue"
@@ -1223,7 +1223,7 @@ class EdgesPerformanceFigure(PerformanceFigure):
         group = dfp.groupby(["length"])
         group_mean = group.mean()
 
-        print(group_mean)
+        # print(group_mean)
 
         ax1.plot(group_mean["tsinfer_edges"] /
                 group_mean["tsinfer_edgesets"],
@@ -1236,11 +1236,11 @@ class EdgesPerformanceFigure(PerformanceFigure):
         #     color=inferred_colour, linestyle="-", label="Inferred")
         # ax1.legend(
         #     loc="upper left", numpoints=1, fontsize="small")
-        ax1.set_xlabel("Length (KB)")
+        ax1.set_xlabel("Length (MB)")
         ax1.set_ylabel("Mean #children")
-        ax1.set_ylim(0, 15)
+        # ax1.set_ylim(0, 15)
 
-        dfp = df[df.length == self.datasetClass.fixed_length / 1000]
+        dfp = df[df.length == self.datasetClass.fixed_length / 10**6]
         group = dfp.groupby(["sample_size"])
         group_mean = group.mean()
 
