@@ -482,7 +482,6 @@ class InferenceRunner(object):
                 sys.executable, tsinfer_executable, sample_fn, positions_fn,
                 "--length", str(int(length)), "--recombination-rate", str(rho),
                 "--error-probability", str(error_probability),
-                "--new-version", # TODO remove
                 "--threads", str(num_threads), ts_out.name]
             cpu_time, memory_use = time_cmd(cmd)
             ts_simplified = msprime.load(ts_out.name)
