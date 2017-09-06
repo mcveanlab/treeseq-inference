@@ -55,14 +55,12 @@ def main():
         num_threads=args.threads)
     ts.dump(args.output)
 
-    # Disabling this check for now because we know that there are issues
-    # with tree sequences output using shared recombination resolution.
-    # # TODO add command line arg here for when we're comparing run time performance.
-    # # Quickly verify that we get the sample output.
-    # Sp = np.zeros(S.shape)
-    # for j, h in enumerate(ts.haplotypes()):
-    #     Sp[j] = np.fromstring(h, np.uint8) - ord('0')
-    # assert np.all(Sp == S)
+    # TODO add command line arg here for when we're comparing run time performance.
+    # Quickly verify that we get the sample output.
+    Sp = np.zeros(S.shape)
+    for j, h in enumerate(ts.haplotypes()):
+        Sp[j] = np.fromstring(h, np.uint8) - ord('0')
+    assert np.all(Sp == S)
 
 if __name__ == "__main__":
     main()
