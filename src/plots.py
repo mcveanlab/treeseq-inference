@@ -102,13 +102,17 @@ def generate_samples(ts, error_p):
     Rejects any variants that result in a fixed column.
     """
     S = np.zeros((ts.sample_size, ts.num_mutations), dtype="u1")
-    for variant in ts.variants():
-        done = False
-        # Reject any columns that have no 1s or no zeros
-        while not done:
-            S[:,variant.index] = make_errors(variant.genotypes, error_p)
-            s = np.sum(S[:, variant.index])
-            done = 0 < s < ts.sample_size
+    if error_p == 0:
+        for variant in ts.variants():
+            S[:,variant.index] = variant.genotypes
+    else:
+        for variant in ts.variants():
+            done = False
+            # Reject any columns that have no 1s or no zeros
+            while not done:
+                S[:,variant.index] = make_errors(variant.genotypes, error_p)
+                s = np.sum(S[:, variant.index])
+                done = 0 < s < ts.sample_size
     return S
 
 def msprime_name(n, Ne, l, rho, mu, genealogy_seed, mut_seed, directory=None):
@@ -678,7 +682,9 @@ class Dataset(object):
         logging.info("Creating dir {}".format(self.simulations_dir))
         self.data = self.run_simulations(args.replicates, args.seed, args.progress)
         for t in self.tools:
-            self.data[t + "_completed"] = False
+            col = t + "_completed"
+            if col not in self.data:
+                self.data[col] = False
         # Other result columns are added later during the infer step.
         self.dump_data(write_index=True)
 
@@ -779,8 +785,8 @@ class Dataset(object):
         Returns a tuple of treesequence, filename (without file type extension)
         """
         logging.info(
-            "Running simulation for n = {}, l = {}, rho={}, mu = {} seed={}".format(
-                n, l, rho, mu, seed))
+            "Running simulation for n = {}, l = {:.2g}, rho={}, mu = {}".format(
+                n, l, rho, mu))
         # Since we want to have a finite site model, we force the recombination map
         # to have exactly l loci with a recombination rate of rho between them.
         recombination_map = msprime.RecombinationMap.uniform_map(l, rho, l)
@@ -803,6 +809,8 @@ class Dataset(object):
                     logging.info("Rejecting simulation: seed={}: {}".format(sim_seed, ve))
             else:
                 done=True
+        logging.info(
+            "Simulation done; {} sites and {} trees".format(ts.num_sites, ts.num_trees))
         # Here we might want to iterate over mutation rates for the same
         # genealogy, setting a different mut_seed so that we can see for
         # ourselves the effect of mutation rate variation on a single topology
@@ -992,6 +1000,91 @@ class TsinferPerformance(Dataset):
                 row.ts_filesize = os.path.getsize(fn + ".hdf5")
                 row.edgesets = ts.num_edgesets
                 row.edges = sum(len(e.children) for e in ts.edgesets())
+                self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
+                if show_progress:
+                    progress.update()
+        return data
+
+
+class ProgramComparison(Dataset):
+    """
+    The performance of the various programs in terms of running time.
+    """
+    name = "program_comparison"
+    compute_tree_metrics = False
+    default_replicates = 10
+    default_seed = 1000
+    tools = [FASTARG, TSINFER]
+    fixed_length = 5 * 10**6
+    fixed_sample_size = 5000
+
+    def run_simulations(self, replicates, seed, show_progress):
+        # TODO abstract some of this functionality up into the superclass.
+        # There is quite a lot shared with the other dataset.
+        if replicates is None:
+            replicates = self.default_replicates
+        if seed is None:
+            seed = self.default_seed
+        rng = random.Random(seed)
+        cols = [
+            "sample_size", "Ne", "length", "recombination_rate", "mutation_rate",
+            "error_rate", "seed"]
+        for tool in self.tools:
+            cols.extend([tool + "_cputime", tool + "_memory"])
+
+        # Variable parameters
+        num_points = 20
+        sample_sizes = np.linspace(10, 2 * self.fixed_sample_size, num_points).astype(int)
+        lengths = np.linspace(self.fixed_length / 10, 2 * self.fixed_length, num_points).astype(int)
+
+        # Fixed parameters
+        Ne = 5000
+        error_rate = 0
+        recombination_rate = 2.5e-8
+        mutation_rate = recombination_rate
+        num_rows = 2 * num_points * replicates
+        data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
+        work = [
+            (self.fixed_sample_size, l) for l in lengths] + [
+            (n, self.fixed_length) for n in sample_sizes]
+        row_id = 0
+        if show_progress:
+            progress = tqdm.tqdm(total=num_rows)
+        for sample_size, length in work:
+            for _ in range(replicates):
+                replicate_seed = rng.randint(1, 2**31)
+                ts, fn = self.single_simulation(
+                    sample_size, Ne, length, recombination_rate, mutation_rate,
+                    replicate_seed, replicate_seed, discretise_mutations=False)
+                assert ts.get_num_mutations() > 0
+                # Tsinfer should be robust to this, but it currently isn't. Fail
+                # noisily now rather than obscurely later. This will only ever happen
+                # in trivially small data sets, so it doesn't matter.
+                non_singletons = False
+                for v in ts.variants():
+                    if np.sum(v.genotypes) > 1:
+                        non_singletons = True
+                if not non_singletons:
+                    raise ValueError("No non-single mutations present")
+                row = data.iloc[row_id]
+                row_id += 1
+                row.sample_size = sample_size
+                row.recombination_rate = recombination_rate
+                row.mutation_rate = mutation_rate
+                row.length = length
+                row.Ne = Ne
+                row.seed = replicate_seed
+                row.error_rate = 0.0
+                # for tool in self.tools:
+                #     row[tool + "_completed"] = False
+                # # Hack to prevent RentPlus from running when the sizes are too big.
+                # if sample_size == self.fixed_sample_size:
+                #     if length > lengths[0]:
+                #         row.RentPlus_completed = True
+                # else:
+                #     if sample_size > sample_sizes[0]:
+                #         row.RentPlus_completed = True
+
                 self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
                 if show_progress:
                     progress.update()
@@ -1281,6 +1374,71 @@ class FileSizePerformanceFigure(PerformanceFigure):
     y_axis_label = "File size"
 
 
+class ProgramComparisonFigure(Figure):
+    """
+    Superclass for the program comparison figures. Each figure
+    has two panels; one for scaling by sequence length and the other
+    for scaling by sample size.
+    """
+    datasetClass = ProgramComparison
+
+    def plot(self):
+        df = self.dataset.data
+
+        # Rescale the length to KB
+        df.length /= 10**5
+        fig, (ax1, ax2) = pyplot.subplots(1, 2, sharey=True, figsize=(8, 5.5))
+
+        dfp = df[df.sample_size == self.datasetClass.fixed_sample_size]
+        group = dfp.groupby(["length"])
+        group_mean = group.mean()
+        tools = self.dataset.tools
+
+        colours = {
+            TSINFER: "blue",
+            RENTPLUS: "green",
+            FASTARG: "red"
+        }
+
+        for tool in tools:
+            col = tool + "_" + self.plotted_column
+            ax1.plot(group_mean[col], label=tool, color=colours[tool])
+        ax1.legend(
+            loc="upper left", numpoints=1, fontsize="small")
+
+        ax1.set_xlabel("Length (KB)")
+        ax1.set_ylabel("CPU time (seconds)")
+
+        dfp = df[df.length == self.datasetClass.fixed_length / 10**5]
+        group = dfp.groupby(["sample_size"])
+        group_mean = group.mean()
+
+        for tool in tools:
+            col = tool + "_" + self.plotted_column
+            ax2.plot(group_mean[col], label=tool, color=colours[tool])
+
+        ax2.set_xlabel("Sample size")
+
+        # ax1.set_xlim(-5, 105)
+        # ax1.set_ylim(-5, 250)
+        # ax2.set_xlim(-5, 105)
+
+        fig.tight_layout()
+
+        # fig.text(0.19, 0.97, "Sample size = 1000")
+        # fig.text(0.60, 0.97, "Sequence length = 50Mb")
+        # pyplot.savefig("plots/simulators.pdf")
+        self.savefig(fig)
+
+
+class ProgramComparisonTimeFigure(ProgramComparisonFigure):
+    name = "program_comparison_time"
+    plotted_column = "cputime"
+
+class ProgramComparisonMemoryFigure(ProgramComparisonFigure):
+    name = "program_comparison_memory"
+    plotted_column = "memory"
+
 def run_setup(cls, args):
     f = cls()
     f.setup(args)
@@ -1306,6 +1464,8 @@ def main():
         EdgesPerformanceFigure,
         EdgesetsPerformanceFigure,
         FileSizePerformanceFigure,
+        ProgramComparisonTimeFigure,
+        ProgramComparisonMemoryFigure,
     ]
     name_map = dict([(d.name, d) for d in datasets + figures])
     parser = argparse.ArgumentParser(

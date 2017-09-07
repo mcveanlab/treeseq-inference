@@ -30,7 +30,7 @@ def msprime_to_fastARG_in(ts, fastARG_filehandle):
             print(m.position, b"".join(out_arr[:,j]).decode("utf-8") , sep="\t", file=fastARG_filehandle)
         fastARG_filehandle.flush()
         return
-    
+
     for v in ts.variants(as_bytes=True):
         print(v.position, v.genotypes.decode(), sep="\t", file=fastARG_filehandle)
     fastARG_filehandle.flush()
@@ -38,7 +38,8 @@ def msprime_to_fastARG_in(ts, fastARG_filehandle):
 def variant_matrix_to_fastARG_in(var_matrix, var_positions, fastARG_filehandle):
     assert len(var_matrix)==len(var_positions)
     for pos, row in zip(var_positions, var_matrix):
-        print(str(pos), "".join((str(v) for v in row)), sep= "\t", file=fastARG_filehandle)
+        s = (row + ord('0')).tobytes().decode()
+        print(str(pos), s, sep= "\t", file=fastARG_filehandle)
     fastARG_filehandle.flush()
 
 def get_cmd(executable, fastARG_in, seed):
@@ -65,13 +66,13 @@ def variant_positions_from_fastARGin(fastARG_in_filehandle):
     return(np.array(vp))
 
 def fastARG_out_to_msprime_txts(
-        fastARG_out_filehandle, variant_positions, 
+        fastARG_out_filehandle, variant_positions,
         nodes_filehandle, edgesets_filehandle, sites_filehandle, mutations_filehandle,
         seq_len=None):
     """
     convert the fastARG output format (plus a list of positions) to 4 text
     files (edges, nodes, mutations, and sites) which can be read in to msprime.
-    We need to split fastARG records that extend over the whole genome into 
+    We need to split fastARG records that extend over the whole genome into
     sections that cover just that coalescence point.
     """
     import csv
@@ -162,7 +163,7 @@ def fastARG_out_to_msprime_txts(
         print("\t".join(v), file=locals()[k+'_filehandle'])
     for node,children in sorted(ARG_nodes.items()): #sort by node number == time
         #look at the break points for all the child sequences, and break up into that number of records
-        
+
         print(lines['nodes'].format(id=node, is_sample=int(len(children)==0), time=node),
             file=nodes_filehandle)
         breaks = set()
@@ -176,7 +177,7 @@ def fastARG_out_to_msprime_txts(
                 #NB - here we could try to input the values straight into an msprime python structure,
                 #but until this feature is implemented in msprime, we simply output to a correctly formatted msprime text input file
                 target_children = [str(cnode) for cnode, cspan in sorted(children.items()) if cspan[0]<rightbreak and cspan[1]>leftbreak]
-                print(lines['edgesets'].format(left=leftbreak, right=rightbreak, 
+                print(lines['edgesets'].format(left=leftbreak, right=rightbreak,
                     parent=node, children=",".join(target_children)), file=edgesets_filehandle)
 
     for i,base in enumerate(base_sequence):
@@ -194,7 +195,7 @@ def fastARG_out_to_msprime_txts(
     for k in cols.keys():
         locals()[k+'_filehandle'].flush()
         locals()[k+'_filehandle'].seek(0)
-    
+
 def fastARG_out_to_msprime(fastARG_out_filehandle, variant_positions, seq_len=None):
     """
     The same as fastARG_out_to_msprime_txts, but use temporary files and return a ts.
@@ -203,7 +204,7 @@ def fastARG_out_to_msprime(fastARG_out_filehandle, variant_positions, seq_len=No
         tempfile.NamedTemporaryFile("w+") as edgesets, \
         tempfile.NamedTemporaryFile("w+") as sites, \
         tempfile.NamedTemporaryFile("w+") as mutations:
-        fastARG_out_to_msprime_txts(fastARG_out_filehandle, variant_positions, 
+        fastARG_out_to_msprime_txts(fastARG_out_filehandle, variant_positions,
             nodes, edgesets, sites, mutations, seq_len=seq_len)
         return msprime.load_text(nodes=nodes, edgesets=edgesets, sites=sites, mutations=mutations).simplify()
 
@@ -226,7 +227,7 @@ def compare_fastARG_haplotypes(fastARG_fn_in, ts_in, save=False):
                 .format(fastARG_from_ts.name, fastARG_fn_in, debug_file))
         return files_identical
 
-        
+
 def main(ts, fastARG_executable, fa_in, fa_out, nodes_fh, edgesets_fh, sites_fh, muts_fh):
     """
     This is just to test if fastarg produces the same haplotypes
@@ -235,9 +236,9 @@ def main(ts, fastARG_executable, fa_in, fa_out, nodes_fh, edgesets_fh, sites_fh,
     seq_len = ts.get_sequence_length()
     msprime_to_fastARG_in(ts, fa_in)
     subprocess.call([fastARG_executable, 'build', fa_in.name], stdout=fa_out)
-    fastARG_out_to_msprime_txts(fa_out, variant_positions_from_fastARGin(fa_in), 
+    fastARG_out_to_msprime_txts(fa_out, variant_positions_from_fastARGin(fa_in),
         nodes_fh, edgesets_fh, sites_fh, muts_fh, seq_len=seq_len)
-    
+
     new_ts = msprime.load_text(nodes=nodes_fh, edgesets=edgesets_fh, sites=sites_fh, mutations=muts_fh)
     simple_ts = new_ts.simplify()
     logging.debug("Simplified num_records should always be < unsimplified num_records.\n"
@@ -250,7 +251,7 @@ def main(ts, fastARG_executable, fa_in, fa_out, nodes_fh, edgesets_fh, sites_fh,
     logging.debug(
         "Initial num records = {}, fastARG (simplified) = {}, fastARG (unsimplified) = {}".format(
         ts.get_num_records(), simple_ts.get_num_records(), new_ts.get_num_records()))
-    
+
     if compare_fastARG_haplotypes(fa_in.name, simple_ts):
         print("All input and output haplotypes are the same. Hurrah")
     else:
