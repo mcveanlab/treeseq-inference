@@ -1241,6 +1241,54 @@ class KCRootedMetricByMutationsRateFigure(MetricByMutationRateFigure):
     metric = "KCrooted"
     ylim = (0, 110)
 
+class CputimeMetricByMutationsRateFigure(MetricByMutationRateFigure):
+    """
+    This figure is useful because we can only really get the CPU times
+    for all four methods in the same scale for these tiny examples.
+    We can show that ARGWeaver and RentPlus are much slower than tsinfer
+    and FastARG here and compare tsinfer and FastARG more thoroughly
+    in a dedicated figure.
+    """
+    name = "cputime_by_mutation_rate"
+
+    def plot(self):
+        df = self.dataset.data
+        sample_sizes = df.sample_size.unique()
+
+        # TODO move this into the superclass so that we have consistent styling.
+        tool_colours = collections.OrderedDict([
+            ("tsinfer", "blue"),
+            ("RentPlus", "red"),
+            ("ARGweaver", "green"),
+            ("fastARG", "magenta"),
+        ])
+        tool_markers = collections.OrderedDict([
+            ("tsinfer", "*"),
+            ("RentPlus", "s"),
+            ("ARGweaver", "o"),
+            ("fastARG", "^"),
+        ])
+        tools = list(tool_colours.keys())
+        linestyles = ["-", ":"]
+        fig, ax = pyplot.subplots(1, 1)
+        lines = []
+        error_rate = 0
+        n = 50
+        ax.set_xlabel("Mutation rate")
+        ax.set_ylabel("CPU time (sec)")
+        df_s = df[np.logical_and(df.sample_size == n, df.error_rate == error_rate)]
+        group = df_s.groupby(["mutation_rate"])
+        group_mean = group.mean()
+        for tool in tools:
+            ax.semilogx(
+                group_mean[tool + "_" + "cputime"],
+                color=tool_colours[tool],
+                marker=tool_markers[tool],
+                label=tool)
+        ax.legend(loc="center left")
+        ax.set_ylim(-20, 1000)
+        self.savefig(fig)
+
 
 class PerformanceFigure(Figure):
     """
@@ -1461,6 +1509,7 @@ def main():
         AllMetricsByMutationRateFigure,
         RFRootedMetricByMutationsRateFigure,
         KCRootedMetricByMutationsRateFigure,
+        CputimeMetricByMutationsRateFigure,
         EdgesPerformanceFigure,
         EdgesetsPerformanceFigure,
         FileSizePerformanceFigure,
