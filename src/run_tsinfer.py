@@ -52,7 +52,10 @@ def main():
         S, pos, args.length,
         args.recombination_rate,
         args.error_probability,
-        num_threads=args.threads)
+        num_threads=args.threads,
+        # Setting shared recombination resolution to false here for now
+        # because it makes inference slower.
+        resolve_shared_recombinations=False)
     ts.dump(args.output)
 
     # # TODO add command line arg here for when we're comparing run time performance.

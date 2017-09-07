@@ -1012,11 +1012,11 @@ class ProgramComparison(Dataset):
     """
     name = "program_comparison"
     compute_tree_metrics = False
-    default_replicates = 10
+    default_replicates = 2
     default_seed = 1000
     tools = [FASTARG, TSINFER]
     fixed_length = 5 * 10**6
-    fixed_sample_size = 5000
+    fixed_sample_size = 10000
 
     def run_simulations(self, replicates, seed, show_progress):
         # TODO abstract some of this functionality up into the superclass.
@@ -1433,8 +1433,8 @@ class ProgramComparisonFigure(Figure):
     def plot(self):
         df = self.dataset.data
 
-        # Rescale the length to KB
-        df.length /= 10**5
+        # Rescale the length to MB
+        df.length /= 10**6
         fig, (ax1, ax2) = pyplot.subplots(1, 2, sharey=True, figsize=(8, 5.5))
 
         dfp = df[df.sample_size == self.datasetClass.fixed_sample_size]
@@ -1454,8 +1454,8 @@ class ProgramComparisonFigure(Figure):
         ax1.legend(
             loc="upper left", numpoints=1, fontsize="small")
 
-        ax1.set_xlabel("Length (KB)")
-        ax1.set_ylabel("CPU time (seconds)")
+        ax1.set_xlabel("Length (MB)")
+        ax1.set_ylabel(self.y_label)
 
         dfp = df[df.length == self.datasetClass.fixed_length / 10**5]
         group = dfp.groupby(["sample_size"])
@@ -1482,10 +1482,12 @@ class ProgramComparisonFigure(Figure):
 class ProgramComparisonTimeFigure(ProgramComparisonFigure):
     name = "program_comparison_time"
     plotted_column = "cputime"
+    y_label = "CPU time (s)"
 
 class ProgramComparisonMemoryFigure(ProgramComparisonFigure):
     name = "program_comparison_memory"
     plotted_column = "memory"
+    y_label = "Memory (GiB)"
 
 def run_setup(cls, args):
     f = cls()
