@@ -1432,15 +1432,24 @@ class ProgramComparisonFigure(Figure):
 
     def plot(self):
         df = self.dataset.data
+        tools = self.dataset.tools
 
         # Rescale the length to MB
-        df.length /= 10**6
+        length_scale = 10**6
+        df.length /= length_scale
+        # Scale time to hours
+        time_scale = 3600
+        for tool in tools:
+            df[tool + "_cputime"] /= time_scale
+        # Scale memory to GiB
+        for tool in tools:
+            df[tool + "_memory"] /= 1024 * 1024 * 1024
+
         fig, (ax1, ax2) = pyplot.subplots(1, 2, sharey=True, figsize=(8, 5.5))
 
         dfp = df[df.sample_size == self.datasetClass.fixed_sample_size]
         group = dfp.groupby(["length"])
         group_mean = group.mean()
-        tools = self.dataset.tools
 
         colours = {
             TSINFER: "blue",
@@ -1457,7 +1466,7 @@ class ProgramComparisonFigure(Figure):
         ax1.set_xlabel("Length (MB)")
         ax1.set_ylabel(self.y_label)
 
-        dfp = df[df.length == self.datasetClass.fixed_length / 10**5]
+        dfp = df[df.length == self.datasetClass.fixed_length / length_scale]
         group = dfp.groupby(["sample_size"])
         group_mean = group.mean()
 
@@ -1482,7 +1491,7 @@ class ProgramComparisonFigure(Figure):
 class ProgramComparisonTimeFigure(ProgramComparisonFigure):
     name = "program_comparison_time"
     plotted_column = "cputime"
-    y_label = "CPU time (s)"
+    y_label = "CPU time (hours)"
 
 class ProgramComparisonMemoryFigure(ProgramComparisonFigure):
     name = "program_comparison_memory"
