@@ -2,6 +2,13 @@
 """
 Code to run simulations, inference methods and generate all plots
 in the paper.
+
+Run as e.g. 
+
+./plots.py setup metrics_by_mutation_rate -P
+./plots.py infer metrics_by_mutation_rate -P  #this may take a long time
+./plots.py figure kc_rooted_by_mutation_rate
+
 """
 
 import argparse
