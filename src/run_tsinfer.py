@@ -22,7 +22,6 @@ def main():
         description=description,
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--verbosity', '-v', action='count', default=0)
-    parser.add_argument('--new-version', '-n', action='store_true', default=False)
     parser.add_argument(
         "samples",
         help="The observed haplotypes as a numpy array file")
@@ -48,26 +47,23 @@ def main():
     args = parser.parse_args()
     S = np.load(args.samples)
     pos = np.load(args.positions)
-    if args.new_version:
-        S = S.astype(np.int8)
-        ts_new = tsinfer.infer(
-            S, pos, args.length,
-            args.recombination_rate, args.error_probability,
-            num_threads=args.threads)
-    else:
-        panel = tsinfer.ReferencePanel(
-            S, pos, args.length, args.recombination_rate, ancestor_error=0,
-            sample_error=args.error_probability)
-        P, mutations = panel.infer_paths(num_workers=args.threads)
-        ts_new = panel.convert_records(P, mutations)
-    ts_simplified = ts_new.simplify()
-    ts_simplified.dump(args.output)
+    S = S.astype(np.int8)
+    ts = tsinfer.infer(
+        S, pos, args.length,
+        args.recombination_rate,
+        args.error_probability,
+        num_threads=args.threads,
+        # Setting shared recombination resolution to false here for now
+        # because it makes inference slower.
+        resolve_shared_recombinations=False)
+    ts.dump(args.output)
 
-    # Quickly verify that we get the sample output.
-    Sp = np.zeros(S.shape)
-    for j, h in enumerate(ts_simplified.haplotypes()):
-        Sp[j] = np.fromstring(h, np.uint8) - ord('0')
-    assert np.all(Sp == S)
+    # # TODO add command line arg here for when we're comparing run time performance.
+    # # Quickly verify that we get the sample output.
+    # Sp = np.zeros(S.shape)
+    # for j, h in enumerate(ts.haplotypes()):
+    #     Sp[j] = np.fromstring(h, np.uint8) - ord('0')
+    # assert np.all(Sp == S)
 
 if __name__ == "__main__":
     main()

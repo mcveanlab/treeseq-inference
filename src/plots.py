@@ -102,13 +102,17 @@ def generate_samples(ts, error_p):
     Rejects any variants that result in a fixed column.
     """
     S = np.zeros((ts.sample_size, ts.num_mutations), dtype="u1")
-    for variant in ts.variants():
-        done = False
-        # Reject any columns that have no 1s or no zeros
-        while not done:
-            S[:,variant.index] = make_errors(variant.genotypes, error_p)
-            s = np.sum(S[:, variant.index])
-            done = 0 < s < ts.sample_size
+    if error_p == 0:
+        for variant in ts.variants():
+            S[:,variant.index] = variant.genotypes
+    else:
+        for variant in ts.variants():
+            done = False
+            # Reject any columns that have no 1s or no zeros
+            while not done:
+                S[:,variant.index] = make_errors(variant.genotypes, error_p)
+                s = np.sum(S[:, variant.index])
+                done = 0 < s < ts.sample_size
     return S
 
 def msprime_name(n, Ne, l, rho, mu, genealogy_seed, mut_seed, directory=None):
@@ -352,8 +356,8 @@ class InferenceRunner(object):
             samples_fn, positions_fn, self.row.length, scaled_recombination_rate,
             self.row.error_rate, self.num_threads)
         out_fn = construct_tsinfer_name(self.base_fn)
-        inferred_ts.dump(out_fn + ".hdf5")
-        fs = os.path.getsize(out_fn + ".hdf5")
+        inferred_ts.dump(out_fn + ".inferred.hdf5")
+        fs = os.path.getsize(out_fn + ".inferred.hdf5")
         if self.compute_tree_metrics:
             self.inferred_nexus_files = [out_fn + ".nex"]
             with open(self.inferred_nexus_files[0], "w+") as out:
@@ -482,7 +486,6 @@ class InferenceRunner(object):
                 sys.executable, tsinfer_executable, sample_fn, positions_fn,
                 "--length", str(int(length)), "--recombination-rate", str(rho),
                 "--error-probability", str(error_probability),
-                "--new-version", # TODO remove
                 "--threads", str(num_threads), ts_out.name]
             cpu_time, memory_use = time_cmd(cmd)
             ts_simplified = msprime.load(ts_out.name)
@@ -679,7 +682,9 @@ class Dataset(object):
         logging.info("Creating dir {}".format(self.simulations_dir))
         self.data = self.run_simulations(args.replicates, args.seed, args.progress)
         for t in self.tools:
-            self.data[t + "_completed"] = False
+            col = t + "_completed"
+            if col not in self.data:
+                self.data[col] = False
         # Other result columns are added later during the infer step.
         self.dump_data(write_index=True)
 
@@ -780,8 +785,8 @@ class Dataset(object):
         Returns a tuple of treesequence, filename (without file type extension)
         """
         logging.info(
-            "Running simulation for n = {}, l = {}, rho={}, mu = {} seed={}".format(
-                n, l, rho, mu, seed))
+            "Running simulation for n = {}, l = {:.2g}, rho={}, mu = {}".format(
+                n, l, rho, mu))
         # Since we want to have a finite site model, we force the recombination map
         # to have exactly l loci with a recombination rate of rho between them.
         recombination_map = msprime.RecombinationMap.uniform_map(l, rho, l)
@@ -804,6 +809,8 @@ class Dataset(object):
                     logging.info("Rejecting simulation: seed={}: {}".format(sim_seed, ve))
             else:
                 done=True
+        logging.info(
+            "Simulation done; {} sites and {} trees".format(ts.num_sites, ts.num_trees))
         # Here we might want to iterate over mutation rates for the same
         # genealogy, setting a different mut_seed so that we can see for
         # ourselves the effect of mutation rate variation on a single topology
@@ -931,8 +938,8 @@ class TsinferPerformance(Dataset):
     default_replicates = 10
     default_seed = 123
     tools = ["tsinfer"]
-    fixed_length = 500 * 10**3
-    fixed_sample_size = 500
+    fixed_length = 5 * 10**6
+    fixed_sample_size = 5000
 
     def run_simulations(self, replicates, seed, show_progress):
         # TODO abstract some of this functionality up into the superclass.
@@ -948,7 +955,7 @@ class TsinferPerformance(Dataset):
         # Variable parameters
         num_points = 20
         sample_sizes = np.linspace(10, 2 * self.fixed_sample_size, num_points).astype(int)
-        lengths = np.linspace(10**3, 2 * self.fixed_length, num_points).astype(int)
+        lengths = np.linspace(self.fixed_length / 10, 2 * self.fixed_length, num_points).astype(int)
 
         # Fixed parameters
         Ne = 5000
@@ -972,6 +979,15 @@ class TsinferPerformance(Dataset):
                     sample_size, Ne, length, recombination_rate, mutation_rate,
                     replicate_seed, replicate_seed, discretise_mutations=False)
                 assert ts.get_num_mutations() > 0
+                # Tsinfer should be robust to this, but it currently isn't. Fail
+                # noisily now rather than obscurely later. This will only ever happen
+                # in trivially small data sets, so it doesn't matter.
+                non_singletons = False
+                for v in ts.variants():
+                    if np.sum(v.genotypes) > 1:
+                        non_singletons = True
+                if not non_singletons:
+                    raise ValueError("No non-single mutations present")
                 row = data.iloc[row_id]
                 row_id += 1
                 row.sample_size = sample_size
@@ -984,6 +1000,91 @@ class TsinferPerformance(Dataset):
                 row.ts_filesize = os.path.getsize(fn + ".hdf5")
                 row.edgesets = ts.num_edgesets
                 row.edges = sum(len(e.children) for e in ts.edgesets())
+                self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
+                if show_progress:
+                    progress.update()
+        return data
+
+
+class ProgramComparison(Dataset):
+    """
+    The performance of the various programs in terms of running time.
+    """
+    name = "program_comparison"
+    compute_tree_metrics = False
+    default_replicates = 2
+    default_seed = 1000
+    tools = [FASTARG, TSINFER]
+    fixed_length = 5 * 10**6
+    fixed_sample_size = 10000
+
+    def run_simulations(self, replicates, seed, show_progress):
+        # TODO abstract some of this functionality up into the superclass.
+        # There is quite a lot shared with the other dataset.
+        if replicates is None:
+            replicates = self.default_replicates
+        if seed is None:
+            seed = self.default_seed
+        rng = random.Random(seed)
+        cols = [
+            "sample_size", "Ne", "length", "recombination_rate", "mutation_rate",
+            "error_rate", "seed"]
+        for tool in self.tools:
+            cols.extend([tool + "_cputime", tool + "_memory"])
+
+        # Variable parameters
+        num_points = 20
+        sample_sizes = np.linspace(10, 2 * self.fixed_sample_size, num_points).astype(int)
+        lengths = np.linspace(self.fixed_length / 10, 2 * self.fixed_length, num_points).astype(int)
+
+        # Fixed parameters
+        Ne = 5000
+        error_rate = 0
+        recombination_rate = 2.5e-8
+        mutation_rate = recombination_rate
+        num_rows = 2 * num_points * replicates
+        data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
+        work = [
+            (self.fixed_sample_size, l) for l in lengths] + [
+            (n, self.fixed_length) for n in sample_sizes]
+        row_id = 0
+        if show_progress:
+            progress = tqdm.tqdm(total=num_rows)
+        for sample_size, length in work:
+            for _ in range(replicates):
+                replicate_seed = rng.randint(1, 2**31)
+                ts, fn = self.single_simulation(
+                    sample_size, Ne, length, recombination_rate, mutation_rate,
+                    replicate_seed, replicate_seed, discretise_mutations=False)
+                assert ts.get_num_mutations() > 0
+                # Tsinfer should be robust to this, but it currently isn't. Fail
+                # noisily now rather than obscurely later. This will only ever happen
+                # in trivially small data sets, so it doesn't matter.
+                non_singletons = False
+                for v in ts.variants():
+                    if np.sum(v.genotypes) > 1:
+                        non_singletons = True
+                if not non_singletons:
+                    raise ValueError("No non-single mutations present")
+                row = data.iloc[row_id]
+                row_id += 1
+                row.sample_size = sample_size
+                row.recombination_rate = recombination_rate
+                row.mutation_rate = mutation_rate
+                row.length = length
+                row.Ne = Ne
+                row.seed = replicate_seed
+                row.error_rate = 0.0
+                # for tool in self.tools:
+                #     row[tool + "_completed"] = False
+                # # Hack to prevent RentPlus from running when the sizes are too big.
+                # if sample_size == self.fixed_sample_size:
+                #     if length > lengths[0]:
+                #         row.RentPlus_completed = True
+                # else:
+                #     if sample_size > sample_sizes[0]:
+                #         row.RentPlus_completed = True
+
                 self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
                 if show_progress:
                     progress.update()
@@ -1140,6 +1241,54 @@ class KCRootedMetricByMutationsRateFigure(MetricByMutationRateFigure):
     metric = "KCrooted"
     ylim = (0, 110)
 
+class CputimeMetricByMutationsRateFigure(MetricByMutationRateFigure):
+    """
+    This figure is useful because we can only really get the CPU times
+    for all four methods in the same scale for these tiny examples.
+    We can show that ARGWeaver and RentPlus are much slower than tsinfer
+    and FastARG here and compare tsinfer and FastARG more thoroughly
+    in a dedicated figure.
+    """
+    name = "cputime_by_mutation_rate"
+
+    def plot(self):
+        df = self.dataset.data
+        sample_sizes = df.sample_size.unique()
+
+        # TODO move this into the superclass so that we have consistent styling.
+        tool_colours = collections.OrderedDict([
+            ("tsinfer", "blue"),
+            ("RentPlus", "red"),
+            ("ARGweaver", "green"),
+            ("fastARG", "magenta"),
+        ])
+        tool_markers = collections.OrderedDict([
+            ("tsinfer", "*"),
+            ("RentPlus", "s"),
+            ("ARGweaver", "o"),
+            ("fastARG", "^"),
+        ])
+        tools = list(tool_colours.keys())
+        linestyles = ["-", ":"]
+        fig, ax = pyplot.subplots(1, 1)
+        lines = []
+        error_rate = 0
+        n = 50
+        ax.set_xlabel("Mutation rate")
+        ax.set_ylabel("CPU time (sec)")
+        df_s = df[np.logical_and(df.sample_size == n, df.error_rate == error_rate)]
+        group = df_s.groupby(["mutation_rate"])
+        group_mean = group.mean()
+        for tool in tools:
+            ax.semilogx(
+                group_mean[tool + "_" + "cputime"],
+                color=tool_colours[tool],
+                marker=tool_markers[tool],
+                label=tool)
+        ax.legend(loc="center left")
+        ax.set_ylim(-20, 1000)
+        self.savefig(fig)
+
 
 class PerformanceFigure(Figure):
     """
@@ -1153,32 +1302,39 @@ class PerformanceFigure(Figure):
 
     def plot(self):
         df = self.dataset.data
-        # Rescale the length to KB
-        df.length /= 1000
+        # Rescale the length to MB
+        df.length /= 10**6
         fig, (ax1, ax2) = pyplot.subplots(1, 2, sharey=True, figsize=(8, 5.5))
         source_colour = "red"
         inferred_colour = "blue"
         dfp = df[df.sample_size == self.datasetClass.fixed_sample_size]
         group = dfp.groupby(["length"])
         group_mean = group.mean()
-        ax1.plot(group_mean[self.plotted_column],
+        ax1.plot(group_mean["tsinfer_" + self.plotted_column] /
+                group_mean[self.plotted_column],
                 color=source_colour, linestyle="-", label="Source")
-        ax1.plot(
-            group_mean["tsinfer_" + self.plotted_column],
-            color=inferred_colour, linestyle="-", label="Inferred")
-        ax1.legend(
-            loc="upper left", numpoints=1, fontsize="small")
-        ax1.set_xlabel("Length (KB)")
+
+        # ax1.plot(group_mean[self.plotted_column],
+        #         color=source_colour, linestyle="-", label="Source")
+        # ax1.plot(
+        #     group_mean["tsinfer_" + self.plotted_column],
+        #     color=inferred_colour, linestyle="-", label="Inferred")
+        # ax1.legend(
+        #     loc="upper left", numpoints=1, fontsize="small")
+        ax1.set_xlabel("Length (MB)")
         ax1.set_ylabel(self.y_axis_label)
 
-        dfp = df[df.length == self.datasetClass.fixed_length / 1000]
+        dfp = df[df.length == self.datasetClass.fixed_length / 10**6]
         group = dfp.groupby(["sample_size"])
         group_mean = group.mean()
-        ax2.plot(
-            group_mean[self.plotted_column], color=source_colour, linestyle="-")
-        ax2.plot(
-            group_mean["tsinfer_" + self.plotted_column], color=inferred_colour,
-            linestyle="-")
+        ax2.plot(group_mean["tsinfer_" + self.plotted_column] /
+                group_mean[self.plotted_column],
+                color=source_colour, linestyle="-", label="Source")
+        # ax2.plot(
+        #     group_mean[self.plotted_column], color=source_colour, linestyle="-")
+        # ax2.plot(
+        #     group_mean["tsinfer_" + self.plotted_column], color=inferred_colour,
+        #     linestyle="-")
 
         ax2.set_xlabel("Sample size")
         # ax1.set_xlim(-5, 105)
@@ -1195,8 +1351,64 @@ class PerformanceFigure(Figure):
 
 class EdgesPerformanceFigure(PerformanceFigure):
     name = "edges_performance"
-    plotted_column = "edges"
-    y_axis_label = "Edges"
+
+    def plot(self):
+        df = self.dataset.data
+        # Rescale the length to KB
+        df.length /= 10**6
+        fig, (ax1, ax2) = pyplot.subplots(1, 2, sharey=True, figsize=(8, 5.5))
+        source_colour = "red"
+        inferred_colour = "blue"
+        dfp = df[df.sample_size == self.datasetClass.fixed_sample_size]
+        group = dfp.groupby(["length"])
+        group_mean = group.mean()
+
+        # print(group_mean)
+
+        ax1.plot(group_mean["tsinfer_edges"] /
+                group_mean["tsinfer_edgesets"],
+                color=source_colour, linestyle="-", label="Source")
+
+        # ax1.plot(group_mean[self.plotted_column],
+        #         color=source_colour, linestyle="-", label="Source")
+        # ax1.plot(
+        #     group_mean["tsinfer_" + self.plotted_column],
+        #     color=inferred_colour, linestyle="-", label="Inferred")
+        # ax1.legend(
+        #     loc="upper left", numpoints=1, fontsize="small")
+        ax1.set_xlabel("Length (MB)")
+        ax1.set_ylabel("Mean #children")
+        # ax1.set_ylim(0, 15)
+
+        dfp = df[df.length == self.datasetClass.fixed_length / 10**6]
+        group = dfp.groupby(["sample_size"])
+        group_mean = group.mean()
+
+        ax2.plot(group_mean["tsinfer_edges"] /
+                group_mean["tsinfer_edgesets"],
+                color=source_colour, linestyle="-", label="Source")
+
+#         ax2.plot(group_mean["tsinfer_" + self.plotted_column] /
+#                 group_mean[self.plotted_column],
+#                 color=source_colour, linestyle="-", label="Source")
+        # ax2.plot(
+        #     group_mean[self.plotted_column], color=source_colour, linestyle="-")
+        # ax2.plot(
+        #     group_mean["tsinfer_" + self.plotted_column], color=inferred_colour,
+        #     linestyle="-")
+
+        ax2.set_xlabel("Sample size")
+        # ax1.set_xlim(-5, 105)
+        # ax1.set_ylim(-5, 250)
+        # ax2.set_xlim(-5, 105)
+
+        fig.tight_layout()
+        # fig.text(0.19, 0.97, "Sample size = 1000")
+        # fig.text(0.60, 0.97, "Sequence length = 50Mb")
+        # pyplot.savefig("plots/simulators.pdf")
+        self.savefig(fig)
+
+
 
 class EdgesetsPerformanceFigure(PerformanceFigure):
     name = "edgesets_performance"
@@ -1209,6 +1421,82 @@ class FileSizePerformanceFigure(PerformanceFigure):
     plotted_column = "ts_filesize"
     y_axis_label = "File size"
 
+
+class ProgramComparisonFigure(Figure):
+    """
+    Superclass for the program comparison figures. Each figure
+    has two panels; one for scaling by sequence length and the other
+    for scaling by sample size.
+    """
+    datasetClass = ProgramComparison
+
+    def plot(self):
+        df = self.dataset.data
+        tools = self.dataset.tools
+
+        # Rescale the length to MB
+        length_scale = 10**6
+        df.length /= length_scale
+        # Scale time to hours
+        time_scale = 3600
+        for tool in tools:
+            df[tool + "_cputime"] /= time_scale
+        # Scale memory to GiB
+        for tool in tools:
+            df[tool + "_memory"] /= 1024 * 1024 * 1024
+
+        fig, (ax1, ax2) = pyplot.subplots(1, 2, sharey=True, figsize=(8, 5.5))
+
+        dfp = df[df.sample_size == self.datasetClass.fixed_sample_size]
+        group = dfp.groupby(["length"])
+        group_mean = group.mean()
+
+        colours = {
+            TSINFER: "blue",
+            RENTPLUS: "green",
+            FASTARG: "red"
+        }
+
+        for tool in tools:
+            col = tool + "_" + self.plotted_column
+            ax1.plot(group_mean[col], label=tool, color=colours[tool])
+        ax1.legend(
+            loc="upper left", numpoints=1, fontsize="small")
+
+        ax1.set_xlabel("Length (MB)")
+        ax1.set_ylabel(self.y_label)
+
+        dfp = df[df.length == self.datasetClass.fixed_length / length_scale]
+        group = dfp.groupby(["sample_size"])
+        group_mean = group.mean()
+
+        for tool in tools:
+            col = tool + "_" + self.plotted_column
+            ax2.plot(group_mean[col], label=tool, color=colours[tool])
+
+        ax2.set_xlabel("Sample size")
+
+        # ax1.set_xlim(-5, 105)
+        # ax1.set_ylim(-5, 250)
+        # ax2.set_xlim(-5, 105)
+
+        fig.tight_layout()
+
+        # fig.text(0.19, 0.97, "Sample size = 1000")
+        # fig.text(0.60, 0.97, "Sequence length = 50Mb")
+        # pyplot.savefig("plots/simulators.pdf")
+        self.savefig(fig)
+
+
+class ProgramComparisonTimeFigure(ProgramComparisonFigure):
+    name = "program_comparison_time"
+    plotted_column = "cputime"
+    y_label = "CPU time (hours)"
+
+class ProgramComparisonMemoryFigure(ProgramComparisonFigure):
+    name = "program_comparison_memory"
+    plotted_column = "memory"
+    y_label = "Memory (GiB)"
 
 def run_setup(cls, args):
     f = cls()
@@ -1232,9 +1520,12 @@ def main():
         AllMetricsByMutationRateFigure,
         RFRootedMetricByMutationsRateFigure,
         KCRootedMetricByMutationsRateFigure,
+        CputimeMetricByMutationsRateFigure,
         EdgesPerformanceFigure,
         EdgesetsPerformanceFigure,
         FileSizePerformanceFigure,
+        ProgramComparisonTimeFigure,
+        ProgramComparisonMemoryFigure,
     ]
     name_map = dict([(d.name, d) for d in datasets + figures])
     parser = argparse.ArgumentParser(
