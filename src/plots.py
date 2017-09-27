@@ -1209,12 +1209,20 @@ class MetricByMutationRateFigure(Figure):
             for n, linestyle in zip(sample_sizes, linestyles):
                 df_s = df[np.logical_and(df.sample_size == n, df.error_rate == error_rate)]
                 group = df_s.groupby(["mutation_rate"])
-                group_mean = group.mean()
+                mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
                 for tool in tools:
                     ax.semilogx(
-                        group_mean[tool + "_" + self.metric], linestyle,
+                        [m['mu'] for m in mean_sem], 
+                        [m['mean'][tool + "_" + self.metric] for m in mean_sem], 
+                        linestyle,
                         color=tool_colours[tool],
                         marker=tool_markers[tool])
+                    if getattr(self, 'error_bars', None):
+                        ax.errorbar(
+                            [m['mu'] for m in mean_sem], 
+                            [m['mean'][tool + "_" + self.metric] for m in mean_sem], 
+                            yerr=[m['sem'][tool + "_" + self.metric] for m in mean_sem],
+                            fmt='o')
 
         axes[0].set_ylim(self.ylim)
 
