@@ -6,7 +6,7 @@ in the paper.
 Run as e.g. 
 
 ./plots.py setup metrics_by_mutation_rate -P
-./plots.py infer metrics_by_mutation_rate -P  #this may take a long time
+./plots.py infer metrics_by_mutation_rate -P -p 30 -t 8 #this may take a long time
 ./plots.py figure kc_rooted_by_mutation_rate
 
 """
@@ -885,8 +885,8 @@ class MetricsByMutationRateDataset(Dataset):
             "sample_size", "Ne", "length", "recombination_rate", "mutation_rate",
             "error_rate", "seed"]
         # Variable parameters
-        mutation_rates = np.logspace(-8, -5, num=6)[:-1] * 1.5
-        error_rates = [0, 0.01, 0.1]
+        mutation_rates = np.logspace(-8, -4, num=6)[:-1] * 1.5
+        error_rates = [0]
         sample_sizes = [10, 50]
 
         # Fixed parameters
