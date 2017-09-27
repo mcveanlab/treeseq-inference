@@ -1255,6 +1255,7 @@ class KCRootedMetricByMutationsRateFigure(MetricByMutationRateFigure):
     name = "kc_rooted_by_mutation_rate"
     metric = "KCrooted"
     ylim = (0, 110)
+    error_bars = True
 
 class CputimeMetricByMutationsRateFigure(MetricByMutationRateFigure):
     """
