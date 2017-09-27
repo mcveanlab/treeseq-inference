@@ -6,7 +6,7 @@ in the paper.
 Run as e.g. 
 
 ./plots.py setup metrics_by_mutation_rate -P
-./plots.py infer metrics_by_mutation_rate -P  #this may take a long time
+./plots.py infer metrics_by_mutation_rate -P -p 30 -t 8 #this may take a long time
 ./plots.py figure kc_rooted_by_mutation_rate
 
 """
@@ -1204,6 +1204,7 @@ class MetricByMutationRateFigure(Figure):
             ax = axes[k]
             ax.set_title("Error = {}".format(error_rate))
             ax.set_xlabel("Mutation rate")
+            ax.set_xscale('log')
             if k == 0:
                 ax.set_ylabel(self.metric + " metric")
             for n, linestyle in zip(sample_sizes, linestyles):
@@ -1211,18 +1212,18 @@ class MetricByMutationRateFigure(Figure):
                 group = df_s.groupby(["mutation_rate"])
                 mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
                 for tool in tools:
-                    ax.semilogx(
-                        [m['mu'] for m in mean_sem], 
-                        [m['mean'][tool + "_" + self.metric] for m in mean_sem], 
-                        linestyle,
-                        color=tool_colours[tool],
-                        marker=tool_markers[tool])
                     if getattr(self, 'error_bars', None):
-                        ax.errorbar(
-                            [m['mu'] for m in mean_sem], 
-                            [m['mean'][tool + "_" + self.metric] for m in mean_sem], 
-                            yerr=[m['sem'][tool + "_" + self.metric] for m in mean_sem],
-                            fmt='o')
+                        yerr=[m['sem'][tool + "_" + self.metric] for m in mean_sem]
+                    else:
+                        yerr = None
+                    ax.errorbar(
+                        [m['mu'] for m in mean_sem], 
+                        [m['mean'][tool + "_" + self.metric] for m in mean_sem],
+                        yerr=yerr,
+                        linestyle=linestyle,
+                        color=tool_colours[tool],
+                        marker=tool_markers[tool],
+                        elinewidth=1)
 
         axes[0].set_ylim(self.ylim)
 
