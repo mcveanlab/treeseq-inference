@@ -2,6 +2,13 @@
 """
 Code to run simulations, inference methods and generate all plots
 in the paper.
+
+Run as e.g. 
+
+./plots.py setup metrics_by_mutation_rate -P
+./plots.py infer metrics_by_mutation_rate -P -p 30 -t 8 #this may take a long time
+./plots.py figure kc_rooted_by_mutation_rate
+
 """
 
 import argparse
@@ -1197,17 +1204,26 @@ class MetricByMutationRateFigure(Figure):
             ax = axes[k]
             ax.set_title("Error = {}".format(error_rate))
             ax.set_xlabel("Mutation rate")
+            ax.set_xscale('log')
             if k == 0:
                 ax.set_ylabel(self.metric + " metric")
             for n, linestyle in zip(sample_sizes, linestyles):
                 df_s = df[np.logical_and(df.sample_size == n, df.error_rate == error_rate)]
                 group = df_s.groupby(["mutation_rate"])
-                group_mean = group.mean()
+                mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
                 for tool in tools:
-                    ax.semilogx(
-                        group_mean[tool + "_" + self.metric], linestyle,
+                    if getattr(self, 'error_bars', None):
+                        yerr=[m['sem'][tool + "_" + self.metric] for m in mean_sem]
+                    else:
+                        yerr = None
+                    ax.errorbar(
+                        [m['mu'] for m in mean_sem], 
+                        [m['mean'][tool + "_" + self.metric] for m in mean_sem],
+                        yerr=yerr,
+                        linestyle=linestyle,
                         color=tool_colours[tool],
-                        marker=tool_markers[tool])
+                        marker=tool_markers[tool],
+                        elinewidth=1)
 
         axes[0].set_ylim(self.ylim)
 
@@ -1240,6 +1256,7 @@ class KCRootedMetricByMutationsRateFigure(MetricByMutationRateFigure):
     name = "kc_rooted_by_mutation_rate"
     metric = "KCrooted"
     ylim = (0, 110)
+    error_bars = True
 
 class CputimeMetricByMutationsRateFigure(MetricByMutationRateFigure):
     """

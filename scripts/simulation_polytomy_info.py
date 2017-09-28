@@ -18,16 +18,21 @@ for l in range(50000, 1500000, 50000):
     next(diff_iterator) #skip first diff
     for l_rec, o_rec, i_rec in diff_iterator:
         if len(o_rec)==len(i_rec) and len(o_rec)<4:
-            oo_rec = {r[0]:r[1] for r in o_rec}
+            oo_rec = {r[0]:r[1] for r in o_rec} #format is parent:(child1, child2)
             ii_rec = {r[0]:r[1] for r in i_rec}
             childen_of_unshared_out = [oo_rec[r] for r in set(oo_rec.keys()) - set(ii_rec.keys())]
             childen_of_unshared_in  = [ii_rec[r] for r in set(ii_rec.keys()) - set(oo_rec.keys())]
             assert len(childen_of_unshared_out)==len(childen_of_unshared_in)==1
             node = set(childen_of_unshared_in[0]) & set(childen_of_unshared_out[0])
+            if len(o_rec) == 3:
+                #should check  
             if len(node) == 1:
-                #this is an informative mutation
-                #print("recombination above node {} (cr length {})".format(node, len(o_rec)))
+                #this is an informative mutation - we know which branch it is on
+                #print("recombination unambiguously above node {} (cr length {})".format(node, len(o_rec)))
                 nodes_with_recombinations[node.pop()] = True
+            else 
+                print("recombination position ambigous" + \
+                    " could be above nodes {}".format(node))
         else:
             print("Not sure what's going on here: diff is {}, {} ,{}".format(
                 l,o_rec,i_rec))

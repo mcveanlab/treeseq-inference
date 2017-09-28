@@ -13,6 +13,7 @@ or use ffmpeg if `convert` is too slow/memory intensive
 """
 import sys
 import os
+import argparse
 
 import csv
 import h5py
@@ -20,6 +21,17 @@ script_path = __file__ if "__file__" in locals() else "./dummy.py"
 sys.path.insert(1,os.path.join(os.path.dirname(os.path.abspath(script_path)),'..','msprime')) # use the local copy of msprime in preference to the global one
 import msprime
 
+parser = argparse.ArgumentParser(description='Plot a large set of 1000 genomes trees frome a treeseq.')
+parser.add_argument('msprime_infile', default="1000G/1000G22_infer2000.hdf5",
+                    help='an msprime hdf5 file inferred from 1000 genomes data (phase 1)')
+parser.add_argument('base_file', default="1000G/1000G22.hdf5",
+                    help='the equivalent hdf5 file from which the msprime file was inferred,' +
+                        " only needed because we can't currently store sample names in the msprime file")
+parser.add_argument('1000genomes_tsv', default="1000G/igsr_samples.tsv",
+                    help='a path to the igsr_samples.tsv file')
+parser.add_argument('--outdir', '-d', default="1000G",
+                    help='the directory in which to save svg files')
+args = parser.parse_args()
 
 def percolate_unambiguous_colours(tree, colours, node):
     """
@@ -53,10 +65,10 @@ with open("/Volumes/SDdisk/1000G/igsr_samples.tsv") as tsvfile:
         if 'phase 1' in row['Data collections']:
             sample_cols[row['Sample name']]= pop_cols[row['Superpopulation name']]
 
-ts = msprime.load("../tmp/1000G22_infer2000.hdf5").simplify()
+ts = msprime.load(args.msprime_infile).simplify()
 #sample names are not stored in msprime files, so we need to get them from the base file
 #sample names in the base file have an extra character ('a' or 'b') appended
-with h5py.File("/Volumes/SDdisk/1000G/1000G22.hdf5", "r") as f:
+with h5py.File(args.base_file, "r") as f:
     data = f['data']
     samples = data['samples']
     sample_colours = {i:sample_cols[str(d, 'utf8')[:-1]] for i,d in enumerate(data['samples']) if str(d, 'utf8')[-1] in 'ab'}
@@ -68,9 +80,11 @@ for i, t in enumerate(ts.trees()):
     node_colours=sample_colours.copy()
     percolate_unambiguous_colours(t, node_colours, t.get_root(), )
     branch_colours = colour_children(t, node_colours)
-    file = "/Volumes/SDdisk/1000G/tree{:05d}.svg".format(i)
+    file = os.path.join(args.outdir,"tree{:05d}.svg".format(i))
     svg=t.draw(file,
         1400,850,
+        show_mutation_labels=True, show_internal_node_labels=False,
+        show_leaf_node_labels=False,
         branch_colours=branch_colours, node_colours=node_colours)
     print("written {} spanning genome interval {} ({} base pairs). Total={:.3f}Mb".format(
         file, t.get_interval(), t.get_length(),(t.get_interval()[1]-start)/1e6))    
