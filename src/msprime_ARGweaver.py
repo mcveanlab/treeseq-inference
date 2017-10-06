@@ -137,7 +137,7 @@ def variant_matrix_to_ARGweaver_in(var_matrix, var_positions, seq_length, ARGwea
     ARGweaver_filehandle.seek(0)
 
 
-def ARGweaver_smc_to_msprime_txts(smc2bin_executable, prefix, nodes_fh, edgesets_fh):
+def ARGweaver_smc_to_msprime_txts(smc2bin_executable, prefix, nodes_fh, edges_fh):
     """
     convert the ARGweaver smc representation to coalescence records format
     """
@@ -146,9 +146,9 @@ def ARGweaver_smc_to_msprime_txts(smc2bin_executable, prefix, nodes_fh, edgesets
             prefix + ".smc.gz", smc2bin_executable))
     subprocess.call([smc2bin_executable, prefix + ".smc.gz", prefix + ".arg"])
     with open(prefix + ".arg", "r+") as arg_fh:
-        return ARGweaver_arg_to_msprime_txts(arg_fh, nodes_fh, edgesets_fh)
+        return ARGweaver_arg_to_msprime_txts(arg_fh, nodes_fh, edges_fh)
 
-def ARGweaver_arg_to_msprime_txts(ARGweaver_arg_filehandle, nodes_fh, edgesets_fh):
+def ARGweaver_arg_to_msprime_txts(ARGweaver_arg_filehandle, nodes_fh, edges_fh):
     """
     convert the ARGweaver arg representation to coalescence records format
 
@@ -239,7 +239,7 @@ def ARGweaver_arg_to_msprime_txts(ARGweaver_arg_filehandle, nodes_fh, edgesets_f
             time=ARG_node_times[node_name]),
             file=nodes_fh)
 
-    print("left\tright\tparent\tchildren", file=edgesets_fh)
+    print("left\tright\tparent\tchild", file=edges_fh)
     for node_name in sorted(ARG_node_times, key=ARG_node_times.get): #sort by time
         # look at the break points for all the child sequences, and break up
         # into that number of records
@@ -253,12 +253,13 @@ def ARGweaver_arg_to_msprime_txts(ARGweaver_arg_filehandle, nodes_fh, edgesets_f
             for i in range(1,len(breaks)):
                 leftbreak = breaks[i-1]
                 rightbreak = breaks[i]
+                #The read_text function allows `child` to be a comma-separated list of children
                 children_str = ",".join(map(str, sorted([
                     node_names[cnode] for cnode, cspan in children.items()
                         if cspan[0]<rightbreak and cspan[1]>leftbreak])))
                 print("{left}\t{right}\t{parent}\t{children}".format(
                     left=leftbreak, right=rightbreak, parent=node_names[node_name],
-                    children=children_str), file=edgesets_fh)
+                    children=children_str), file=edges_fh)
         except KeyError:
             #these should all be the tips
             assert node_name in tips, (
@@ -299,18 +300,19 @@ def main(args):
     import subprocess
     from dendropy import TreeList, calculate
     import msprime_extras
-    def msprime_txts_to_hdf5(msprime_nodes, msprime_edgesets, hdf5_outname=None):
+    def msprime_txts_to_hdf5(msprime_nodes, msprime_edges, hdf5_outname=None):
         import shutil
         import msprime
         logging.info("== Converting new msprime ARG as hdf5 ===")
         try:
-            ts = msprime.load_text(nodes=msprime_nodes, edgesets=msprime_edgesets).simplify()
+            ts, node_map = msprime.load_text(nodes=msprime_nodes, edges=msprime_edges).simplify()
+            logging.info(" node map after simplification is {}".format(node_map))
         except:
-            logging.warning("Can't load the texts file properly. Saved copied to 'bad.nodes' & 'bad.edgesets' for inspection")
+            logging.warning("Can't load the texts file properly. Saved copied to 'bad.nodes' & 'bad.edges' for inspection")
             shutil.copyfile(msprime_nodes.name, "bad.nodes")
-            shutil.copyfile(msprime_edgesets.name, "bad.edgesets")
+            shutil.copyfile(msprime_edges.name, "bad.edges")
             raise
-        logging.info("== loaded {}, {}===".format(msprime_nodes.name, msprime_edgesets.name))
+        logging.info("== loaded {}, {}===".format(msprime_nodes.name, msprime_edges.name))
         try:
             simple_ts = ts.simplify()
         except:
@@ -346,15 +348,15 @@ def main(args):
             ARGweaver_smc_to_nexus(smc, smc_nex_out, zero_based_tip_numbers=False)
         arg_nex=smc.replace(".smc.gz", ".msp_nex")
         with open(smc.replace(".smc.gz", ".TSnodes"), "w+") as nodes, \
-            open(smc.replace(".smc.gz", ".TSedgesets"), "w+") as edgesets, \
+            open(smc.replace(".smc.gz", ".TSedges"), "w+") as edges, \
             open(arg_nex, "w+") as msp_nex:
             ARGweaver_smc_to_msprime_txts(
                 os.path.join(args.ARGweaver_executable_dir, args.ARGweaver_smc2arg_executable),
                 smc.replace(".smc.gz", ""),
-                nodes, edgesets,
+                nodes, edges,
                 override_assertions=True)
 
-            ts = msprime_txts_to_hdf5(nodes, edgesets)
+            ts = msprime_txts_to_hdf5(nodes, edges)
             ts.write_nexus_trees(msp_nex, zero_based_tip_numbers=False)
         smc_trees = TreeList.get(path=smc_nex, schema="nexus")
         arg_trees = TreeList.get(path=arg_nex, schema='nexus')

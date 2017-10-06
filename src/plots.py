@@ -68,7 +68,6 @@ if sys.version_info[0] < 3:
 save_stats = dict(
     cpu = "cputime",
     mem =  "memory",
-    n_edgesets = "edgesets",
     n_edges = "edges",
     ts_filesize = "ts_filesize"
 )
@@ -372,33 +371,25 @@ class InferenceRunner(object):
                 inferred_ts.write_nexus_trees(
                     out, tree_labels_between_variants=True,
                     zero_based_tip_numbers=tree_tip_labels_start_at_0)
-        poly_sum = poly_ssq = poly_max = 0
-        for e in inferred_ts.edgesets():
-            poly_sum += len(e.children)
-            poly_ssq += len(e.children)**2
-            poly_max = max(len(e.children), poly_max)
-        poly_mean = poly_sum / inferred_ts.num_edgesets
-        n = inferred_ts.num_edgesets
+        unique, counts = np.unique(np.array([e.parent for e in inferred_ts.edges()], dtype="u8"), return_counts=True)
         return  {
             save_stats['cpu']: time,
             save_stats['mem']: memory,
-            save_stats['n_edgesets']: n,
-            save_stats['n_edges']: poly_sum,
+            save_stats['n_edges']: np.sum(counts),
             save_stats['ts_filesize']: fs,
-            'mean_polytomy': poly_mean if n else None,
-            'var_polytomy': ((poly_ssq - poly_sum**2/n)/ (n-1)) if n and n>1 else None,
-            'max_polytomy': poly_max
+            'mean_polytomy': np.mean(counts),
+            'var_polytomy': np.var(counts),
+            'max_polytomy': np.max(counts)
         }
 
     def __run_fastARG(self):
         inference_seed = self.row.seed  # TODO do we need to specify this separately?
         infile = self.base_fn + ".hap"
         out_fn = construct_fastarg_name(self.base_fn, inference_seed)
-        time = memory = edgesets = None
+        time = memory = None
         logging.debug("reading: {} for fastARG inference".format(infile))
         inferred_ts, time, memory = self.run_fastarg(infile, self.row.length, inference_seed)
-        edgesets = inferred_ts.num_edgesets
-        edges = sum(len(e.children) for e in inferred_ts.edgesets())
+        edges = inferred_ts.num_edges
         inferred_ts.dump(out_fn + ".hdf5")
         fs = os.path.getsize(out_fn + ".hdf5")
         if self.compute_tree_metrics:
@@ -409,7 +400,6 @@ class InferenceRunner(object):
         return {
             save_stats['cpu']: time,
             save_stats['mem']: memory,
-            save_stats['n_edgesets']: edgesets,
             save_stats['n_edges']: edges,
             save_stats['ts_filesize']: fs,
         }
@@ -438,7 +428,6 @@ class InferenceRunner(object):
         infile = self.base_fn + ".sites"
         time = memory = None
         filesizes = []
-        edgesets = []
         edges = []
         iteration_ids = []
         stats_file = None
@@ -462,24 +451,23 @@ class InferenceRunner(object):
                 #if we want to record number of coalescence records we need
                 #to convert the ARGweaver output to msprime, which is buggy
                 with open(base+".TSnodes", "w+") as msprime_nodes, \
-                        open(base+".TSedgesets", "w+") as msprime_edgesets:
+                        open(base+".TSedges", "w+") as msprime_edges:
                     msprime_ARGweaver.ARGweaver_smc_to_msprime_txts(
-                        smc2arg_executable, base, msprime_nodes, msprime_edgesets)
+                        smc2arg_executable, base, msprime_nodes, msprime_edges)
                     msprime_nodes.seek(0)
-                    msprime_edgesets.seek(0)
-                    inferred_ts = msprime.load_text(
-                        nodes=msprime_nodes, edgesets=msprime_edgesets).simplify()
+                    msprime_edges.seek(0)
+                    inferred_ts, node_map = msprime.load_text(
+                        nodes=msprime_nodes, edges=msprime_edges).simplify()
+                    logging.info(node_map)
                     inferred_ts.dump(base + ".hdf5")
                     filesizes.append(os.path.getsize(base + ".hdf5"))
-                    edgesets.append(inferred_ts.num_edgesets)
-                    edges.append(sum(len(e.children) for e in inferred_ts.edgesets()))
+                    edges.append(inferred_ts.num_edges)
             except msprime_ARGweaver.CyclicalARGError as e:
                 logging.info("Exception caught converting {}: {}".format(
                     base + ".msp", e))
         results = {
             save_stats['cpu']: time,
             save_stats['mem']: memory,
-            save_stats['n_edgesets']: statistics.mean(edgesets) if len(edgesets) else None,
             save_stats['n_edges']: statistics.mean(edges) if len(edges) else None,
             save_stats['ts_filesize']: statistics.mean(filesizes) if len(filesizes) else None,
             "iterations": ",".join(iteration_ids),
@@ -872,7 +860,7 @@ class MetricsByMutationRateDataset(Dataset):
     compute_tree_metrics = True
 
     #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
-    exclude_colnames =[save_stats['n_edgesets'],]
+    exclude_colnames =[]
 
 
     def run_simulations(self, replicates, seed, show_progress):
@@ -958,7 +946,7 @@ class TsinferPerformance(Dataset):
         rng = random.Random(seed)
         cols = [
             "sample_size", "Ne", "length", "recombination_rate", "mutation_rate",
-            "error_rate", "seed", "ts_filesize", "edges", "edgesets"]
+            "error_rate", "seed", "ts_filesize", "edges"]
         # Variable parameters
         num_points = 20
         sample_sizes = np.linspace(10, 2 * self.fixed_sample_size, num_points).astype(int)
@@ -1005,8 +993,7 @@ class TsinferPerformance(Dataset):
                 row.seed = replicate_seed
                 row.error_rate = error_rate
                 row.ts_filesize = os.path.getsize(fn + ".hdf5")
-                row.edgesets = ts.num_edgesets
-                row.edges = sum(len(e.children) for e in ts.edgesets())
+                row.edges = ts.num_edges
                 self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
                 if show_progress:
                     progress.update()
