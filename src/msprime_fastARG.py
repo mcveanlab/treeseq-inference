@@ -153,7 +153,7 @@ def fastARG_out_to_msprime_txts(
 
     cols = {
         'nodes':     ["id","is_sample","time"],
-        'edgesets':  ["left","right","parent","children"],
+        'edgesets':  ["left","right","parent","child"],
         'sites':     ["position","ancestral_state"],
         'mutations': ["site","node","derived_state"]
     }
@@ -176,9 +176,11 @@ def fastARG_out_to_msprime_txts(
                 rightbreak = breaks[i]
                 #NB - here we could try to input the values straight into an msprime python structure,
                 #but until this feature is implemented in msprime, we simply output to a correctly formatted msprime text input file
+                #The read_text function *does* allow `child` to be a comma-separated list of children, as a shorthand
+                #for multiple rows.
                 target_children = [str(cnode) for cnode, cspan in sorted(children.items()) if cspan[0]<rightbreak and cspan[1]>leftbreak]
                 print(lines['edgesets'].format(left=leftbreak, right=rightbreak,
-                    parent=node, children=",".join(target_children)), file=edgesets_filehandle)
+                    parent=node, child=",".join(target_children)), file=edgesets_filehandle)
 
     for i,base in enumerate(base_sequence):
         if base not in ['1','0']:
