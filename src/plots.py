@@ -206,7 +206,7 @@ def fastarg_name_from_msprime_row(row, sim_dir):
                                   seed=row.seed)
 
 
-def construct_argweaver_name(sim_name, seed, iteration_number=None):
+def construct_argweaver_name(sim_name, burnin, ntimes, seed, iteration_number=None):
     """
     Returns an ARGweaver inference filename (without file extension),
     based on a simulation name. The iteration number (used in .smc and .nex output)
@@ -215,7 +215,7 @@ def construct_argweaver_name(sim_name, seed, iteration_number=None):
     'i.10', 'i.100', etc
     """
     d,f = os.path.split(sim_name)
-    suffix = "ws"+str(int(seed))
+    suffix = "burn"+str(int(burnin)) + "nt"+str(int(ntimes)) + "ws"+str(int(seed))
     if iteration_number is not None:
         suffix += "_i."+ str(int(iteration_number))
     return os.path.join(d,'+'.join(['aweaver', f, suffix]))
@@ -226,6 +226,7 @@ def argweaver_names_from_msprime_row(row, sim_dir):
     there is one name per argweaver iteration listed in row.ARGweaver_iterations
     """
     return [construct_argweaver_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'),
+                                     burnin=row.ARGweaver_burnin, ntimes=ARGweaver_ntimes,
                                      seed=row.seed, iteration_number=it)
                 for it in nanblank(row.ARGweaver_iterations).split(",") if it]
 
@@ -423,8 +424,15 @@ class InferenceRunner(object):
 
 
     def __run_ARGweaver(
-            self, n_out_samples=10, sample_step=20, burnin_iterations=1000):
+            self, n_out_samples=10, sample_step=20, 
+            default_ARGweaver_burnin=1000, default_ARGweaver_ntimes=20):
+        """
+        The two default values are used if there are no columns which specify the 
+        number of burn in iterations or number of discretised timesteps
+        """
         inference_seed = self.row.seed  # TODO do we need to specify this separately?
+        burnin = getattr(self.row,'ARGweaver_burnin', default_ARGweaver_burnin)
+        n_timesteps = getattr(self.row,'ARGweaver_ntimes', default_ARGweaver_ntimes)
         infile = self.base_fn + ".sites"
         time = memory = None
         filesizes = []
@@ -433,14 +441,13 @@ class InferenceRunner(object):
         stats_file = None
         self.inferred_nexus_files = []
         logging.debug("reading: {} for ARGweaver inference".format(infile))
-        out_fn = construct_argweaver_name(self.base_fn, inference_seed)
+        out_fn = construct_argweaver_name(self.base_fn, burnin, n_timesteps, inference_seed)
         iteration_ids, stats_file, time, memory = self.run_argweaver(
             infile, self.row.Ne, self.row.recombination_rate, self.row.mutation_rate,
-            out_fn, inference_seed, n_out_samples,
-            sample_step, burnin_iterations,
+            out_fn, inference_seed, n_out_samples, sample_step, burnin, n_timesteps,
             verbose = logging.getLogger().isEnabledFor(logging.DEBUG))
         for it in iteration_ids:
-            base = construct_argweaver_name(self.base_fn, inference_seed, it)
+            base = construct_argweaver_name(self.base_fn, burnin, n_timesteps, inference_seed, it)
             if self.compute_tree_metrics:
                 nexus = base + ".nex"
                 with open(nexus, "w+") as out:
@@ -531,7 +538,7 @@ class InferenceRunner(object):
     @staticmethod
     def run_argweaver(
             sites_file, Ne, recombination_rate, mutation_rate, path_prefix, seed,
-            MSMC_samples, sample_step, burnin_iterations=0, verbose=False):
+            MSMC_samples, sample_step, burnin_iterations, ntimes, verbose=False):
         """
         this produces a whole load of .smc files labelled <path_prefix>i.0.smc,
         <path_prefix>i.10.smc, etc.
@@ -547,6 +554,7 @@ class InferenceRunner(object):
                    '--popsize', str(Ne),
                    '--recombrate', str(recombination_rate),
                    '--mutrate', str(mutation_rate),
+                   '--ntimes', str(ntimes),
                    '--overwrite']
             if not verbose:
                 exe += ['--quiet']
@@ -707,6 +715,11 @@ class Dataset(object):
         for row_id in row_ids:
             row = self.data.iloc[row_id]
             for tool in tools:
+                #special case for ARGweaver, to allow multiple runs for the same sim
+                if getattr(row,"only_AW",False) and tool != ARGWEAVER:
+                    logging.info("Data row {} is set to skip {} inference".format(
+                        row_id,tool) + " (probably to avoid duplicate effort)")
+                    continue
                 # Only run for a particular tool if it has not already completed
                 # of if --force is specified.
                 if force or not row[tool + "_completed"]:
@@ -873,8 +886,8 @@ class MetricsByMutationRateDataset(Dataset):
             "sample_size", "Ne", "length", "recombination_rate", "mutation_rate",
             "error_rate", "seed"]
         # Variable parameters
-        mutation_rates = np.logspace(-8, -4, num=6)[:-1] * 1.5
-        error_rates = [0]
+        mutation_rates = np.logspace(-8, -5, num=6)[:-1] * 1.5
+        error_rates = [0, 0.01, 0.1]
         sample_sizes = [10, 50]
 
         # Fixed parameters
@@ -1082,6 +1095,91 @@ class ProgramComparison(Dataset):
                 self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
                 if show_progress:
                     progress.update()
+        return data
+
+class ARGweaverParamChanges(Dataset):
+    """
+    Accuracy of ARGweaver inference (measured by various tree statistics)
+    as we adjust burn-in time and number of time slices.
+    This is an attempt to explain why ARGweaver can do badly e.g. for high mutation rates
+    """
+    name = "argweaver_param_changes"
+    tools = [ARGWEAVER, TSINFER]
+    default_replicates = 10
+    default_seed = 123
+    compute_tree_metrics = True
+
+    #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
+    exclude_colnames =[]
+
+
+    def run_simulations(self, replicates, seed, show_progress):
+        if replicates is None:
+            replicates = self.default_replicates
+        if seed is None:
+            seed = self.default_seed
+        rng = random.Random(seed)
+        cols = [
+            "sample_size", "Ne", "length", "recombination_rate", "mutation_rate",
+            "error_rate", "seed", "only_AW", "ARGweaver_burnin", "ARGweaver_ntimes"]
+        # Variable parameters
+        mutation_rates = np.logspace(-6.5, -3, num=6)[:-1] * 1.5
+        error_rates = [0]
+        sample_sizes = [6]
+        AW_burnin_steps = [1000,2000,5000] #by default, bin/arg-sim has n=20
+        AW_num_timepoints = [10,20,50] #by default, bin/arg-sim has n=20
+
+        # Fixed parameters
+        Ne = 5000
+        length = 10000
+        recombination_rate = 2.5e-8
+        num_rows = replicates * len(mutation_rates) * len(error_rates) * len(sample_sizes)
+        data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
+        row_id = 0
+        if show_progress:
+            progress = tqdm.tqdm(total=num_rows)
+        for replicate in range(replicates):
+            for mutation_rate in mutation_rates:
+                for sample_size in sample_sizes:
+                    done = False
+                    while not done:
+                        replicate_seed = rng.randint(1, 2**31)
+                        # Run the simulation
+                        ts, fn = self.single_simulation(
+                            sample_size, Ne, length, recombination_rate, mutation_rate,
+                            replicate_seed, replicate_seed,
+                            #discretise_mutations=True)
+                            discretise_mutations=False) #stop doing Jerome's discretising step!
+                        # Reject this instances if we got no mutations.
+                        done = ts.get_num_mutations() > 0
+                    with open(fn +".nex", "w+") as out:
+                        ts.write_nexus_trees(
+                            out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+                    # Add the rows for each of the error rates in this replicate
+                    for error_rate in error_rates:
+                        only_run_ARGweaver_inference = 0
+                        #set up new rows for each set of ARGweaver parameters
+                        for burnin in AW_burnin_steps:
+                            for n_timesteps in ARGweaver_ntimes:
+                                row = data.iloc[row_id]
+                                row_id += 1
+                                row.sample_size = sample_size
+                                row.recombination_rate = recombination_rate
+                                row.mutation_rate = mutation_rate
+                                row.length = length
+                                row.Ne = Ne
+                                row.seed = replicate_seed
+                                row.error_rate = error_rate
+                                row.ARGweaver_burnin = burnin
+                                row.ARGweaver_ntimes = n_timesteps
+                                row.only_AW = only_run_ARGweaver_inference
+                                #only run other infers for the first row in this set of AW run parameters
+                                only_run_ARGweaver_inference = 1
+                        self.save_variant_matrices(ts, fn, error_rate,
+                            #infinite_sites=True)
+                            infinite_sites=False)
+                        if show_progress:
+                            progress.update()
         return data
 
 
