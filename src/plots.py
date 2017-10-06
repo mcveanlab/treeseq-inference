@@ -465,7 +465,6 @@ class InferenceRunner(object):
                     msprime_edges.seek(0)
                     inferred_ts, node_map = msprime.load_text(
                         nodes=msprime_nodes, edges=msprime_edges).simplify()
-                    logging.info(node_map)
                     inferred_ts.dump(base + ".hdf5")
                     filesizes.append(os.path.getsize(base + ".hdf5"))
                     edges.append(inferred_ts.num_edges)
@@ -887,8 +886,8 @@ class MetricsByMutationRateDataset(Dataset):
             "error_rate", "seed"]
         # Variable parameters
         mutation_rates = np.logspace(-8, -5, num=6)[:-1] * 1.5
-        error_rates = [0, 0.01, 0.1]
-        sample_sizes = [10, 50]
+        error_rates = [0, 0.01]
+        sample_sizes = [10, 20]
 
         # Fixed parameters
         Ne = 5000
@@ -1102,6 +1101,10 @@ class ARGweaverParamChanges(Dataset):
     Accuracy of ARGweaver inference (measured by various tree statistics)
     as we adjust burn-in time and number of time slices.
     This is an attempt to explain why ARGweaver can do badly e.g. for high mutation rates
+
+    You can check that the timeslices really *are* having an effect by looking at the unique
+    times (field 3) in the .arg files within raw__NOBACKUP__/argweaver_param_changes e.g. 
+    cut -f 3 data/raw__NOBACKUP__/argweaver_param_changes/simulations/<filename>.arg | sort | uniq
     """
     name = "argweaver_param_changes"
     tools = [ARGWEAVER, TSINFER]
@@ -1127,13 +1130,14 @@ class ARGweaverParamChanges(Dataset):
         error_rates = [0]
         sample_sizes = [6]
         AW_burnin_steps = [1000,2000,5000] #by default, bin/arg-sim has n=20
-        AW_num_timepoints = [10,20,50] #by default, bin/arg-sim has n=20
+        AW_num_timepoints = [10,20,100] #by default, bin/arg-sim has n=20
 
         # Fixed parameters
         Ne = 5000
         length = 10000
         recombination_rate = 2.5e-8
-        num_rows = replicates * len(mutation_rates) * len(error_rates) * len(sample_sizes)
+        num_rows = replicates * len(mutation_rates) * len(error_rates) * len(sample_sizes) * \
+            len(AW_burnin_steps) * len(AW_num_timepoints)
         data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
         row_id = 0
         if show_progress:
@@ -1196,6 +1200,12 @@ class Figure(object):
     datasetClass = None
     name = None
     figures_dir = "figures"
+    tools_format = collections.OrderedDict([
+        (TSINFER,   {"mark":"*", "col":"blue"}),
+        (RENTPLUS,  {"mark":"s", "col":"red"}),
+        (ARGWEAVER, {"mark":"o", "col":"green"}),
+        (FASTARG,   {"mark":"^", "col":"magenta"}),
+    ])
     """
     Each figure has a unique name. This is used as the identifier and the
     file name for the output plots.
@@ -1225,12 +1235,6 @@ class AllMetricsByMutationRateFigure(Figure):
         error_rates = df.error_rate.unique()
         sample_sizes = df.sample_size.unique()
 
-        tools = collections.OrderedDict([
-            ("tsinfer", "blue"),
-            ("RentPlus", "red"),
-            ("ARGweaver", "green"),
-            ("fastARG", "magenta"),
-        ])
         metrics = ARG_metrics.get_metric_names()
         fig, axes = pyplot.subplots(len(metrics), 3, figsize=(12, 30))
         lines = []
@@ -1247,9 +1251,9 @@ class AllMetricsByMutationRateFigure(Figure):
                     df_s = df[np.logical_and(df.sample_size == n, df.error_rate == error_rate)]
                     group = df_s.groupby(["mutation_rate"])
                     group_mean = group.mean()
-                    for tool in tools.keys():
+                    for tool, setting in self.tools_format.items():
                         ax.semilogx(
-                            group_mean[tool + "_" + metric], linestyle, color=tools[tool])
+                            group_mean[tool + "_" + metric], linestyle, color=setting["col"])
                         # ax.plot(group_mean[tool + "_" + metric])
 
         self.savefig(fig)
@@ -1268,20 +1272,6 @@ class MetricByMutationRateFigure(Figure):
         error_rates = df.error_rate.unique()
         sample_sizes = df.sample_size.unique()
 
-        # TODO move this into the superclass so that we have consistent styling.
-        tool_colours = collections.OrderedDict([
-            ("tsinfer", "blue"),
-            ("RentPlus", "red"),
-            ("ARGweaver", "green"),
-            ("fastARG", "magenta"),
-        ])
-        tool_markers = collections.OrderedDict([
-            ("tsinfer", "*"),
-            ("RentPlus", "s"),
-            ("ARGweaver", "o"),
-            ("fastARG", "^"),
-        ])
-        tools = list(tool_colours.keys())
         linestyles = ["-", ":"]
         fig, axes = pyplot.subplots(1, 3, figsize=(12, 6), sharey=True)
         lines = []
@@ -1296,7 +1286,7 @@ class MetricByMutationRateFigure(Figure):
                 df_s = df[np.logical_and(df.sample_size == n, df.error_rate == error_rate)]
                 group = df_s.groupby(["mutation_rate"])
                 mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-                for tool in tools:
+                for tool,setting in self.tools_format.items():
                     if getattr(self, 'error_bars', None):
                         yerr=[m['sem'][tool + "_" + self.metric] for m in mean_sem]
                     else:
@@ -1306,19 +1296,19 @@ class MetricByMutationRateFigure(Figure):
                         [m['mean'][tool + "_" + self.metric] for m in mean_sem],
                         yerr=yerr,
                         linestyle=linestyle,
-                        color=tool_colours[tool],
-                        marker=tool_markers[tool],
+                        color=setting["col"],
+                        marker=setting["mark"],
                         elinewidth=1)
 
         axes[0].set_ylim(self.ylim)
 
         # Create legends from custom artists
         artists = [
-            pyplot.Line2D((0,1),(0,0), color=tool_colours[tool],
-                marker=tool_markers[tool], linestyle='')
-            for tool in tools]
+            pyplot.Line2D((0,1),(0,0), color= setting["col"],
+                marker= setting["mark"], linestyle='')
+            for tool,setting in self.tools_format.items()]
         first_legend = axes[0].legend(
-            artists, tools, numpoints=3, loc="upper center")
+            artists, self.tools_format.keys(), numpoints=3, loc="upper center")
             # bbox_to_anchor=(0.0, 0.1))
         # ax = pyplot.gca().add_artist(first_legend)
         artists = [
@@ -1357,20 +1347,6 @@ class CputimeMetricByMutationsRateFigure(MetricByMutationRateFigure):
         df = self.dataset.data
         sample_sizes = df.sample_size.unique()
 
-        # TODO move this into the superclass so that we have consistent styling.
-        tool_colours = collections.OrderedDict([
-            ("tsinfer", "blue"),
-            ("RentPlus", "red"),
-            ("ARGweaver", "green"),
-            ("fastARG", "magenta"),
-        ])
-        tool_markers = collections.OrderedDict([
-            ("tsinfer", "*"),
-            ("RentPlus", "s"),
-            ("ARGweaver", "o"),
-            ("fastARG", "^"),
-        ])
-        tools = list(tool_colours.keys())
         linestyles = ["-", ":"]
         fig, ax = pyplot.subplots(1, 1)
         lines = []
@@ -1381,15 +1357,103 @@ class CputimeMetricByMutationsRateFigure(MetricByMutationRateFigure):
         df_s = df[np.logical_and(df.sample_size == n, df.error_rate == error_rate)]
         group = df_s.groupby(["mutation_rate"])
         group_mean = group.mean()
-        for tool in tools:
+        for tool, setting in self.tools_format.items():
             ax.semilogx(
                 group_mean[tool + "_" + "cputime"],
-                color=tool_colours[tool],
-                marker=tool_markers[tool],
+                color=setting["col"],
+                marker=setting["mark"],
                 label=tool)
         ax.legend(loc="center left")
         ax.set_ylim(-20, 1000)
         self.savefig(fig)
+
+class MetricByARGweaverParametersFigure(Figure):
+    """
+    See the effect of burnin time and number of timeslices on the accuracy of ARGweaver
+    as compared to TSinfer, when looking at tree metrics.
+    """
+    datasetClass = ARGweaverParamChanges
+
+    def plot(self):
+        df = self.dataset.data
+        tools = self.dataset.tools
+        AW_burnin = df.ARGweaver_burnin.unique()
+        AW_discrete_timeslices = df.ARGweaver_ntimes.unique()
+
+        # TODO move this into the superclass so that we have consistent styling.
+        linestyles = [":","-.", "-"]
+        fig, axes = pyplot.subplots(1, 3, figsize=(12, 6), sharey=True)
+        lines = []
+        for k, ntimes in enumerate(AW_discrete_timeslices):
+            ax = axes[k]
+            ax.set_title("ARGweaver timeslices = {}".format(ntimes))
+            ax.set_xlabel("Mutation rate")
+            ax.set_xscale('log')
+            if k == 0:
+                ax.set_ylabel(self.metric + " metric")
+            
+            #get the only tsinfer data for this selection (regardless of ntimes)
+            tool = TSINFER
+            df_s = df[np.logical_not(df[tool + "_" + self.metric].isnull())]
+            group = df_s.groupby(["mutation_rate"])
+            mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
+            if getattr(self, 'error_bars', None):
+                yerr=[m['sem'][tool + "_" + self.metric] for m in mean_sem]
+            else:
+                yerr = None
+            ax.errorbar(
+                [m['mu'] for m in mean_sem], 
+                [m['mean'][tool + "_" + self.metric] for m in mean_sem],
+                yerr=yerr,
+                linestyle=linestyles[0],
+                color=self.tools_format[tool]["col"],
+                marker=self.tools_format[tool]["mark"],
+                elinewidth=1)
+            
+            
+            for n, linestyle in zip(AW_burnin, linestyles):
+                tool = ARGWEAVER
+                df_s = df[np.logical_and(df.ARGweaver_burnin == n, df.ARGweaver_ntimes == ntimes)]
+                group = df_s.groupby(["mutation_rate"])
+                mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
+                if getattr(self, 'error_bars', None):
+                    yerr=[m['sem'][tool + "_" + self.metric] for m in mean_sem]
+                else:
+                    yerr = None
+                ax.errorbar(
+                    [m['mu'] for m in mean_sem], 
+                    [m['mean'][tool + "_" + self.metric] for m in mean_sem],
+                    yerr=yerr,
+                    linestyle=linestyle,
+                    color=self.tools_format[tool]["col"],
+                    marker=self.tools_format[tool]["mark"],
+                    elinewidth=1)
+
+        axes[0].set_ylim(self.ylim)
+
+        # Create legends from custom artists
+        artists = [
+            pyplot.Line2D((0,1),(0,0), color=self.tools_format[tool]["col"],
+                marker=self.tools_format[tool]["mark"], linestyle='')
+            for tool in tools]
+        first_legend = axes[0].legend(
+            artists, tools, numpoints=3, loc="upper center")
+            # bbox_to_anchor=(0.0, 0.1))
+        # ax = pyplot.gca().add_artist(first_legend)
+        artists = [
+            pyplot.Line2D(
+                (0,0),(0,0), color="black", linestyle=linestyle, linewidth=2)
+            for linestyle in linestyles]
+        axes[-1].legend(
+            artists, ["Burn in = {} gens".format(n) for n in AW_burnin],
+            loc="upper center")
+        self.savefig(fig)
+
+class KCRootedMetricByARGweaverParametersFigure(MetricByARGweaverParametersFigure):
+    name = "kc_rooted_metrics_by_argweaver_params"
+    metric = "KCrooted"
+    ylim = (0, 10)
+    error_bars = True
 
 
 class PerformanceFigure(Figure):
@@ -1553,15 +1617,9 @@ class ProgramComparisonFigure(Figure):
         group = dfp.groupby(["length"])
         group_mean = group.mean()
 
-        colours = {
-            TSINFER: "blue",
-            RENTPLUS: "green",
-            FASTARG: "red"
-        }
-
         for tool in tools:
             col = tool + "_" + self.plotted_column
-            ax1.plot(group_mean[col], label=tool, color=colours[tool])
+            ax1.plot(group_mean[col], label=tool, color=self.tools_format[tool]["col"])
         ax1.legend(
             loc="upper left", numpoints=1, fontsize="small")
 
@@ -1574,7 +1632,7 @@ class ProgramComparisonFigure(Figure):
 
         for tool in tools:
             col = tool + "_" + self.plotted_column
-            ax2.plot(group_mean[col], label=tool, color=colours[tool])
+            ax2.plot(group_mean[col], label=tool, color=self.tools_format[tool]["col"])
 
         ax2.set_xlabel("Sample size")
 
@@ -1623,8 +1681,8 @@ def main():
         RFRootedMetricByMutationsRateFigure,
         KCRootedMetricByMutationsRateFigure,
         CputimeMetricByMutationsRateFigure,
+        KCRootedMetricByARGweaverParametersFigure,
         EdgesPerformanceFigure,
-        EdgesetsPerformanceFigure,
         FileSizePerformanceFigure,
         ProgramComparisonTimeFigure,
         ProgramComparisonMemoryFigure,
