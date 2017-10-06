@@ -1160,7 +1160,7 @@ class ARGweaverParamChanges(Dataset):
                         only_run_ARGweaver_inference = 0
                         #set up new rows for each set of ARGweaver parameters
                         for burnin in AW_burnin_steps:
-                            for n_timesteps in ARGweaver_ntimes:
+                            for n_timesteps in AW_num_timepoints:
                                 row = data.iloc[row_id]
                                 row_id += 1
                                 row.sample_size = sample_size
