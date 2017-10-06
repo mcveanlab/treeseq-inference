@@ -371,7 +371,7 @@ class InferenceRunner(object):
                 inferred_ts.write_nexus_trees(
                     out, tree_labels_between_variants=True,
                     zero_based_tip_numbers=tree_tip_labels_start_at_0)
-        unique, counts = np.unique(np.array([e.parent in inferred_ts.edges()], dtype="u8"), return_counts=True)
+        unique, counts = np.unique(np.array([e.parent for e in inferred_ts.edges()], dtype="u8"), return_counts=True)
         return  {
             save_stats['cpu']: time,
             save_stats['mem']: memory,
