@@ -563,6 +563,7 @@ class InferenceRunner(object):
                 burn_in = str(int(burnin_iterations))
                 burn_prefix = path_prefix+"_burn"
                 logging.info("== Burning in ARGweaver MCMC using {} steps ==".format(burn_in))
+                logging.debug("== ARGweaver burnin command is {} ==".format(" ".join(exe)))
                 c, m = time_cmd(exe + ['--iters', burn_in,
                                        '--sample-step', burn_in,
                                        '--output', burn_prefix])
@@ -601,7 +602,10 @@ class InferenceRunner(object):
         except ValueError as e:
             if 'src/argweaver/sample_thread.cpp:517:' in str(e):
                 logging.info("Hit argweaver bug https://github.com/mcveanlab/treeseq-inference/issues/25. Skipping")
-                return "Simulation error", "NA", None, None
+                return [], "NA", None, None
+            elif "Assertion `trans[path[i]] != 0.0' failed" in str(e):
+                logging.info("Hit argweaver bug https://github.com/mcveanlab/treeseq-inference/issues/42. Skipping")
+                return [], "NA", None, None
             else:
                 raise
 
@@ -1108,7 +1112,7 @@ class ARGweaverParamChanges(Dataset):
     """
     name = "argweaver_param_changes"
     tools = [ARGWEAVER, TSINFER]
-    default_replicates = 10
+    default_replicates = 40
     default_seed = 123
     compute_tree_metrics = True
 
@@ -1126,11 +1130,11 @@ class ARGweaverParamChanges(Dataset):
             "sample_size", "Ne", "length", "recombination_rate", "mutation_rate",
             "error_rate", "seed", "only_AW", "ARGweaver_burnin", "ARGweaver_ntimes"]
         # Variable parameters
-        mutation_rates = np.logspace(-6.5, -3, num=6)[:-1] * 1.5
+        mutation_rates = np.logspace(-5, -3, num=8)[:-1] * 1.5
         error_rates = [0]
         sample_sizes = [6]
         AW_burnin_steps = [1000,2000,5000] #by default, bin/arg-sim has n=20
-        AW_num_timepoints = [10,20,100] #by default, bin/arg-sim has n=20
+        AW_num_timepoints = [20,60,200] #by default, bin/arg-sim has n=20
 
         # Fixed parameters
         Ne = 5000
@@ -1452,7 +1456,7 @@ class MetricByARGweaverParametersFigure(Figure):
 class KCRootedMetricByARGweaverParametersFigure(MetricByARGweaverParametersFigure):
     name = "kc_rooted_metrics_by_argweaver_params"
     metric = "KCrooted"
-    ylim = (0, 10)
+    ylim = (0, 4)
     error_bars = True
 
 
