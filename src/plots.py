@@ -244,7 +244,7 @@ def rentplus_name_from_msprime_row(row, sim_dir):
     """
     return construct_rentplus_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'))
 
-def construct_tsinfer_name(sim_name, subsample_size=None):
+def construct_tsinfer_name(sim_name, subsample_size=None, shared_breakpoints=0, shared_lengths=0):
     """
     Returns an MSprime Li & Stevens inference filename.
     If the file is a subset of the original, this can be added to the
@@ -252,7 +252,12 @@ def construct_tsinfer_name(sim_name, subsample_size=None):
     add_subsample_param_to_name() routine.
     """
     d,f = os.path.split(sim_name)
-    name = os.path.join(d,'+'.join(['tsinfer', f, ""]))
+    suffix = ""
+    if shared_breakpoints is not None:
+        suffix += "srb"+str(int(shared_breakpoints))
+    if shared_lengths is not None:
+        suffix += "sl"+str(int(shared_lengths))
+    name = os.path.join(d,'+'.join(['tsinfer', f, suffix]))
     if subsample_size is not None and not pd.isnull(subsample_size):
         name = add_subsample_param_to_name(name, subsample_size)
     return name
@@ -262,9 +267,15 @@ def tsinfer_name_from_msprime_row(row, sim_dir, subsample_size=None):
     return the tsinfer name based on an msprime sim specified by row
     """
     if subsample_size is None and not pd.isnull(subsample_size):
-        return construct_tsinfer_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'))
+        return construct_tsinfer_name(
+            msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'),
+            shared_breakpoints = getattr(self.row,'tsinfer_srb', None),
+            shared_lengths = getattr(self.row,'tsinfer_sl', None)
+            )
     else:
         return construct_tsinfer_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'),
+            shared_breakpoints = getattr(self.row,'tsinfer_srb', None),
+            shared_lengths = getattr(self.row,'tsinfer_sl', None),
             subsample_size = subsample_size)
 
 
@@ -992,23 +1003,24 @@ class TsinferPerformance(Dataset):
         if show_progress:
             progress = tqdm.tqdm(total=num_rows)
         for sample_size, length in work:
-            for tsinfer_srb in shared_breakpoint_params:
-                for tsinfer_sl in shared_length_params:
-                    for _ in range(replicates):
-                        replicate_seed = rng.randint(1, 2**31)
-                        ts, fn = self.single_simulation(
-                            sample_size, Ne, length, recombination_rate, mutation_rate,
-                            replicate_seed, replicate_seed, discretise_mutations=False)
-                        assert ts.get_num_mutations() > 0
-                        # Tsinfer should be robust to this, but it currently isn't. Fail
-                        # noisily now rather than obscurely later. This will only ever happen
-                        # in trivially small data sets, so it doesn't matter.
-                        non_singletons = False
-                        for v in ts.variants():
-                            if np.sum(v.genotypes) > 1:
-                                non_singletons = True
-                        if not non_singletons:
-                            raise ValueError("No non-single mutations present")
+            for _ in range(replicates):
+                replicate_seed = rng.randint(1, 2**31)
+                #use same simulation seed for different params
+                ts, fn = self.single_simulation(
+                    sample_size, Ne, length, recombination_rate, mutation_rate,
+                    replicate_seed, replicate_seed, discretise_mutations=False)
+                assert ts.get_num_mutations() > 0
+                # Tsinfer should be robust to this, but it currently isn't. Fail
+                # noisily now rather than obscurely later. This will only ever happen
+                # in trivially small data sets, so it doesn't matter.
+                non_singletons = False
+                for v in ts.variants():
+                    if np.sum(v.genotypes) > 1:
+                        non_singletons = True
+                if not non_singletons:
+                    raise ValueError("No non-single mutations present")
+                for tsinfer_srb in shared_breakpoint_params:
+                    for tsinfer_sl in shared_length_params:
                         row = data.iloc[row_id]
                         row_id += 1
                         row.sample_size = sample_size
@@ -1476,7 +1488,8 @@ class PerformanceFigure(Figure):
     """
     Superclass for the performance metrics figures. Each of these figures
     has two panels; one for scaling by sequence length and the other
-    for scaling by sample size.
+    for scaling by sample size. Different lines are given for each
+    of the different combinations of tsinfer parameters
     """
     datasetClass = TsinferPerformance
     plotted_column = None
@@ -1533,6 +1546,7 @@ class PerformanceFigure(Figure):
 
 class EdgesPerformanceFigure(PerformanceFigure):
     name = "edges_performance"
+    plotted_column = "edges"
 
     def plot(self):
         df = self.dataset.data
@@ -1590,12 +1604,6 @@ class EdgesPerformanceFigure(PerformanceFigure):
         # pyplot.savefig("plots/simulators.pdf")
         self.savefig(fig)
 
-
-
-class EdgesetsPerformanceFigure(PerformanceFigure):
-    name = "edgesets_performance"
-    plotted_column = "edgesets"
-    y_axis_label = "Edgesets"
 
 
 class FileSizePerformanceFigure(PerformanceFigure):
