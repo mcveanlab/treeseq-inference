@@ -991,8 +991,8 @@ class TsinferPerformance(Dataset):
         if show_progress:
             progress = tqdm.tqdm(total=num_rows)
         for sample_size, length in work:
-            for tsinfer_srb in [False, True]:
-                for tsinfer_sl in [False, True]:
+            for tsinfer_srb in [0, 1]:
+                for tsinfer_sl in [0, 1]:
                     for _ in range(replicates):
                         replicate_seed = rng.randint(1, 2**31)
                         ts, fn = self.single_simulation(
@@ -1018,7 +1018,7 @@ class TsinferPerformance(Dataset):
                         row.seed = replicate_seed
                         row.error_rate = error_rate
                         row.tsinfer_srb = tsinfer_srb
-                        row.tsinfer_sl = row.tsinfer_sl
+                        row.tsinfer_sl = tsinfer_sl
                         row.ts_filesize = os.path.getsize(fn + ".hdf5")
                         row.edges = ts.num_edges
                         self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
