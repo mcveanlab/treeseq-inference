@@ -352,7 +352,9 @@ class InferenceRunner(object):
             self.tool, int(self.row[0]), ret))
         return ret
 
-    def __run_tsinfer(self):
+    def __run_tsinfer(self, default_shared_recombinations=False, default_shared_lengths=False):
+        shared_recombinations = bool(getattr(self.row,'tsinfer_srb', default_shared_recombinations))
+        shared_lengths = bool(getattr(self.row,'tsinfer_sl', default_shared_lengths))
         samples_fn = self.base_fn + ".npy"
         positions_fn = self.base_fn + ".pos.npy"
         time = memory = fs = poly_sum = poly_ssq = poly_max = n = None
@@ -361,7 +363,7 @@ class InferenceRunner(object):
         scaled_recombination_rate = 4 * self.row.recombination_rate * self.row.Ne
         inferred_ts, time, memory = self.run_tsinfer(
             samples_fn, positions_fn, self.row.length, scaled_recombination_rate,
-            self.row.error_rate, self.num_threads)
+            self.row.error_rate, shared_recombinations, shared_lengths, self.num_threads)
         out_fn = construct_tsinfer_name(self.base_fn)
         inferred_ts.dump(out_fn + ".inferred.hdf5")
         fs = os.path.getsize(out_fn + ".inferred.hdf5")
@@ -481,13 +483,18 @@ class InferenceRunner(object):
         return results
 
     @staticmethod
-    def run_tsinfer(sample_fn, positions_fn, length, rho, error_probability, num_threads=1):
+    def run_tsinfer(sample_fn, positions_fn, length, rho, error_probability, 
+        shared_recombinations, shared_lengths, num_threads=1):
         with tempfile.NamedTemporaryFile("w+") as ts_out:
             cmd = [
                 sys.executable, tsinfer_executable, sample_fn, positions_fn,
                 "--length", str(int(length)), "--recombination-rate", str(rho),
                 "--error-probability", str(error_probability),
                 "--threads", str(num_threads), ts_out.name]
+            if shared_recombinations:
+                cmd.append("--shared-recombinations")
+            if shared_lengths:
+                cmd.append("--shared-lengths")
             cpu_time, memory_use = time_cmd(cmd)
             ts_simplified = msprime.load(ts_out.name)
         return ts_simplified, cpu_time, memory_use
@@ -962,7 +969,7 @@ class TsinferPerformance(Dataset):
         rng = random.Random(seed)
         cols = [
             "sample_size", "Ne", "length", "recombination_rate", "mutation_rate",
-            "error_rate", "seed", "ts_filesize", "edges"]
+            "error_rate", "seed", "tsinfer_srb", "tsinfer_sl", "ts_filesize", "edges"]
         # Variable parameters
         num_points = 20
         sample_sizes = np.linspace(10, 2 * self.fixed_sample_size, num_points).astype(int)
@@ -984,35 +991,39 @@ class TsinferPerformance(Dataset):
         if show_progress:
             progress = tqdm.tqdm(total=num_rows)
         for sample_size, length in work:
-            for _ in range(replicates):
-                replicate_seed = rng.randint(1, 2**31)
-                ts, fn = self.single_simulation(
-                    sample_size, Ne, length, recombination_rate, mutation_rate,
-                    replicate_seed, replicate_seed, discretise_mutations=False)
-                assert ts.get_num_mutations() > 0
-                # Tsinfer should be robust to this, but it currently isn't. Fail
-                # noisily now rather than obscurely later. This will only ever happen
-                # in trivially small data sets, so it doesn't matter.
-                non_singletons = False
-                for v in ts.variants():
-                    if np.sum(v.genotypes) > 1:
-                        non_singletons = True
-                if not non_singletons:
-                    raise ValueError("No non-single mutations present")
-                row = data.iloc[row_id]
-                row_id += 1
-                row.sample_size = sample_size
-                row.recombination_rate = recombination_rate
-                row.mutation_rate = mutation_rate
-                row.length = length
-                row.Ne = Ne
-                row.seed = replicate_seed
-                row.error_rate = error_rate
-                row.ts_filesize = os.path.getsize(fn + ".hdf5")
-                row.edges = ts.num_edges
-                self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
-                if show_progress:
-                    progress.update()
+            for tsinfer_srb in [False, True]:
+                for tsinfer_sl in [False, True]:
+                    for _ in range(replicates):
+                        replicate_seed = rng.randint(1, 2**31)
+                        ts, fn = self.single_simulation(
+                            sample_size, Ne, length, recombination_rate, mutation_rate,
+                            replicate_seed, replicate_seed, discretise_mutations=False)
+                        assert ts.get_num_mutations() > 0
+                        # Tsinfer should be robust to this, but it currently isn't. Fail
+                        # noisily now rather than obscurely later. This will only ever happen
+                        # in trivially small data sets, so it doesn't matter.
+                        non_singletons = False
+                        for v in ts.variants():
+                            if np.sum(v.genotypes) > 1:
+                                non_singletons = True
+                        if not non_singletons:
+                            raise ValueError("No non-single mutations present")
+                        row = data.iloc[row_id]
+                        row_id += 1
+                        row.sample_size = sample_size
+                        row.recombination_rate = recombination_rate
+                        row.mutation_rate = mutation_rate
+                        row.length = length
+                        row.Ne = Ne
+                        row.seed = replicate_seed
+                        row.error_rate = error_rate
+                        row.tsinfer_srb = tsinfer_srb
+                        row.tsinfer_sl = row.tsinfer_sl
+                        row.ts_filesize = os.path.getsize(fn + ".hdf5")
+                        row.edges = ts.num_edges
+                        self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
+                        if show_progress:
+                            progress.update()
         return data
 
 
