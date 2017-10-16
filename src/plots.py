@@ -974,7 +974,8 @@ class TsinferPerformance(Dataset):
         num_points = 20
         sample_sizes = np.linspace(10, 2 * self.fixed_sample_size, num_points).astype(int)
         lengths = np.linspace(self.fixed_length / 10, 2 * self.fixed_length, num_points).astype(int)
-
+        shared_breakpoint_params = [False, True]
+        shared_length_params = [False, True]
         # Fixed parameters
         Ne = 5000
         # TODO we'll want to do this for multiple error rates eventually. For now
@@ -982,7 +983,7 @@ class TsinferPerformance(Dataset):
         error_rate = 0
         recombination_rate = 2.5e-8
         mutation_rate = recombination_rate
-        num_rows = 2 * num_points * replicates
+        num_rows = 2 * num_points * replicates * len(shared_breakpoint_params) * len(shared_length_params)
         data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
         work = [
             (self.fixed_sample_size, l) for l in lengths] + [
@@ -991,8 +992,8 @@ class TsinferPerformance(Dataset):
         if show_progress:
             progress = tqdm.tqdm(total=num_rows)
         for sample_size, length in work:
-            for tsinfer_srb in [0, 1]:
-                for tsinfer_sl in [0, 1]:
+            for tsinfer_srb in shared_breakpoint_params:
+                for tsinfer_sl in shared_length_params:
                     for _ in range(replicates):
                         replicate_seed = rng.randint(1, 2**31)
                         ts, fn = self.single_simulation(
