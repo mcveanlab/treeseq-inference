@@ -20,12 +20,12 @@ import json
 import logging
 import multiprocessing
 import os.path
+import sys
 import random
 import shutil
 import signal
 import statistics
 import subprocess
-import sys
 import tempfile
 import time
 
@@ -1499,16 +1499,65 @@ class PerformanceFigure(Figure):
         df = self.dataset.data
         # Rescale the length to MB
         df.length /= 10**6
+        # Set statistics to the ratio of observed over expected
+        df['metric'] = df["tsinfer_" + self.plotted_column] / df[self.plotted_column]
         fig, (ax1, ax2) = pyplot.subplots(1, 2, sharey=True, figsize=(8, 5.5))
         source_colour = "red"
         inferred_colour = "blue"
-        dfp = df[df.sample_size == self.datasetClass.fixed_sample_size]
-        group = dfp.groupby(["length"])
-        group_mean = group.mean()
-        ax1.plot(group_mean["tsinfer_" + self.plotted_column] /
-                group_mean[self.plotted_column],
-                color=source_colour, linestyle="-", label="Source")
+        inferred_linestyles = {False:{False:':',True:'-.'},True:{False:'--',True:'-'}}
+        inferred_markers =    {False:{False:':',True:'-.'},True:{False:'--',True:'-'}}
+        fig, (ax1, ax2) = pyplot.subplots(1, 2, figsize=(12, 6), sharey=True)
 
+        ax1.set_xlabel("Mutation rate")
+        ax1.set_ylabel(self.y_axis_label)
+        for shared_breakpoint in [False,True]:
+            for shared_length in [False, True]:
+                dfp = df[np.logical_and.reduce((
+                    df.sample_size == self.datasetClass.fixed_sample_size,
+                    df.tsinfer_srb == shared_breakpoint,
+                    df.tsinfer_sl == shared_length))]
+                group = dfp.groupby(["length"])
+                    #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
+                mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
+                if getattr(self, 'error_bars', None):
+                    yerr=[m['sem'] for m in mean_sem]
+                else:
+                    yerr = None
+                ax1.errorbar(
+                    [m['mu'] for m in mean_sem], 
+                    [m['mean']['metric'] for m in mean_sem],
+                    yerr=yerr,
+                    linestyle=inferred_linestyles[shared_breakpoint][shared_length],
+                    color=inferred_colour,
+                    #marker=self.tools_format[tool]["mark"],
+                    elinewidth=1)
+                
+        ax2.set_xlabel("Sample size")
+        ax2.set_ylabel(self.y_axis_label)
+        for shared_breakpoint in [False,True]:
+            for shared_length in [False, True]:
+                dfp = df[np.logical_and.reduce((
+                    df.length == self.datasetClass.fixed_length / 10**6,
+                    df.tsinfer_srb == shared_breakpoint,
+                    df.tsinfer_sl == shared_length))]
+                group = dfp.groupby(["sample_size"])
+                    #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
+                mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
+                if getattr(self, 'error_bars', None):
+                    yerr=[m['sem'] for m in mean_sem]
+                else:
+                    yerr = None
+                print([m['mu'] for m in mean_sem])
+                print([m['mean']['metric'] for m in mean_sem])
+                ax2.errorbar(
+                    [m['mu'] for m in mean_sem], 
+                    [m['mean']['metric'] for m in mean_sem],
+                    yerr=yerr,
+                    linestyle=inferred_linestyles[shared_breakpoint][shared_length],
+                    color=inferred_colour,
+                    #marker=self.tools_format[tool]["mark"],
+                    elinewidth=1)
+        
         # ax1.plot(group_mean[self.plotted_column],
         #         color=source_colour, linestyle="-", label="Source")
         # ax1.plot(
@@ -1516,22 +1565,7 @@ class PerformanceFigure(Figure):
         #     color=inferred_colour, linestyle="-", label="Inferred")
         # ax1.legend(
         #     loc="upper left", numpoints=1, fontsize="small")
-        ax1.set_xlabel("Length (MB)")
-        ax1.set_ylabel(self.y_axis_label)
 
-        dfp = df[df.length == self.datasetClass.fixed_length / 10**6]
-        group = dfp.groupby(["sample_size"])
-        group_mean = group.mean()
-        ax2.plot(group_mean["tsinfer_" + self.plotted_column] /
-                group_mean[self.plotted_column],
-                color=source_colour, linestyle="-", label="Source")
-        # ax2.plot(
-        #     group_mean[self.plotted_column], color=source_colour, linestyle="-")
-        # ax2.plot(
-        #     group_mean["tsinfer_" + self.plotted_column], color=inferred_colour,
-        #     linestyle="-")
-
-        ax2.set_xlabel("Sample size")
         # ax1.set_xlim(-5, 105)
         # ax1.set_ylim(-5, 250)
         # ax2.set_xlim(-5, 105)
@@ -1547,63 +1581,7 @@ class PerformanceFigure(Figure):
 class EdgesPerformanceFigure(PerformanceFigure):
     name = "edges_performance"
     plotted_column = "edges"
-
-    def plot(self):
-        df = self.dataset.data
-        # Rescale the length to KB
-        df.length /= 10**6
-        fig, (ax1, ax2) = pyplot.subplots(1, 2, sharey=True, figsize=(8, 5.5))
-        source_colour = "red"
-        inferred_colour = "blue"
-        dfp = df[df.sample_size == self.datasetClass.fixed_sample_size]
-        group = dfp.groupby(["length"])
-        group_mean = group.mean()
-
-        # print(group_mean)
-
-        ax1.plot(group_mean["tsinfer_edges"] /
-                group_mean["tsinfer_edgesets"],
-                color=source_colour, linestyle="-", label="Source")
-
-        # ax1.plot(group_mean[self.plotted_column],
-        #         color=source_colour, linestyle="-", label="Source")
-        # ax1.plot(
-        #     group_mean["tsinfer_" + self.plotted_column],
-        #     color=inferred_colour, linestyle="-", label="Inferred")
-        # ax1.legend(
-        #     loc="upper left", numpoints=1, fontsize="small")
-        ax1.set_xlabel("Length (MB)")
-        ax1.set_ylabel("Mean #children")
-        # ax1.set_ylim(0, 15)
-
-        dfp = df[df.length == self.datasetClass.fixed_length / 10**6]
-        group = dfp.groupby(["sample_size"])
-        group_mean = group.mean()
-
-        ax2.plot(group_mean["tsinfer_edges"] /
-                group_mean["tsinfer_edgesets"],
-                color=source_colour, linestyle="-", label="Source")
-
-#         ax2.plot(group_mean["tsinfer_" + self.plotted_column] /
-#                 group_mean[self.plotted_column],
-#                 color=source_colour, linestyle="-", label="Source")
-        # ax2.plot(
-        #     group_mean[self.plotted_column], color=source_colour, linestyle="-")
-        # ax2.plot(
-        #     group_mean["tsinfer_" + self.plotted_column], color=inferred_colour,
-        #     linestyle="-")
-
-        ax2.set_xlabel("Sample size")
-        # ax1.set_xlim(-5, 105)
-        # ax1.set_ylim(-5, 250)
-        # ax2.set_xlim(-5, 105)
-
-        fig.tight_layout()
-        # fig.text(0.19, 0.97, "Sample size = 1000")
-        # fig.text(0.60, 0.97, "Sequence length = 50Mb")
-        # pyplot.savefig("plots/simulators.pdf")
-        self.savefig(fig)
-
+    y_axis_label = "inferred_edges / real_edges"
 
 
 class FileSizePerformanceFigure(PerformanceFigure):
