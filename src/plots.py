@@ -1483,6 +1483,12 @@ class KCRootedMetricByARGweaverParametersFigure(MetricByARGweaverParametersFigur
     ylim = (0, 4)
     error_bars = True
 
+class RFRootedMetricByARGweaverParametersFigure(MetricByARGweaverParametersFigure):
+    name = "rf_rooted_metrics_by_argweaver_params"
+    metric = "RFrooted"
+    #ylim = (0, 4)
+    error_bars = True
+
 
 class PerformanceFigure(Figure):
     """
@@ -1547,8 +1553,6 @@ class PerformanceFigure(Figure):
                     yerr=[m['sem'] for m in mean_sem]
                 else:
                     yerr = None
-                print([m['mu'] for m in mean_sem])
-                print([m['mean']['metric'] for m in mean_sem])
                 ax2.errorbar(
                     [m['mu'] for m in mean_sem], 
                     [m['mean']['metric'] for m in mean_sem],
