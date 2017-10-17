@@ -1700,6 +1700,7 @@ def main():
         KCRootedMetricByMutationsRateFigure,
         CputimeMetricByMutationsRateFigure,
         KCRootedMetricByARGweaverParametersFigure,
+        RFRootedMetricByARGweaverParametersFigure,
         EdgesPerformanceFigure,
         FileSizePerformanceFigure,
         ProgramComparisonTimeFigure,
