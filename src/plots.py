@@ -1486,6 +1486,7 @@ class KCRootedMetricByARGweaverParametersFigure(MetricByARGweaverParametersFigur
 class RFRootedMetricByARGweaverParametersFigure(MetricByARGweaverParametersFigure):
     name = "rf_rooted_metrics_by_argweaver_params"
     metric = "RFrooted"
+    ylim = None
     #ylim = (0, 4)
     error_bars = True
 
