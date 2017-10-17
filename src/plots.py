@@ -1154,10 +1154,10 @@ class ARGweaverParamChanges(Dataset):
             "sample_size", "Ne", "length", "recombination_rate", "mutation_rate",
             "error_rate", "seed", "only_AW", "ARGweaver_burnin", "ARGweaver_ntimes"]
         # Variable parameters
-        mutation_rates = np.logspace(-5, -3, num=8)[:-1] * 1.5
+        mutation_rates = np.logspace(-8, -3, num=8)[:-1] * 1.5
         error_rates = [0]
         sample_sizes = [6]
-        AW_burnin_steps = [1000,2000,5000] #by default, bin/arg-sim has n=20
+        AW_burnin_steps = [1000,2000,5000] #by default, bin/arg-sim has no burnin time
         AW_num_timepoints = [20,60,200] #by default, bin/arg-sim has n=20
 
         # Fixed parameters
