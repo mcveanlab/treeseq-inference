@@ -1571,6 +1571,18 @@ class PerformanceFigure(Figure):
         # ax2.set_xlim(-5, 105)
 
         fig.tight_layout()
+        params = [
+            pyplot.Line2D(
+                (0,0),(0,0), color= inferred_colour, 
+                linestyle=inferred_linestyles[shared_breakpoint][shared_length], linewidth=2)
+            for shared_breakpoint, linestyles2 in inferred_linestyles.items()
+            for shared_length, linestyle in linestyles2.items()]
+        ax1.legend(
+            params, ["breakpoints={}, lengths={}".format(srb, sl)
+                for srb, linestyles2 in inferred_linestyles.items()
+                for sl, linestyle in  linestyles2.items()],
+            loc="lower right", fontsize=10)
+
         # fig.text(0.19, 0.97, "Sample size = 1000")
         # fig.text(0.60, 0.97, "Sequence length = 50Mb")
         # pyplot.savefig("plots/simulators.pdf")
