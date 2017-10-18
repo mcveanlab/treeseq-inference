@@ -477,7 +477,7 @@ class InferenceRunner(object):
                         smc2arg_executable, base, msprime_nodes, msprime_edges)
                     msprime_nodes.seek(0)
                     msprime_edges.seek(0)
-                    inferred_ts, node_map = msprime.load_text(
+                    inferred_ts = msprime.load_text(
                         nodes=msprime_nodes, edges=msprime_edges).simplify()
                     inferred_ts.dump(base + ".hdf5")
                     filesizes.append(os.path.getsize(base + ".hdf5"))

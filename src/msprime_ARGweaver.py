@@ -305,8 +305,7 @@ def main(args):
         import msprime
         logging.info("== Converting new msprime ARG as hdf5 ===")
         try:
-            ts, node_map = msprime.load_text(nodes=msprime_nodes, edges=msprime_edges).simplify()
-            logging.info(" node map after simplification is {}".format(node_map))
+            ts = msprime.load_text(nodes=msprime_nodes, edges=msprime_edges)
         except:
             logging.warning("Can't load the texts file properly. Saved copied to 'bad.nodes' & 'bad.edges' for inspection")
             shutil.copyfile(msprime_nodes.name, "bad.nodes")

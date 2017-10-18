@@ -208,8 +208,7 @@ def fastARG_out_to_msprime(fastARG_out_filehandle, variant_positions, seq_len=No
         tempfile.NamedTemporaryFile("w+") as mutations:
         fastARG_out_to_msprime_txts(fastARG_out_filehandle, variant_positions,
             nodes, edges, sites, mutations, seq_len=seq_len)
-        ts, node_map = msprime.load_text(nodes=nodes, edges=edges, sites=sites, mutations=mutations).simplify()
-        #logging.info("Node map after fastarg round trip is {}".format(node_map))
+        ts = msprime.load_text(nodes=nodes, edges=edges, sites=sites, mutations=mutations).simplify()
         return ts
 
 def compare_fastARG_haplotypes(fastARG_fn_in, ts_in, save=False):
@@ -244,7 +243,7 @@ def main(ts, fastARG_executable, fa_in, fa_out, nodes_fh, edges_fh, sites_fh, mu
         nodes_fh, edges_fh, sites_fh, muts_fh, seq_len=seq_len)
 
     new_ts = msprime.load_text(nodes=nodes_fh, edges=edges_fh, sites=sites_fh, mutations=muts_fh)
-    simple_ts = new_ts.simplify()[0]
+    simple_ts = new_ts.simplify()
     logging.debug("Simplified num_records should always be < unsimplified num_records.\n"
         "For low mutationRate:recombinationRate ratio,"
         " the initial num records will probably be higher than the"
