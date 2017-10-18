@@ -1523,7 +1523,7 @@ class PerformanceFigure(Figure):
         inferred_linestyles = {False:{False:':',True:'-.'},True:{False:'--',True:'-'}}
         inferred_markers =    {False:{False:':',True:'-.'},True:{False:'--',True:'-'}}
         fig, (ax1, ax2) = pyplot.subplots(1, 2, figsize=(12, 6), sharey=True)
-
+        ax1.set_title("Fixed number of chromosomes ({})".format(self.datasetClass.fixed_sample_size))
         ax1.set_xlabel("Sequence length (MB)")
         ax1.set_ylabel(self.y_axis_label)
         for shared_breakpoint in [False,True]:
@@ -1548,6 +1548,7 @@ class PerformanceFigure(Figure):
                     #marker=self.tools_format[tool]["mark"],
                     elinewidth=1)
                 
+        ax2.set_title("Fixed sequence length ({:.2f} Mb)".format(self.datasetClass.fixed_length / 10**6))
         ax2.set_xlabel("Sample size")
         ax2.set_ylabel(self.y_axis_label)
         for shared_breakpoint in [False,True]:
@@ -1584,7 +1585,6 @@ class PerformanceFigure(Figure):
         # ax1.set_ylim(-5, 250)
         # ax2.set_xlim(-5, 105)
 
-        fig.tight_layout()
         params = [
             pyplot.Line2D(
                 (0,0),(0,0), color= inferred_colour, 
@@ -1600,6 +1600,7 @@ class PerformanceFigure(Figure):
         # fig.text(0.19, 0.97, "Sample size = 1000")
         # fig.text(0.60, 0.97, "Sequence length = 50Mb")
         # pyplot.savefig("plots/simulators.pdf")
+        pyplot.suptitle('Tsinfer large dataset performance')
         self.savefig(fig)
 
 
