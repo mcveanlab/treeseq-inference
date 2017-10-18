@@ -1524,7 +1524,7 @@ class PerformanceFigure(Figure):
         inferred_markers =    {False:{False:':',True:'-.'},True:{False:'--',True:'-'}}
         fig, (ax1, ax2) = pyplot.subplots(1, 2, figsize=(12, 6), sharey=True)
 
-        ax1.set_xlabel("Mutation rate")
+        ax1.set_xlabel("Sequence length (MB)")
         ax1.set_ylabel(self.y_axis_label)
         for shared_breakpoint in [False,True]:
             for shared_length in [False, True]:
