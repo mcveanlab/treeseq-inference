@@ -496,20 +496,28 @@ class InferenceRunner(object):
     @staticmethod
     def run_tsinfer(sample_fn, positions_fn, length, rho, error_probability, 
         shared_recombinations, shared_lengths, num_threads=1):
-        with tempfile.NamedTemporaryFile("w+") as ts_out:
-            cmd = [
-                sys.executable, tsinfer_executable, sample_fn, positions_fn,
-                "--length", str(int(length)), "--recombination-rate", str(rho),
-                "--error-probability", str(error_probability),
-                "--threads", str(num_threads), ts_out.name]
-            if shared_recombinations:
-                cmd.append("--shared-recombinations")
-            if shared_lengths:
-                cmd.append("--shared-lengths")
-            cpu_time, memory_use = time_cmd(cmd)
-            ts_simplified = msprime.load(ts_out.name)
-        return ts_simplified, cpu_time, memory_use
-
+        try:
+            with tempfile.NamedTemporaryFile("w+") as ts_out:
+                cmd = [
+                    sys.executable, tsinfer_executable, sample_fn, positions_fn,
+                    "--length", str(int(length)), "--recombination-rate", str(rho),
+                    "--error-probability", str(error_probability),
+                    "--threads", str(num_threads), ts_out.name]
+                if shared_recombinations:
+                    cmd.append("--shared-recombinations")
+                if shared_lengths:
+                    cmd.append("--shared-lengths")
+                cpu_time, memory_use = time_cmd(cmd)
+                ts_simplified = msprime.load(ts_out.name)
+            return ts_simplified, cpu_time, memory_use
+        except ValueError as e:
+            # temporary hack around tsinfer bug
+            if 'time[parent] must be greater than time[child]' in str(e):
+                logging.info("Hit tsinfer bug. Skipping")
+                return [], "NA", None, None
+            else:
+                raise
+    
     @staticmethod
     def run_fastarg(file_name, seq_length, seed):
         with tempfile.NamedTemporaryFile("w+") as fa_out, \
