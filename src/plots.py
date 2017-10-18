@@ -856,7 +856,7 @@ class Dataset(object):
         # mut_seed==genealogy_seed
         sim_fn = msprime_name(n, Ne, l, rho, mu, seed, seed, self.simulations_dir)
         logging.debug("writing {}.hdf5".format(sim_fn))
-        ts.dump(sim_fn+".hdf5", zlib_compression=True)
+        ts.dump(sim_fn+".hdf5")
         return ts, sim_fn
 
     def save_variant_matrices(self, ts, fname, error_rate=0, infinite_sites=True):
