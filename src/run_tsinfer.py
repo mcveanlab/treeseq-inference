@@ -32,6 +32,12 @@ def main():
         "output",
         help="The path to write the output file to")
     parser.add_argument(
+        "-srb", "--shared-recombinations", action='store_true',
+        help="Use shared recombinations to break polytomies")
+    parser.add_argument(
+        "-sl", "--shared-lengths", action='store_true',
+        help="Use shorter shared lengths of sequence to break polytomies")
+    parser.add_argument(
         "-l", "--length", default=None, type=int,
         help="The total sequence length")
     parser.add_argument(
@@ -53,9 +59,7 @@ def main():
         args.recombination_rate,
         args.error_probability,
         num_threads=args.threads,
-        # Setting shared recombination resolution to false here for now
-        # because it makes inference slower.
-        resolve_shared_recombinations=False)
+        resolve_shared_recombinations=args.shared_recombinations, resolve_polytomies=args.shared_lengths)
     ts.dump(args.output)
 
     # # TODO add command line arg here for when we're comparing run time performance.

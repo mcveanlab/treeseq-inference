@@ -92,9 +92,9 @@ def discretise_mutations(ts):
             new_mutations.add_row(position=x, nodes=mut.nodes)
             x += 1
     nodes = msprime.NodeTable()
-    edgesets = msprime.EdgesetTable()
-    ts.dump_tables(nodes=nodes, edgesets=edgesets)
-    return msprime.load_tables(nodes=nodes, edgesets=edgesets, mutations=new_mutations)
+    edges = msprime.EdgeTable()
+    ts.dump_tables(nodes=nodes, edges=edges)
+    return msprime.load_tables(nodes=nodes, edges=edges, mutations=new_mutations)
 
 
 def write_nexus_trees(

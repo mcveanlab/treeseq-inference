@@ -20,12 +20,12 @@ import json
 import logging
 import multiprocessing
 import os.path
+import sys
 import random
 import shutil
 import signal
 import statistics
 import subprocess
-import sys
 import tempfile
 import time
 
@@ -68,7 +68,6 @@ if sys.version_info[0] < 3:
 save_stats = dict(
     cpu = "cputime",
     mem =  "memory",
-    n_edgesets = "edgesets",
     n_edges = "edges",
     ts_filesize = "ts_filesize"
 )
@@ -207,7 +206,7 @@ def fastarg_name_from_msprime_row(row, sim_dir):
                                   seed=row.seed)
 
 
-def construct_argweaver_name(sim_name, seed, iteration_number=None):
+def construct_argweaver_name(sim_name, burnin, ntimes, seed, iteration_number=None):
     """
     Returns an ARGweaver inference filename (without file extension),
     based on a simulation name. The iteration number (used in .smc and .nex output)
@@ -216,7 +215,7 @@ def construct_argweaver_name(sim_name, seed, iteration_number=None):
     'i.10', 'i.100', etc
     """
     d,f = os.path.split(sim_name)
-    suffix = "ws"+str(int(seed))
+    suffix = "burn"+str(int(burnin)) + "nt"+str(int(ntimes)) + "ws"+str(int(seed))
     if iteration_number is not None:
         suffix += "_i."+ str(int(iteration_number))
     return os.path.join(d,'+'.join(['aweaver', f, suffix]))
@@ -227,6 +226,7 @@ def argweaver_names_from_msprime_row(row, sim_dir):
     there is one name per argweaver iteration listed in row.ARGweaver_iterations
     """
     return [construct_argweaver_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'),
+                                     burnin=row.ARGweaver_burnin, ntimes=ARGweaver_ntimes,
                                      seed=row.seed, iteration_number=it)
                 for it in nanblank(row.ARGweaver_iterations).split(",") if it]
 
@@ -244,7 +244,7 @@ def rentplus_name_from_msprime_row(row, sim_dir):
     """
     return construct_rentplus_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'))
 
-def construct_tsinfer_name(sim_name, subsample_size=None):
+def construct_tsinfer_name(sim_name, subsample_size=None, shared_breakpoints=0, shared_lengths=0):
     """
     Returns an MSprime Li & Stevens inference filename.
     If the file is a subset of the original, this can be added to the
@@ -252,7 +252,12 @@ def construct_tsinfer_name(sim_name, subsample_size=None):
     add_subsample_param_to_name() routine.
     """
     d,f = os.path.split(sim_name)
-    name = os.path.join(d,'+'.join(['tsinfer', f, ""]))
+    suffix = ""
+    if shared_breakpoints is not None:
+        suffix += "srb"+str(int(shared_breakpoints))
+    if shared_lengths is not None:
+        suffix += "sl"+str(int(shared_lengths))
+    name = os.path.join(d,'+'.join(['tsinfer', f, suffix]))
     if subsample_size is not None and not pd.isnull(subsample_size):
         name = add_subsample_param_to_name(name, subsample_size)
     return name
@@ -262,9 +267,15 @@ def tsinfer_name_from_msprime_row(row, sim_dir, subsample_size=None):
     return the tsinfer name based on an msprime sim specified by row
     """
     if subsample_size is None and not pd.isnull(subsample_size):
-        return construct_tsinfer_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'))
+        return construct_tsinfer_name(
+            msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'),
+            shared_breakpoints = getattr(self.row,'tsinfer_srb', None),
+            shared_lengths = getattr(self.row,'tsinfer_sl', None)
+            )
     else:
         return construct_tsinfer_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample'),
+            shared_breakpoints = getattr(self.row,'tsinfer_srb', None),
+            shared_lengths = getattr(self.row,'tsinfer_sl', None),
             subsample_size = subsample_size)
 
 
@@ -352,53 +363,48 @@ class InferenceRunner(object):
             self.tool, int(self.row[0]), ret))
         return ret
 
-    def __run_tsinfer(self):
+    def __run_tsinfer(self, default_shared_recombinations=False, default_shared_lengths=False):
+        shared_recombinations = bool(getattr(self.row,'tsinfer_srb', default_shared_recombinations))
+        shared_lengths = bool(getattr(self.row,'tsinfer_sl', default_shared_lengths))
         samples_fn = self.base_fn + ".npy"
         positions_fn = self.base_fn + ".pos.npy"
-        time = memory = fs = poly_sum = poly_ssq = poly_max = n = None
+        time = memory = fs = counts = None
         logging.debug("reading: variant matrix {} & positions {} for msprime inference".format(
             samples_fn, positions_fn))
         scaled_recombination_rate = 4 * self.row.recombination_rate * self.row.Ne
         inferred_ts, time, memory = self.run_tsinfer(
             samples_fn, positions_fn, self.row.length, scaled_recombination_rate,
-            self.row.error_rate, self.num_threads)
-        out_fn = construct_tsinfer_name(self.base_fn)
-        inferred_ts.dump(out_fn + ".inferred.hdf5")
-        fs = os.path.getsize(out_fn + ".inferred.hdf5")
-        if self.compute_tree_metrics:
-            self.inferred_nexus_files = [out_fn + ".nex"]
-            with open(self.inferred_nexus_files[0], "w+") as out:
-                #tree metrics assume tips are numbered from 1 not 0
-                inferred_ts.write_nexus_trees(
-                    out, tree_labels_between_variants=True,
-                    zero_based_tip_numbers=tree_tip_labels_start_at_0)
-        poly_sum = poly_ssq = poly_max = 0
-        for e in inferred_ts.edgesets():
-            poly_sum += len(e.children)
-            poly_ssq += len(e.children)**2
-            poly_max = max(len(e.children), poly_max)
-        poly_mean = poly_sum / inferred_ts.num_edgesets
-        n = inferred_ts.num_edgesets
+            self.row.error_rate, shared_recombinations, shared_lengths, self.num_threads)
+        if inferred_ts:
+            out_fn = construct_tsinfer_name(self.base_fn)
+            inferred_ts.dump(out_fn + ".inferred.hdf5")
+            fs = os.path.getsize(out_fn + ".inferred.hdf5")
+            if self.compute_tree_metrics:
+                self.inferred_nexus_files = [out_fn + ".nex"]
+                with open(self.inferred_nexus_files[0], "w+") as out:
+                    #tree metrics assume tips are numbered from 1 not 0
+                    inferred_ts.write_nexus_trees(
+                        out, tree_labels_between_variants=True,
+                        zero_based_tip_numbers=tree_tip_labels_start_at_0)
+            unique, counts = np.unique(np.array([e.parent for e in inferred_ts.edges()], dtype="u8"), return_counts=True)
         return  {
             save_stats['cpu']: time,
             save_stats['mem']: memory,
-            save_stats['n_edgesets']: n,
-            save_stats['n_edges']: poly_sum,
+            save_stats['n_edges']: None if counts is None else np.sum(counts),
             save_stats['ts_filesize']: fs,
-            'mean_polytomy': poly_mean if n else None,
-            'var_polytomy': ((poly_ssq - poly_sum**2/n)/ (n-1)) if n and n>1 else None,
-            'max_polytomy': poly_max
+            'mean_polytomy': None if counts is None else np.mean(counts),
+            'var_polytomy': None if counts is None else np.var(counts),
+            'max_polytomy': None if counts is None else np.max(counts)
         }
 
     def __run_fastARG(self):
         inference_seed = self.row.seed  # TODO do we need to specify this separately?
         infile = self.base_fn + ".hap"
         out_fn = construct_fastarg_name(self.base_fn, inference_seed)
-        time = memory = edgesets = None
+        time = memory = None
         logging.debug("reading: {} for fastARG inference".format(infile))
         inferred_ts, time, memory = self.run_fastarg(infile, self.row.length, inference_seed)
-        edgesets = inferred_ts.num_edgesets
-        edges = sum(len(e.children) for e in inferred_ts.edgesets())
+        edges = inferred_ts.num_edges
         inferred_ts.dump(out_fn + ".hdf5")
         fs = os.path.getsize(out_fn + ".hdf5")
         if self.compute_tree_metrics:
@@ -409,7 +415,6 @@ class InferenceRunner(object):
         return {
             save_stats['cpu']: time,
             save_stats['mem']: memory,
-            save_stats['n_edgesets']: edgesets,
             save_stats['n_edges']: edges,
             save_stats['ts_filesize']: fs,
         }
@@ -433,25 +438,30 @@ class InferenceRunner(object):
 
 
     def __run_ARGweaver(
-            self, n_out_samples=10, sample_step=20, burnin_iterations=1000):
+            self, n_out_samples=10, sample_step=20, 
+            default_ARGweaver_burnin=1000, default_ARGweaver_ntimes=20):
+        """
+        The two default values are used if there are no columns which specify the 
+        number of burn in iterations or number of discretised timesteps
+        """
         inference_seed = self.row.seed  # TODO do we need to specify this separately?
+        burnin = getattr(self.row,'ARGweaver_burnin', default_ARGweaver_burnin)
+        n_timesteps = getattr(self.row,'ARGweaver_ntimes', default_ARGweaver_ntimes)
         infile = self.base_fn + ".sites"
         time = memory = None
         filesizes = []
-        edgesets = []
         edges = []
         iteration_ids = []
         stats_file = None
         self.inferred_nexus_files = []
         logging.debug("reading: {} for ARGweaver inference".format(infile))
-        out_fn = construct_argweaver_name(self.base_fn, inference_seed)
+        out_fn = construct_argweaver_name(self.base_fn, burnin, n_timesteps, inference_seed)
         iteration_ids, stats_file, time, memory = self.run_argweaver(
             infile, self.row.Ne, self.row.recombination_rate, self.row.mutation_rate,
-            out_fn, inference_seed, n_out_samples,
-            sample_step, burnin_iterations,
+            out_fn, inference_seed, n_out_samples, sample_step, burnin, n_timesteps,
             verbose = logging.getLogger().isEnabledFor(logging.DEBUG))
         for it in iteration_ids:
-            base = construct_argweaver_name(self.base_fn, inference_seed, it)
+            base = construct_argweaver_name(self.base_fn, burnin, n_timesteps, inference_seed, it)
             if self.compute_tree_metrics:
                 nexus = base + ".nex"
                 with open(nexus, "w+") as out:
@@ -462,24 +472,22 @@ class InferenceRunner(object):
                 #if we want to record number of coalescence records we need
                 #to convert the ARGweaver output to msprime, which is buggy
                 with open(base+".TSnodes", "w+") as msprime_nodes, \
-                        open(base+".TSedgesets", "w+") as msprime_edgesets:
+                        open(base+".TSedges", "w+") as msprime_edges:
                     msprime_ARGweaver.ARGweaver_smc_to_msprime_txts(
-                        smc2arg_executable, base, msprime_nodes, msprime_edgesets)
+                        smc2arg_executable, base, msprime_nodes, msprime_edges)
                     msprime_nodes.seek(0)
-                    msprime_edgesets.seek(0)
-                    inferred_ts = msprime.load_text(
-                        nodes=msprime_nodes, edgesets=msprime_edgesets).simplify()
+                    msprime_edges.seek(0)
+                    inferred_ts, node_map = msprime.load_text(
+                        nodes=msprime_nodes, edges=msprime_edges).simplify()
                     inferred_ts.dump(base + ".hdf5")
                     filesizes.append(os.path.getsize(base + ".hdf5"))
-                    edgesets.append(inferred_ts.num_edgesets)
-                    edges.append(sum(len(e.children) for e in inferred_ts.edgesets()))
+                    edges.append(inferred_ts.num_edges)
             except msprime_ARGweaver.CyclicalARGError as e:
                 logging.info("Exception caught converting {}: {}".format(
                     base + ".msp", e))
         results = {
             save_stats['cpu']: time,
             save_stats['mem']: memory,
-            save_stats['n_edgesets']: statistics.mean(edgesets) if len(edgesets) else None,
             save_stats['n_edges']: statistics.mean(edges) if len(edges) else None,
             save_stats['ts_filesize']: statistics.mean(filesizes) if len(filesizes) else None,
             "iterations": ",".join(iteration_ids),
@@ -487,17 +495,30 @@ class InferenceRunner(object):
         return results
 
     @staticmethod
-    def run_tsinfer(sample_fn, positions_fn, length, rho, error_probability, num_threads=1):
-        with tempfile.NamedTemporaryFile("w+") as ts_out:
-            cmd = [
-                sys.executable, tsinfer_executable, sample_fn, positions_fn,
-                "--length", str(int(length)), "--recombination-rate", str(rho),
-                "--error-probability", str(error_probability),
-                "--threads", str(num_threads), ts_out.name]
-            cpu_time, memory_use = time_cmd(cmd)
-            ts_simplified = msprime.load(ts_out.name)
-        return ts_simplified, cpu_time, memory_use
-
+    def run_tsinfer(sample_fn, positions_fn, length, rho, error_probability, 
+        shared_recombinations, shared_lengths, num_threads=1):
+        try:
+            with tempfile.NamedTemporaryFile("w+") as ts_out:
+                cmd = [
+                    sys.executable, tsinfer_executable, sample_fn, positions_fn,
+                    "--length", str(int(length)), "--recombination-rate", str(rho),
+                    "--error-probability", str(error_probability),
+                    "--threads", str(num_threads), ts_out.name]
+                if shared_recombinations:
+                    cmd.append("--shared-recombinations")
+                if shared_lengths:
+                    cmd.append("--shared-lengths")
+                cpu_time, memory_use = time_cmd(cmd)
+                ts_simplified = msprime.load(ts_out.name)
+            return ts_simplified, cpu_time, memory_use
+        except ValueError as e:
+            # temporary hack around tsinfer bug
+            if 'time[parent] must be greater than time[child]' in str(e):
+                logging.info("Hit tsinfer bug. Skipping")
+                return None, None, None
+            else:
+                raise
+    
     @staticmethod
     def run_fastarg(file_name, seq_length, seed):
         with tempfile.NamedTemporaryFile("w+") as fa_out, \
@@ -543,7 +564,7 @@ class InferenceRunner(object):
     @staticmethod
     def run_argweaver(
             sites_file, Ne, recombination_rate, mutation_rate, path_prefix, seed,
-            MSMC_samples, sample_step, burnin_iterations=0, verbose=False):
+            MSMC_samples, sample_step, burnin_iterations, ntimes, verbose=False):
         """
         this produces a whole load of .smc files labelled <path_prefix>i.0.smc,
         <path_prefix>i.10.smc, etc.
@@ -559,6 +580,7 @@ class InferenceRunner(object):
                    '--popsize', str(Ne),
                    '--recombrate', str(recombination_rate),
                    '--mutrate', str(mutation_rate),
+                   '--ntimes', str(ntimes),
                    '--overwrite']
             if not verbose:
                 exe += ['--quiet']
@@ -568,6 +590,7 @@ class InferenceRunner(object):
                 burn_in = str(int(burnin_iterations))
                 burn_prefix = path_prefix+"_burn"
                 logging.info("== Burning in ARGweaver MCMC using {} steps ==".format(burn_in))
+                logging.debug("== ARGweaver burnin command is {} ==".format(" ".join(exe)))
                 c, m = time_cmd(exe + ['--iters', burn_in,
                                        '--sample-step', burn_in,
                                        '--output', burn_prefix])
@@ -606,7 +629,10 @@ class InferenceRunner(object):
         except ValueError as e:
             if 'src/argweaver/sample_thread.cpp:517:' in str(e):
                 logging.info("Hit argweaver bug https://github.com/mcveanlab/treeseq-inference/issues/25. Skipping")
-                return "Simulation error", "NA", None, None
+                return [], "NA", None, None
+            elif "Assertion `trans[path[i]] != 0.0' failed" in str(e):
+                logging.info("Hit argweaver bug https://github.com/mcveanlab/treeseq-inference/issues/42. Skipping")
+                return [], "NA", None, None
             else:
                 raise
 
@@ -719,6 +745,11 @@ class Dataset(object):
         for row_id in row_ids:
             row = self.data.iloc[row_id]
             for tool in tools:
+                #special case for ARGweaver, to allow multiple runs for the same sim
+                if getattr(row,"only_AW",False) and tool != ARGWEAVER:
+                    logging.info("Data row {} is set to skip {} inference".format(
+                        row_id,tool) + " (probably to avoid duplicate effort)")
+                    continue
                 # Only run for a particular tool if it has not already completed
                 # of if --force is specified.
                 if force or not row[tool + "_completed"]:
@@ -872,7 +903,7 @@ class MetricsByMutationRateDataset(Dataset):
     compute_tree_metrics = True
 
     #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
-    exclude_colnames =[save_stats['n_edgesets'],]
+    exclude_colnames =[]
 
 
     def run_simulations(self, replicates, seed, show_progress):
@@ -886,8 +917,8 @@ class MetricsByMutationRateDataset(Dataset):
             "error_rate", "seed"]
         # Variable parameters
         mutation_rates = np.logspace(-8, -5, num=6)[:-1] * 1.5
-        error_rates = [0, 0.01, 0.1]
-        sample_sizes = [10, 50]
+        error_rates = [0, 0.01]
+        sample_sizes = [10, 20]
 
         # Fixed parameters
         Ne = 5000
@@ -958,12 +989,13 @@ class TsinferPerformance(Dataset):
         rng = random.Random(seed)
         cols = [
             "sample_size", "Ne", "length", "recombination_rate", "mutation_rate",
-            "error_rate", "seed", "ts_filesize", "edges", "edgesets"]
+            "error_rate", "seed", "tsinfer_srb", "tsinfer_sl", "ts_filesize", "edges"]
         # Variable parameters
         num_points = 20
         sample_sizes = np.linspace(10, 2 * self.fixed_sample_size, num_points).astype(int)
         lengths = np.linspace(self.fixed_length / 10, 2 * self.fixed_length, num_points).astype(int)
-
+        shared_breakpoint_params = [False, True]
+        shared_length_params = [False, True]
         # Fixed parameters
         Ne = 5000
         # TODO we'll want to do this for multiple error rates eventually. For now
@@ -971,7 +1003,7 @@ class TsinferPerformance(Dataset):
         error_rate = 0
         recombination_rate = 2.5e-8
         mutation_rate = recombination_rate
-        num_rows = 2 * num_points * replicates
+        num_rows = 2 * num_points * replicates * len(shared_breakpoint_params) * len(shared_length_params)
         data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
         work = [
             (self.fixed_sample_size, l) for l in lengths] + [
@@ -982,6 +1014,7 @@ class TsinferPerformance(Dataset):
         for sample_size, length in work:
             for _ in range(replicates):
                 replicate_seed = rng.randint(1, 2**31)
+                #use same simulation seed for different params
                 ts, fn = self.single_simulation(
                     sample_size, Ne, length, recombination_rate, mutation_rate,
                     replicate_seed, replicate_seed, discretise_mutations=False)
@@ -995,21 +1028,24 @@ class TsinferPerformance(Dataset):
                         non_singletons = True
                 if not non_singletons:
                     raise ValueError("No non-single mutations present")
-                row = data.iloc[row_id]
-                row_id += 1
-                row.sample_size = sample_size
-                row.recombination_rate = recombination_rate
-                row.mutation_rate = mutation_rate
-                row.length = length
-                row.Ne = Ne
-                row.seed = replicate_seed
-                row.error_rate = error_rate
-                row.ts_filesize = os.path.getsize(fn + ".hdf5")
-                row.edgesets = ts.num_edgesets
-                row.edges = sum(len(e.children) for e in ts.edgesets())
-                self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
-                if show_progress:
-                    progress.update()
+                for tsinfer_srb in shared_breakpoint_params:
+                    for tsinfer_sl in shared_length_params:
+                        row = data.iloc[row_id]
+                        row_id += 1
+                        row.sample_size = sample_size
+                        row.recombination_rate = recombination_rate
+                        row.mutation_rate = mutation_rate
+                        row.length = length
+                        row.Ne = Ne
+                        row.seed = replicate_seed
+                        row.error_rate = error_rate
+                        row.tsinfer_srb = tsinfer_srb
+                        row.tsinfer_sl = tsinfer_sl
+                        row.ts_filesize = os.path.getsize(fn + ".hdf5")
+                        row.edges = ts.num_edges
+                        self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
+                        if show_progress:
+                            progress.update()
         return data
 
 
@@ -1097,6 +1133,96 @@ class ProgramComparison(Dataset):
                     progress.update()
         return data
 
+class ARGweaverParamChanges(Dataset):
+    """
+    Accuracy of ARGweaver inference (measured by various tree statistics)
+    as we adjust burn-in time and number of time slices.
+    This is an attempt to explain why ARGweaver can do badly e.g. for high mutation rates
+
+    You can check that the timeslices really *are* having an effect by looking at the unique
+    times (field 3) in the .arg files within raw__NOBACKUP__/argweaver_param_changes e.g. 
+    cut -f 3 data/raw__NOBACKUP__/argweaver_param_changes/simulations/<filename>.arg | sort | uniq
+    """
+    name = "argweaver_param_changes"
+    tools = [ARGWEAVER, TSINFER]
+    default_replicates = 40
+    default_seed = 123
+    compute_tree_metrics = True
+
+    #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
+    exclude_colnames =[]
+
+
+    def run_simulations(self, replicates, seed, show_progress):
+        if replicates is None:
+            replicates = self.default_replicates
+        if seed is None:
+            seed = self.default_seed
+        rng = random.Random(seed)
+        cols = [
+            "sample_size", "Ne", "length", "recombination_rate", "mutation_rate",
+            "error_rate", "seed", "only_AW", "ARGweaver_burnin", "ARGweaver_ntimes"]
+        # Variable parameters
+        mutation_rates = np.logspace(-8, -3, num=8)[:-1] * 1.5
+        error_rates = [0]
+        sample_sizes = [6]
+        AW_burnin_steps = [1000,2000,5000] #by default, bin/arg-sim has no burnin time
+        AW_num_timepoints = [20,60,200] #by default, bin/arg-sim has n=20
+
+        # Fixed parameters
+        Ne = 5000
+        length = 10000
+        recombination_rate = 2.5e-8
+        num_rows = replicates * len(mutation_rates) * len(error_rates) * len(sample_sizes) * \
+            len(AW_burnin_steps) * len(AW_num_timepoints)
+        data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
+        row_id = 0
+        if show_progress:
+            progress = tqdm.tqdm(total=num_rows)
+        for replicate in range(replicates):
+            for mutation_rate in mutation_rates:
+                for sample_size in sample_sizes:
+                    done = False
+                    while not done:
+                        replicate_seed = rng.randint(1, 2**31)
+                        # Run the simulation
+                        ts, fn = self.single_simulation(
+                            sample_size, Ne, length, recombination_rate, mutation_rate,
+                            replicate_seed, replicate_seed,
+                            #discretise_mutations=True)
+                            discretise_mutations=False) #stop doing Jerome's discretising step!
+                        # Reject this instances if we got no mutations.
+                        done = ts.get_num_mutations() > 0
+                    with open(fn +".nex", "w+") as out:
+                        ts.write_nexus_trees(
+                            out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+                    # Add the rows for each of the error rates in this replicate
+                    for error_rate in error_rates:
+                        only_run_ARGweaver_inference = 0
+                        #set up new rows for each set of ARGweaver parameters
+                        for burnin in AW_burnin_steps:
+                            for n_timesteps in AW_num_timepoints:
+                                row = data.iloc[row_id]
+                                row_id += 1
+                                row.sample_size = sample_size
+                                row.recombination_rate = recombination_rate
+                                row.mutation_rate = mutation_rate
+                                row.length = length
+                                row.Ne = Ne
+                                row.seed = replicate_seed
+                                row.error_rate = error_rate
+                                row.ARGweaver_burnin = burnin
+                                row.ARGweaver_ntimes = n_timesteps
+                                row.only_AW = only_run_ARGweaver_inference
+                                #only run other infers for the first row in this set of AW run parameters
+                                only_run_ARGweaver_inference = 1
+                        self.save_variant_matrices(ts, fn, error_rate,
+                            #infinite_sites=True)
+                            infinite_sites=False)
+                        if show_progress:
+                            progress.update()
+        return data
+
 
 ######################################
 #
@@ -1111,6 +1237,12 @@ class Figure(object):
     datasetClass = None
     name = None
     figures_dir = "figures"
+    tools_format = collections.OrderedDict([
+        (TSINFER,   {"mark":"*", "col":"blue"}),
+        (RENTPLUS,  {"mark":"s", "col":"red"}),
+        (ARGWEAVER, {"mark":"o", "col":"green"}),
+        (FASTARG,   {"mark":"^", "col":"magenta"}),
+    ])
     """
     Each figure has a unique name. This is used as the identifier and the
     file name for the output plots.
@@ -1140,12 +1272,6 @@ class AllMetricsByMutationRateFigure(Figure):
         error_rates = df.error_rate.unique()
         sample_sizes = df.sample_size.unique()
 
-        tools = collections.OrderedDict([
-            ("tsinfer", "blue"),
-            ("RentPlus", "red"),
-            ("ARGweaver", "green"),
-            ("fastARG", "magenta"),
-        ])
         metrics = ARG_metrics.get_metric_names()
         fig, axes = pyplot.subplots(len(metrics), 3, figsize=(12, 30))
         lines = []
@@ -1162,9 +1288,9 @@ class AllMetricsByMutationRateFigure(Figure):
                     df_s = df[np.logical_and(df.sample_size == n, df.error_rate == error_rate)]
                     group = df_s.groupby(["mutation_rate"])
                     group_mean = group.mean()
-                    for tool in tools.keys():
+                    for tool, setting in self.tools_format.items():
                         ax.semilogx(
-                            group_mean[tool + "_" + metric], linestyle, color=tools[tool])
+                            group_mean[tool + "_" + metric], linestyle, color=setting["col"])
                         # ax.plot(group_mean[tool + "_" + metric])
 
         self.savefig(fig)
@@ -1183,20 +1309,6 @@ class MetricByMutationRateFigure(Figure):
         error_rates = df.error_rate.unique()
         sample_sizes = df.sample_size.unique()
 
-        # TODO move this into the superclass so that we have consistent styling.
-        tool_colours = collections.OrderedDict([
-            ("tsinfer", "blue"),
-            ("RentPlus", "red"),
-            ("ARGweaver", "green"),
-            ("fastARG", "magenta"),
-        ])
-        tool_markers = collections.OrderedDict([
-            ("tsinfer", "*"),
-            ("RentPlus", "s"),
-            ("ARGweaver", "o"),
-            ("fastARG", "^"),
-        ])
-        tools = list(tool_colours.keys())
         linestyles = ["-", ":"]
         fig, axes = pyplot.subplots(1, 3, figsize=(12, 6), sharey=True)
         lines = []
@@ -1211,7 +1323,7 @@ class MetricByMutationRateFigure(Figure):
                 df_s = df[np.logical_and(df.sample_size == n, df.error_rate == error_rate)]
                 group = df_s.groupby(["mutation_rate"])
                 mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-                for tool in tools:
+                for tool,setting in self.tools_format.items():
                     if getattr(self, 'error_bars', None):
                         yerr=[m['sem'][tool + "_" + self.metric] for m in mean_sem]
                     else:
@@ -1221,19 +1333,19 @@ class MetricByMutationRateFigure(Figure):
                         [m['mean'][tool + "_" + self.metric] for m in mean_sem],
                         yerr=yerr,
                         linestyle=linestyle,
-                        color=tool_colours[tool],
-                        marker=tool_markers[tool],
+                        color=setting["col"],
+                        marker=setting["mark"],
                         elinewidth=1)
 
         axes[0].set_ylim(self.ylim)
 
         # Create legends from custom artists
         artists = [
-            pyplot.Line2D((0,1),(0,0), color=tool_colours[tool],
-                marker=tool_markers[tool], linestyle='')
-            for tool in tools]
+            pyplot.Line2D((0,1),(0,0), color= setting["col"],
+                marker= setting["mark"], linestyle='')
+            for tool,setting in self.tools_format.items()]
         first_legend = axes[0].legend(
-            artists, tools, numpoints=3, loc="upper center")
+            artists, self.tools_format.keys(), numpoints=3, loc="upper center")
             # bbox_to_anchor=(0.0, 0.1))
         # ax = pyplot.gca().add_artist(first_legend)
         artists = [
@@ -1272,20 +1384,6 @@ class CputimeMetricByMutationsRateFigure(MetricByMutationRateFigure):
         df = self.dataset.data
         sample_sizes = df.sample_size.unique()
 
-        # TODO move this into the superclass so that we have consistent styling.
-        tool_colours = collections.OrderedDict([
-            ("tsinfer", "blue"),
-            ("RentPlus", "red"),
-            ("ARGweaver", "green"),
-            ("fastARG", "magenta"),
-        ])
-        tool_markers = collections.OrderedDict([
-            ("tsinfer", "*"),
-            ("RentPlus", "s"),
-            ("ARGweaver", "o"),
-            ("fastARG", "^"),
-        ])
-        tools = list(tool_colours.keys())
         linestyles = ["-", ":"]
         fig, ax = pyplot.subplots(1, 1)
         lines = []
@@ -1296,22 +1394,118 @@ class CputimeMetricByMutationsRateFigure(MetricByMutationRateFigure):
         df_s = df[np.logical_and(df.sample_size == n, df.error_rate == error_rate)]
         group = df_s.groupby(["mutation_rate"])
         group_mean = group.mean()
-        for tool in tools:
+        for tool, setting in self.tools_format.items():
             ax.semilogx(
                 group_mean[tool + "_" + "cputime"],
-                color=tool_colours[tool],
-                marker=tool_markers[tool],
+                color=setting["col"],
+                marker=setting["mark"],
                 label=tool)
         ax.legend(loc="center left")
         ax.set_ylim(-20, 1000)
         self.savefig(fig)
+
+class MetricByARGweaverParametersFigure(Figure):
+    """
+    See the effect of burnin time and number of timeslices on the accuracy of ARGweaver
+    as compared to TSinfer, when looking at tree metrics.
+    """
+    datasetClass = ARGweaverParamChanges
+
+    def plot(self):
+        df = self.dataset.data
+        tools = self.dataset.tools
+        AW_burnin = df.ARGweaver_burnin.unique()
+        AW_discrete_timeslices = df.ARGweaver_ntimes.unique()
+
+        # TODO move this into the superclass so that we have consistent styling.
+        linestyles = [":","-.", "-"]
+        fig, axes = pyplot.subplots(1, 3, figsize=(12, 6), sharey=True)
+        lines = []
+        for k, ntimes in enumerate(AW_discrete_timeslices):
+            ax = axes[k]
+            ax.set_title("ARGweaver timeslices = {}".format(ntimes))
+            ax.set_xlabel("Mutation rate")
+            ax.set_xscale('log')
+            if k == 0:
+                ax.set_ylabel(self.metric + " metric")
+            
+            #get the only tsinfer data for this selection (regardless of ntimes)
+            tool = TSINFER
+            df_s = df[np.logical_not(df[tool + "_" + self.metric].isnull())]
+            group = df_s.groupby(["mutation_rate"])
+            mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
+            if getattr(self, 'error_bars', None):
+                yerr=[m['sem'][tool + "_" + self.metric] for m in mean_sem]
+            else:
+                yerr = None
+            ax.errorbar(
+                [m['mu'] for m in mean_sem], 
+                [m['mean'][tool + "_" + self.metric] for m in mean_sem],
+                yerr=yerr,
+                linestyle=linestyles[0],
+                color=self.tools_format[tool]["col"],
+                marker=self.tools_format[tool]["mark"],
+                elinewidth=1)
+            
+            
+            for n, linestyle in zip(AW_burnin, linestyles):
+                tool = ARGWEAVER
+                df_s = df[np.logical_and(df.ARGweaver_burnin == n, df.ARGweaver_ntimes == ntimes)]
+                group = df_s.groupby(["mutation_rate"])
+                mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
+                if getattr(self, 'error_bars', None):
+                    yerr=[m['sem'][tool + "_" + self.metric] for m in mean_sem]
+                else:
+                    yerr = None
+                ax.errorbar(
+                    [m['mu'] for m in mean_sem], 
+                    [m['mean'][tool + "_" + self.metric] for m in mean_sem],
+                    yerr=yerr,
+                    linestyle=linestyle,
+                    color=self.tools_format[tool]["col"],
+                    marker=self.tools_format[tool]["mark"],
+                    elinewidth=1)
+
+        axes[0].set_ylim(self.ylim)
+
+        # Create legends from custom artists
+        artists = [
+            pyplot.Line2D((0,1),(0,0), color=self.tools_format[tool]["col"],
+                marker=self.tools_format[tool]["mark"], linestyle='')
+            for tool in tools]
+        first_legend = axes[0].legend(
+            artists, tools, numpoints=3, loc="upper center")
+            # bbox_to_anchor=(0.0, 0.1))
+        # ax = pyplot.gca().add_artist(first_legend)
+        artists = [
+            pyplot.Line2D(
+                (0,0),(0,0), color="black", linestyle=linestyle, linewidth=2)
+            for linestyle in linestyles]
+        axes[-1].legend(
+            artists, ["Burn in = {} gens".format(n) for n in AW_burnin],
+            loc="upper center")
+        self.savefig(fig)
+
+class KCRootedMetricByARGweaverParametersFigure(MetricByARGweaverParametersFigure):
+    name = "kc_rooted_metrics_by_argweaver_params"
+    metric = "KCrooted"
+    ylim = (0, 4)
+    error_bars = True
+
+class RFRootedMetricByARGweaverParametersFigure(MetricByARGweaverParametersFigure):
+    name = "rf_rooted_metrics_by_argweaver_params"
+    metric = "RFrooted"
+    ylim = None
+    #ylim = (0, 4)
+    error_bars = True
 
 
 class PerformanceFigure(Figure):
     """
     Superclass for the performance metrics figures. Each of these figures
     has two panels; one for scaling by sequence length and the other
-    for scaling by sample size.
+    for scaling by sample size. Different lines are given for each
+    of the different combinations of tsinfer parameters
     """
     datasetClass = TsinferPerformance
     plotted_column = None
@@ -1321,16 +1515,63 @@ class PerformanceFigure(Figure):
         df = self.dataset.data
         # Rescale the length to MB
         df.length /= 10**6
+        # Set statistics to the ratio of observed over expected
         fig, (ax1, ax2) = pyplot.subplots(1, 2, sharey=True, figsize=(8, 5.5))
         source_colour = "red"
         inferred_colour = "blue"
-        dfp = df[df.sample_size == self.datasetClass.fixed_sample_size]
-        group = dfp.groupby(["length"])
-        group_mean = group.mean()
-        ax1.plot(group_mean["tsinfer_" + self.plotted_column] /
-                group_mean[self.plotted_column],
-                color=source_colour, linestyle="-", label="Source")
-
+        inferred_linestyles = {False:{False:':',True:'-.'},True:{False:'--',True:'-'}}
+        inferred_markers =    {False:{False:':',True:'-.'},True:{False:'--',True:'-'}}
+        fig, (ax1, ax2) = pyplot.subplots(1, 2, figsize=(12, 6), sharey=True)
+        ax1.set_title("Fixed number of chromosomes ({})".format(self.datasetClass.fixed_sample_size))
+        ax1.set_xlabel("Sequence length (MB)")
+        ax1.set_ylabel(self.y_axis_label)
+        for shared_breakpoint in [False,True]:
+            for shared_length in [False, True]:
+                dfp = df[np.logical_and.reduce((
+                    df.sample_size == self.datasetClass.fixed_sample_size,
+                    df.tsinfer_srb == shared_breakpoint,
+                    df.tsinfer_sl == shared_length))]
+                group = dfp.groupby(["length"])
+                    #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
+                mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
+                if getattr(self, 'error_bars', None):
+                    yerr=[m['sem'] for m in mean_sem]
+                else:
+                    yerr = None
+                ax1.errorbar(
+                    [m['mu'] for m in mean_sem], 
+                    [m['mean'][self.plotted_column] for m in mean_sem],
+                    yerr=yerr,
+                    linestyle=inferred_linestyles[shared_breakpoint][shared_length],
+                    color=inferred_colour,
+                    #marker=self.tools_format[tool]["mark"],
+                    elinewidth=1)
+                
+        ax2.set_title("Fixed sequence length ({:.2f} Mb)".format(self.datasetClass.fixed_length / 10**6))
+        ax2.set_xlabel("Sample size")
+        ax2.set_ylabel(self.y_axis_label)
+        for shared_breakpoint in [False,True]:
+            for shared_length in [False, True]:
+                dfp = df[np.logical_and.reduce((
+                    df.length == self.datasetClass.fixed_length / 10**6,
+                    df.tsinfer_srb == shared_breakpoint,
+                    df.tsinfer_sl == shared_length))]
+                group = dfp.groupby(["sample_size"])
+                    #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
+                mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
+                if getattr(self, 'error_bars', None):
+                    yerr=[m['sem'] for m in mean_sem]
+                else:
+                    yerr = None
+                ax2.errorbar(
+                    [m['mu'] for m in mean_sem], 
+                    [m['mean'][self.plotted_column] for m in mean_sem],
+                    yerr=yerr,
+                    linestyle=inferred_linestyles[shared_breakpoint][shared_length],
+                    color=inferred_colour,
+                    #marker=self.tools_format[tool]["mark"],
+                    elinewidth=1)
+        
         # ax1.plot(group_mean[self.plotted_column],
         #         color=source_colour, linestyle="-", label="Source")
         # ax1.plot(
@@ -1338,105 +1579,47 @@ class PerformanceFigure(Figure):
         #     color=inferred_colour, linestyle="-", label="Inferred")
         # ax1.legend(
         #     loc="upper left", numpoints=1, fontsize="small")
-        ax1.set_xlabel("Length (MB)")
-        ax1.set_ylabel(self.y_axis_label)
 
-        dfp = df[df.length == self.datasetClass.fixed_length / 10**6]
-        group = dfp.groupby(["sample_size"])
-        group_mean = group.mean()
-        ax2.plot(group_mean["tsinfer_" + self.plotted_column] /
-                group_mean[self.plotted_column],
-                color=source_colour, linestyle="-", label="Source")
-        # ax2.plot(
-        #     group_mean[self.plotted_column], color=source_colour, linestyle="-")
-        # ax2.plot(
-        #     group_mean["tsinfer_" + self.plotted_column], color=inferred_colour,
-        #     linestyle="-")
-
-        ax2.set_xlabel("Sample size")
         # ax1.set_xlim(-5, 105)
         # ax1.set_ylim(-5, 250)
         # ax2.set_xlim(-5, 105)
 
-        fig.tight_layout()
+        params = [
+            pyplot.Line2D(
+                (0,0),(0,0), color= inferred_colour, 
+                linestyle=inferred_linestyles[shared_breakpoint][shared_length], linewidth=2)
+            for shared_breakpoint, linestyles2 in inferred_linestyles.items()
+            for shared_length, linestyle in linestyles2.items()]
+        ax1.legend(
+            params, ["breakpoints={}, lengths={}".format(srb, sl)
+                for srb, linestyles2 in inferred_linestyles.items()
+                for sl, linestyle in  linestyles2.items()],
+            loc="lower right", fontsize=10)
+
         # fig.text(0.19, 0.97, "Sample size = 1000")
         # fig.text(0.60, 0.97, "Sequence length = 50Mb")
         # pyplot.savefig("plots/simulators.pdf")
+        pyplot.suptitle('Tsinfer large dataset performance')
         self.savefig(fig)
 
 
 
 class EdgesPerformanceFigure(PerformanceFigure):
     name = "edges_performance"
-
+    plotted_column = "metric"
+    y_axis_label = "inferred_edges / real_edges"
     def plot(self):
-        df = self.dataset.data
-        # Rescale the length to KB
-        df.length /= 10**6
-        fig, (ax1, ax2) = pyplot.subplots(1, 2, sharey=True, figsize=(8, 5.5))
-        source_colour = "red"
-        inferred_colour = "blue"
-        dfp = df[df.sample_size == self.datasetClass.fixed_sample_size]
-        group = dfp.groupby(["length"])
-        group_mean = group.mean()
-
-        # print(group_mean)
-
-        ax1.plot(group_mean["tsinfer_edges"] /
-                group_mean["tsinfer_edgesets"],
-                color=source_colour, linestyle="-", label="Source")
-
-        # ax1.plot(group_mean[self.plotted_column],
-        #         color=source_colour, linestyle="-", label="Source")
-        # ax1.plot(
-        #     group_mean["tsinfer_" + self.plotted_column],
-        #     color=inferred_colour, linestyle="-", label="Inferred")
-        # ax1.legend(
-        #     loc="upper left", numpoints=1, fontsize="small")
-        ax1.set_xlabel("Length (MB)")
-        ax1.set_ylabel("Mean #children")
-        # ax1.set_ylim(0, 15)
-
-        dfp = df[df.length == self.datasetClass.fixed_length / 10**6]
-        group = dfp.groupby(["sample_size"])
-        group_mean = group.mean()
-
-        ax2.plot(group_mean["tsinfer_edges"] /
-                group_mean["tsinfer_edgesets"],
-                color=source_colour, linestyle="-", label="Source")
-
-#         ax2.plot(group_mean["tsinfer_" + self.plotted_column] /
-#                 group_mean[self.plotted_column],
-#                 color=source_colour, linestyle="-", label="Source")
-        # ax2.plot(
-        #     group_mean[self.plotted_column], color=source_colour, linestyle="-")
-        # ax2.plot(
-        #     group_mean["tsinfer_" + self.plotted_column], color=inferred_colour,
-        #     linestyle="-")
-
-        ax2.set_xlabel("Sample size")
-        # ax1.set_xlim(-5, 105)
-        # ax1.set_ylim(-5, 250)
-        # ax2.set_xlim(-5, 105)
-
-        fig.tight_layout()
-        # fig.text(0.19, 0.97, "Sample size = 1000")
-        # fig.text(0.60, 0.97, "Sequence length = 50Mb")
-        # pyplot.savefig("plots/simulators.pdf")
-        self.savefig(fig)
-
-
-
-class EdgesetsPerformanceFigure(PerformanceFigure):
-    name = "edgesets_performance"
-    plotted_column = "edgesets"
-    y_axis_label = "Edgesets"
-
+        self.dataset.data[self.plotted_column] = self.dataset.data["tsinfer_edges"] / self.dataset.data["edges"]
+        PerformanceFigure.plot(self)
 
 class FileSizePerformanceFigure(PerformanceFigure):
     name = "filesize_performance"
-    plotted_column = "ts_filesize"
-    y_axis_label = "File size"
+    plotted_column = "metric"
+    y_axis_label = "inferred_filesize / real_filesize"
+    y_axis_label = "File size relative to original"
+    def plot(self):
+        self.dataset.data[self.plotted_column] = self.dataset.data["tsinfer_ts_filesize"] / self.dataset.data["ts_filesize"]
+        PerformanceFigure.plot(self)
 
 
 class ProgramComparisonFigure(Figure):
@@ -1468,15 +1651,9 @@ class ProgramComparisonFigure(Figure):
         group = dfp.groupby(["length"])
         group_mean = group.mean()
 
-        colours = {
-            TSINFER: "blue",
-            RENTPLUS: "green",
-            FASTARG: "red"
-        }
-
         for tool in tools:
             col = tool + "_" + self.plotted_column
-            ax1.plot(group_mean[col], label=tool, color=colours[tool])
+            ax1.plot(group_mean[col], label=tool, color=self.tools_format[tool]["col"])
         ax1.legend(
             loc="upper left", numpoints=1, fontsize="small")
 
@@ -1489,7 +1666,7 @@ class ProgramComparisonFigure(Figure):
 
         for tool in tools:
             col = tool + "_" + self.plotted_column
-            ax2.plot(group_mean[col], label=tool, color=colours[tool])
+            ax2.plot(group_mean[col], label=tool, color=self.tools_format[tool]["col"])
 
         ax2.set_xlabel("Sample size")
 
@@ -1538,8 +1715,9 @@ def main():
         RFRootedMetricByMutationsRateFigure,
         KCRootedMetricByMutationsRateFigure,
         CputimeMetricByMutationsRateFigure,
+        KCRootedMetricByARGweaverParametersFigure,
+        RFRootedMetricByARGweaverParametersFigure,
         EdgesPerformanceFigure,
-        EdgesetsPerformanceFigure,
         FileSizePerformanceFigure,
         ProgramComparisonTimeFigure,
         ProgramComparisonMemoryFigure,

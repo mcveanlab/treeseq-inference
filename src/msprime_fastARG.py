@@ -67,7 +67,7 @@ def variant_positions_from_fastARGin(fastARG_in_filehandle):
 
 def fastARG_out_to_msprime_txts(
         fastARG_out_filehandle, variant_positions,
-        nodes_filehandle, edgesets_filehandle, sites_filehandle, mutations_filehandle,
+        nodes_filehandle, edges_filehandle, sites_filehandle, mutations_filehandle,
         seq_len=None):
     """
     convert the fastARG output format (plus a list of positions) to 4 text
@@ -153,7 +153,7 @@ def fastARG_out_to_msprime_txts(
 
     cols = {
         'nodes':     ["id","is_sample","time"],
-        'edgesets':  ["left","right","parent","children"],
+        'edges':  ["left","right","parent","child"],
         'sites':     ["position","ancestral_state"],
         'mutations': ["site","node","derived_state"]
     }
@@ -164,7 +164,7 @@ def fastARG_out_to_msprime_txts(
     for node,children in sorted(ARG_nodes.items()): #sort by node number == time
         #look at the break points for all the child sequences, and break up into that number of records
 
-        print(lines['nodes'].format(id=node, is_sample=int(len(children)==0), time=node),
+        print(lines['nodes'].format(id=node, is_sample=int(len(children)==0), time=0 if len(children)==0 else node),
             file=nodes_filehandle)
         breaks = set()
         if len(children):
@@ -176,9 +176,11 @@ def fastARG_out_to_msprime_txts(
                 rightbreak = breaks[i]
                 #NB - here we could try to input the values straight into an msprime python structure,
                 #but until this feature is implemented in msprime, we simply output to a correctly formatted msprime text input file
+                #The read_text function *does* allow `child` to be a comma-separated list of children, as a shorthand
+                #for multiple rows.
                 target_children = [str(cnode) for cnode, cspan in sorted(children.items()) if cspan[0]<rightbreak and cspan[1]>leftbreak]
-                print(lines['edgesets'].format(left=leftbreak, right=rightbreak,
-                    parent=node, children=",".join(target_children)), file=edgesets_filehandle)
+                print(lines['edges'].format(left=leftbreak, right=rightbreak,
+                    parent=node, child=",".join(target_children)), file=edges_filehandle)
 
     for i,base in enumerate(base_sequence):
         if base not in ['1','0']:
@@ -201,12 +203,14 @@ def fastARG_out_to_msprime(fastARG_out_filehandle, variant_positions, seq_len=No
     The same as fastARG_out_to_msprime_txts, but use temporary files and return a ts.
     """
     with tempfile.NamedTemporaryFile("w+") as nodes, \
-        tempfile.NamedTemporaryFile("w+") as edgesets, \
+        tempfile.NamedTemporaryFile("w+") as edges, \
         tempfile.NamedTemporaryFile("w+") as sites, \
         tempfile.NamedTemporaryFile("w+") as mutations:
         fastARG_out_to_msprime_txts(fastARG_out_filehandle, variant_positions,
-            nodes, edgesets, sites, mutations, seq_len=seq_len)
-        return msprime.load_text(nodes=nodes, edgesets=edgesets, sites=sites, mutations=mutations).simplify()
+            nodes, edges, sites, mutations, seq_len=seq_len)
+        ts, node_map = msprime.load_text(nodes=nodes, edges=edges, sites=sites, mutations=mutations).simplify()
+        #logging.info("Node map after fastarg round trip is {}".format(node_map))
+        return ts
 
 def compare_fastARG_haplotypes(fastARG_fn_in, ts_in, save=False):
     """
@@ -228,7 +232,7 @@ def compare_fastARG_haplotypes(fastARG_fn_in, ts_in, save=False):
         return files_identical
 
 
-def main(ts, fastARG_executable, fa_in, fa_out, nodes_fh, edgesets_fh, sites_fh, muts_fh):
+def main(ts, fastARG_executable, fa_in, fa_out, nodes_fh, edges_fh, sites_fh, muts_fh):
     """
     This is just to test if fastarg produces the same haplotypes
     """
@@ -237,10 +241,10 @@ def main(ts, fastARG_executable, fa_in, fa_out, nodes_fh, edgesets_fh, sites_fh,
     msprime_to_fastARG_in(ts, fa_in)
     subprocess.call([fastARG_executable, 'build', fa_in.name], stdout=fa_out)
     fastARG_out_to_msprime_txts(fa_out, variant_positions_from_fastARGin(fa_in),
-        nodes_fh, edgesets_fh, sites_fh, muts_fh, seq_len=seq_len)
+        nodes_fh, edges_fh, sites_fh, muts_fh, seq_len=seq_len)
 
-    new_ts = msprime.load_text(nodes=nodes_fh, edgesets=edgesets_fh, sites=sites_fh, mutations=muts_fh)
-    simple_ts = new_ts.simplify()
+    new_ts = msprime.load_text(nodes=nodes_fh, edges=edges_fh, sites=sites_fh, mutations=muts_fh)
+    simple_ts = new_ts.simplify()[0]
     logging.debug("Simplified num_records should always be < unsimplified num_records.\n"
         "For low mutationRate:recombinationRate ratio,"
         " the initial num records will probably be higher than the"
@@ -283,16 +287,16 @@ if __name__ == "__main__":
         with tempfile.NamedTemporaryFile("w+") as fa_in, \
              tempfile.NamedTemporaryFile("w+") as fa_out, \
              tempfile.NamedTemporaryFile("w+") as nodes, \
-             tempfile.NamedTemporaryFile("w+") as edgesets, \
+             tempfile.NamedTemporaryFile("w+") as edges, \
              tempfile.NamedTemporaryFile("w+") as sites, \
              tempfile.NamedTemporaryFile("w+") as mutations:
-            main(ts, args.fastARG_executable, fa_in, fa_out, nodes, edgesets, sites, mutations)
+            main(ts, args.fastARG_executable, fa_in, fa_out, nodes, edges, sites, mutations)
     else:
         full_prefix = os.path.join(args.outputdir, prefix)
         with open(full_prefix + ".haps", "w+") as fa_in, \
              open(full_prefix + ".fastarg", "w+") as fa_out, \
              open(full_prefix + ".TSnodes", "w+") as nodes, \
-             open(full_prefix + ".TSedges", "w+") as edgesets, \
+             open(full_prefix + ".TSedges", "w+") as edges, \
              open(full_prefix + ".TSsites", "w+") as sites, \
              open(full_prefix + ".TSmuts", "w+") as mutations:
-            main(ts, args.fastARG_executable, fa_in, fa_out, nodes, edgesets, sites, mutations)
+            main(ts, args.fastARG_executable, fa_in, fa_out, nodes, edges, sites, mutations)
