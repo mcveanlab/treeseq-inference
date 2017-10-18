@@ -1516,7 +1516,6 @@ class PerformanceFigure(Figure):
         # Rescale the length to MB
         df.length /= 10**6
         # Set statistics to the ratio of observed over expected
-        df['metric'] = df["tsinfer_" + self.plotted_column] / df[self.plotted_column]
         fig, (ax1, ax2) = pyplot.subplots(1, 2, sharey=True, figsize=(8, 5.5))
         source_colour = "red"
         inferred_colour = "blue"
@@ -1541,7 +1540,7 @@ class PerformanceFigure(Figure):
                     yerr = None
                 ax1.errorbar(
                     [m['mu'] for m in mean_sem], 
-                    [m['mean']['metric'] for m in mean_sem],
+                    [m['mean'][self.plotted_column] for m in mean_sem],
                     yerr=yerr,
                     linestyle=inferred_linestyles[shared_breakpoint][shared_length],
                     color=inferred_colour,
@@ -1566,7 +1565,7 @@ class PerformanceFigure(Figure):
                     yerr = None
                 ax2.errorbar(
                     [m['mu'] for m in mean_sem], 
-                    [m['mean']['metric'] for m in mean_sem],
+                    [m['mean'][self.plotted_column] for m in mean_sem],
                     yerr=yerr,
                     linestyle=inferred_linestyles[shared_breakpoint][shared_length],
                     color=inferred_colour,
@@ -1607,14 +1606,20 @@ class PerformanceFigure(Figure):
 
 class EdgesPerformanceFigure(PerformanceFigure):
     name = "edges_performance"
-    plotted_column = "edges"
+    plotted_column = "metric"
     y_axis_label = "inferred_edges / real_edges"
-
+    def plot(self):
+        self.dataset.data[self.plotted_column] = self.dataset.data["tsinfer_edges"] / self.dataset.data["edges"]
+        PerformanceFigure.plot(self)
 
 class FileSizePerformanceFigure(PerformanceFigure):
     name = "filesize_performance"
-    plotted_column = "ts_filesize"
-    y_axis_label = "File size"
+    plotted_column = "metric"
+    y_axis_label = "inferred_filesize / real_filesize"
+    y_axis_label = "File size relative to original"
+    def plot(self):
+        self.dataset.data[self.plotted_column] = self.dataset.data["tsinfer_ts_filesize"] / self.dataset.data["ts_filesize"]
+        PerformanceFigure.plot(self)
 
 
 class ProgramComparisonFigure(Figure):
