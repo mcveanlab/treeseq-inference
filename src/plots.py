@@ -368,32 +368,33 @@ class InferenceRunner(object):
         shared_lengths = bool(getattr(self.row,'tsinfer_sl', default_shared_lengths))
         samples_fn = self.base_fn + ".npy"
         positions_fn = self.base_fn + ".pos.npy"
-        time = memory = fs = poly_sum = poly_ssq = poly_max = n = None
+        time = memory = fs = counts = None
         logging.debug("reading: variant matrix {} & positions {} for msprime inference".format(
             samples_fn, positions_fn))
         scaled_recombination_rate = 4 * self.row.recombination_rate * self.row.Ne
         inferred_ts, time, memory = self.run_tsinfer(
             samples_fn, positions_fn, self.row.length, scaled_recombination_rate,
             self.row.error_rate, shared_recombinations, shared_lengths, self.num_threads)
-        out_fn = construct_tsinfer_name(self.base_fn)
-        inferred_ts.dump(out_fn + ".inferred.hdf5")
-        fs = os.path.getsize(out_fn + ".inferred.hdf5")
-        if self.compute_tree_metrics:
-            self.inferred_nexus_files = [out_fn + ".nex"]
-            with open(self.inferred_nexus_files[0], "w+") as out:
-                #tree metrics assume tips are numbered from 1 not 0
-                inferred_ts.write_nexus_trees(
-                    out, tree_labels_between_variants=True,
-                    zero_based_tip_numbers=tree_tip_labels_start_at_0)
-        unique, counts = np.unique(np.array([e.parent for e in inferred_ts.edges()], dtype="u8"), return_counts=True)
+        if inferred_ts:
+            out_fn = construct_tsinfer_name(self.base_fn)
+            inferred_ts.dump(out_fn + ".inferred.hdf5")
+            fs = os.path.getsize(out_fn + ".inferred.hdf5")
+            if self.compute_tree_metrics:
+                self.inferred_nexus_files = [out_fn + ".nex"]
+                with open(self.inferred_nexus_files[0], "w+") as out:
+                    #tree metrics assume tips are numbered from 1 not 0
+                    inferred_ts.write_nexus_trees(
+                        out, tree_labels_between_variants=True,
+                        zero_based_tip_numbers=tree_tip_labels_start_at_0)
+            unique, counts = np.unique(np.array([e.parent for e in inferred_ts.edges()], dtype="u8"), return_counts=True)
         return  {
             save_stats['cpu']: time,
             save_stats['mem']: memory,
-            save_stats['n_edges']: np.sum(counts),
+            save_stats['n_edges']: None if counts is None else np.sum(counts),
             save_stats['ts_filesize']: fs,
-            'mean_polytomy': np.mean(counts),
-            'var_polytomy': np.var(counts),
-            'max_polytomy': np.max(counts)
+            'mean_polytomy': None if counts is None else np.mean(counts),
+            'var_polytomy': None if counts is None else np.var(counts),
+            'max_polytomy': None if counts is None else np.max(counts)
         }
 
     def __run_fastARG(self):
@@ -514,7 +515,7 @@ class InferenceRunner(object):
             # temporary hack around tsinfer bug
             if 'time[parent] must be greater than time[child]' in str(e):
                 logging.info("Hit tsinfer bug. Skipping")
-                return [], "NA", None, None
+                return None, None, None
             else:
                 raise
     

@@ -59,8 +59,6 @@ def main():
         args.recombination_rate,
         args.error_probability,
         num_threads=args.threads,
-        # Setting shared recombination resolution to false here for now
-        # because it makes inference slower.
         resolve_shared_recombinations=args.shared_recombinations, resolve_polytomies=args.shared_lengths)
     ts.dump(args.output)
 
