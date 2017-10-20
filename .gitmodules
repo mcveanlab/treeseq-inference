@@ -19,6 +19,7 @@
 [submodule "ftprime_ms"]
 	path = ftprime_ms
 	url = https://github.com/petrelharp/ftprime_ms
+	branch = add/single-locus-example
 [submodule "ftprime"]
 	path = ftprime
 	url = https://github.com/ashander/ftprime
