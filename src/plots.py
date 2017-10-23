@@ -1050,7 +1050,8 @@ class MetricsBySampleSizeDataset(Dataset):
         Ne = 5000
         mutation_rate = 2.5e-8
         recombination_rate = 2.5e-8
-        num_rows = replicates * len(lengths) * len(error_rates) * len(sample_sizes)
+        num_rows = replicates * len(lengths) * len(error_rates) * len(sample_sizes) * \
+            len(shared_breakpoint_params) * len(shared_length_params)
         cols = self.sim_cols + ["tsinfer_srb", "tsinfer_sl", "subsample_size"]
         data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
         row_id = 0
