@@ -1022,7 +1022,7 @@ class MetricsBySampleSizeDataset(Dataset):
     """
     name = "metrics_by_sample_size"
     tools = [TSINFER]
-    default_replicates = 1
+    default_replicates = 20
     default_seed = 123
     compute_tree_metrics = True
 
