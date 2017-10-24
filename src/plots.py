@@ -366,10 +366,10 @@ class InferenceRunner(object):
             #rather than an average over multiple inferred_nexus_files, and do the averaging in python
             if self.inferred_nexus_files is not None:
                 metrics = ARG_metrics.get_metrics(self.source_nexus_file, self.inferred_nexus_files)
+                ret.update(metrics)
             else:
                 logging.info("No inferred tree files so metrics skipped for {} row {} = {}".format(
                     self.tool, int(self.row[0]), ret))
-            ret.update(metrics)
         logging.debug("returning infer results for {} row {} = {}".format(
             self.tool, int(self.row[0]), ret))
         return ret
