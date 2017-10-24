@@ -106,19 +106,22 @@ def write_nexus_trees(
 
     The positions are half-open intervals, that is a tree named '3' will *not*
     include position 3, but will include position 2.999999. That means if a
-    treesequence of (say) legnth 5 has been inferred from variants, say at
+    treesequence of (say) length 5 has been inferred from variants, say at
     position 3 and 4, the first tree will be named '4' (i.e. covering all positions
     up to but not including 4) and the second tree will be named with the sequence
     length '5'. Thus variants at position 4 will fall into the tree labelled 5
     not the tree labelled 4 - this seems slightly odd.
 
-    If tree_labels_between_variants is True, we change this so that the
-    positions are instead, halfway between the two nearest variants
+    If tree_labels_between_variants is True, we change this so that instead the
+    positions are halfway between the two nearest variants
     i.e. if there are variants with different trees at position 3 & 4, then
     the first tree has the name '3.5' and the second '5'. Thus we are assured
     that variant 3 lies in the tree labelled 3.5 (covering 0-3.5), and the
     variant 4 lies in the tree labelled 5.
 
+    Note that inferred trees that have been simplified to include only a subset
+    of tips may well have breakpoints (switches between trees) that do not 
+    occur at the position of a variant on the subsampled trees
     """
     print("#NEXUS\nBEGIN TREES;", file=treefile)
     increment = 0 if zero_based_tip_numbers else 1

@@ -395,8 +395,14 @@ class InferenceRunner(object):
                 self.inferred_nexus_files = [out_fn + ".nex"]
                 with open(self.inferred_nexus_files[0], "w+") as out:
                     #tree metrics assume tips are numbered from 1 not 0
+                    #For subsampled trees, the locations of trees along the 
+                    #genome (the breakpoints) may not correspond to variant positions
+                    #on the subsampled trees: indeed , there may be multiple trees
+                    #between two adjacent variants, so we cannot reposition breakpoints
+                    #between the nearest left and right variant positions
+                    tree_labels_between_variants=(True if subsample_size is None else False)
                     inferred_ts.write_nexus_trees(
-                        out, tree_labels_between_variants=True,
+                        out, tree_labels_between_variants=tree_labels_between_variants,
                         zero_based_tip_numbers=tree_tip_labels_start_at_0)
             unique, counts = np.unique(np.array([e.parent for e in inferred_ts.edges()], dtype="u8"), return_counts=True)
         return  {
@@ -1551,19 +1557,19 @@ class MetricByMutationRateFigure(Figure):
         self.savefig(fig)
 
 
-class RFRootedMetricByMutationsRateFigure(MetricByMutationRateFigure):
+class RFRootedMetricByMutationRateFigure(MetricByMutationRateFigure):
     name = "rf_rooted_by_mutation_rate"
     metric = "RFrooted"
     ylim = None
 
 
-class KCRootedMetricByMutationsRateFigure(MetricByMutationRateFigure):
+class KCRootedMetricByMutationRateFigure(MetricByMutationRateFigure):
     name = "kc_rooted_by_mutation_rate"
     metric = "KCrooted"
     ylim = (0, 110)
     error_bars = True
 
-class CputimeMetricByMutationsRateFigure(MetricByMutationRateFigure):
+class CputimeMetricByMutationRateFigure(MetricByMutationRateFigure):
     """
     This figure is useful because we can only really get the CPU times
     for all four methods in the same scale for these tiny examples.
@@ -1596,6 +1602,58 @@ class CputimeMetricByMutationsRateFigure(MetricByMutationRateFigure):
         ax.legend(loc="center left")
         ax.set_ylim(-20, 1000)
         self.savefig(fig)
+
+
+class AllMetricsBySampleSizeFigure(Figure):
+    """
+    Figure that shows whether increasing sample size helps with the accuracy of
+    reconstructing the ARG for a fixed subsample.
+    """
+    datasetClass = MetricsBySampleSizeDataset
+    name = "all_metrics_by_sample_size"
+
+    def plot(self):
+        df = self.dataset.data
+        lengths = df.length.unique()
+        subsample_size = df.subsample_size.unique()
+        assert len(subsample_size) == 1
+        inferred_linestyles = {False:{False:':',True:'-.'},True:{False:'--',True:'-'}}
+        metrics = ARG_metrics.get_metric_names()
+        fig, axes = pyplot.subplots(len(metrics), len(lengths), figsize=(12, 30))
+        lines = []
+        for j, metric in enumerate(metrics):
+            for k, length in enumerate(lengths):
+                ax = axes[j][k]
+                if j == 0:
+                    ax.set_title("Length = {}".format(length))
+                if k == 0:
+                    ax.set_ylabel(metric + " metric")
+                if j == len(metrics) - 1:
+                    ax.set_xlabel("Original sample size")
+                for shared_breakpoint in [False,True]:
+                    for shared_length in [False, True]:
+                        dfp = df[np.logical_and.reduce((
+                            df.length == length,
+                            df.tsinfer_srb == shared_breakpoint,
+                            df.tsinfer_sl == shared_length))]
+                        group = dfp.groupby(["sample_size"])
+                            #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
+                        mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
+                        if getattr(self, 'error_bars', None):
+                            yerr=[m['sem'] for m in mean_sem]
+                        else:
+                            yerr = None
+                        ax.errorbar(
+                            [m['mu'] for m in mean_sem], 
+                            [m['mean'][TSINFER + "_" + metric] for m in mean_sem],
+                            yerr=yerr,
+                            linestyle=inferred_linestyles[shared_breakpoint][shared_length],
+                            #marker=self.tools_format[tool]["mark"],
+                            elinewidth=1)
+        pyplot.suptitle('Metric for subsample of {} tips'.format(
+            subsample_size[0]))
+        self.savefig(fig)
+
 
 class MetricByARGweaverParametersFigure(Figure):
     """
@@ -1905,9 +1963,10 @@ def main():
     datasets = Dataset.__subclasses__()
     figures = [
         AllMetricsByMutationRateFigure,
-        RFRootedMetricByMutationsRateFigure,
-        KCRootedMetricByMutationsRateFigure,
-        CputimeMetricByMutationsRateFigure,
+        RFRootedMetricByMutationRateFigure,
+        KCRootedMetricByMutationRateFigure,
+        AllMetricsBySampleSizeFigure,
+        CputimeMetricByMutationRateFigure,
         KCRootedMetricByARGweaverParametersFigure,
         RFRootedMetricByARGweaverParametersFigure,
         EdgesPerformanceFigure,
