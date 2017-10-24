@@ -364,8 +364,11 @@ class InferenceRunner(object):
         if self.compute_tree_metrics:
             #NB Jerome thinks it may be clearer to have get_metrics() return a single set of metrics
             #rather than an average over multiple inferred_nexus_files, and do the averaging in python
-            assert self.inferred_nexus_files is not None
-            metrics = ARG_metrics.get_metrics(self.source_nexus_file, self.inferred_nexus_files)
+            if self.inferred_nexus_files is not None:
+                metrics = ARG_metrics.get_metrics(self.source_nexus_file, self.inferred_nexus_files)
+            else:
+                logging.info("No inferred tree files so metrics skipped for {} row {} = {}".format(
+                    self.tool, int(self.row[0]), ret))
             ret.update(metrics)
         logging.debug("returning infer results for {} row {} = {}".format(
             self.tool, int(self.row[0]), ret))
@@ -1617,6 +1620,7 @@ class AllMetricsBySampleSizeFigure(Figure):
         lengths = df.length.unique()
         subsample_size = df.subsample_size.unique()
         assert len(subsample_size) == 1
+        col="black"
         inferred_linestyles = {False:{False:':',True:'-.'},True:{False:'--',True:'-'}}
         metrics = ARG_metrics.get_metric_names()
         fig, axes = pyplot.subplots(len(metrics), len(lengths), figsize=(12, 30))
@@ -1625,7 +1629,7 @@ class AllMetricsBySampleSizeFigure(Figure):
             for k, length in enumerate(lengths):
                 ax = axes[j][k]
                 if j == 0:
-                    ax.set_title("Length = {}".format(length))
+                    ax.set_title("Sequence length = {}".format(length))
                 if k == 0:
                     ax.set_ylabel(metric + " metric")
                 if j == len(metrics) - 1:
@@ -1646,11 +1650,22 @@ class AllMetricsBySampleSizeFigure(Figure):
                         ax.errorbar(
                             [m['mu'] for m in mean_sem], 
                             [m['mean'][TSINFER + "_" + metric] for m in mean_sem],
-                            yerr=yerr,
+                            yerr=yerr, color=col,
                             linestyle=inferred_linestyles[shared_breakpoint][shared_length],
-                            #marker=self.tools_format[tool]["mark"],
+                            marker="o", fillstyle='none',
                             elinewidth=1)
-        pyplot.suptitle('Metric for subsample of {} tips'.format(
+        params = [
+            pyplot.Line2D(
+                (0,0),(0,0), color= col, 
+                linestyle=inferred_linestyles[shared_breakpoint][shared_length], linewidth=2)
+            for shared_breakpoint, linestyles2 in inferred_linestyles.items()
+            for shared_length, linestyle in linestyles2.items()]
+        axes[0][-1].legend(
+            params, ["breakpoints={}, lengths={}".format(int(srb), int(sl))
+                for srb, linestyles2 in inferred_linestyles.items()
+                for sl, linestyle in  linestyles2.items()],
+            loc="upper right", fontsize=10, title="Polytomy resolution")
+        pyplot.suptitle('ARG metric for trees subsampled down to {} tips'.format(
             subsample_size[0]))
         self.savefig(fig)
 
@@ -1845,7 +1860,7 @@ class PerformanceFigure(Figure):
             params, ["breakpoints={}, lengths={}".format(srb, sl)
                 for srb, linestyles2 in inferred_linestyles.items()
                 for sl, linestyle in  linestyles2.items()],
-            loc="lower right", fontsize=10)
+            loc="lower right", fontsize=10, title="Polytomy resolution")
 
         # fig.text(0.19, 0.97, "Sample size = 1000")
         # fig.text(0.60, 0.97, "Sequence length = 50Mb")
