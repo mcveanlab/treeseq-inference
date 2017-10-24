@@ -62,6 +62,10 @@ ARGWEAVER = "ARGweaver"
 RENTPLUS = "RentPlus"
 TSINFER = "tsinfer"
 
+NO_METRICS = 0
+METRICS_OVER_ALL_BASES = 1
+METRICS_AT_VARIANT_SITES = 2
+
 #R tree metrics assume tips are numbered from 1 not 0
 tree_tip_labels_start_at_0 = False
 
@@ -332,9 +336,12 @@ class InferenceRunner(object):
     the dataframe. Should create results files that are bespoke for each tool, and
     also for each tool, convert these into nexus files that can be used for comparing
     metrics.
-    """
+        """
     def __init__(
-            self, tool, row, simulations_dir, num_threads, compute_tree_metrics=False):
+            self, tool, row, simulations_dir, num_threads, compute_tree_metrics=0):
+        """
+        Compute_tree_metrics should be NO_METRICS (0), METRICS_OVER_ALL_BASES (1) or METRICS_AT_VARIANT_SITES (2)
+        """
         self.tool = tool
         self.row = row
         self.num_threads = num_threads
@@ -343,9 +350,10 @@ class InferenceRunner(object):
         #but not subsample size (as subsampling happens *after* inference, when comparing trees)
         self.base_fn = msprime_name_from_row(
             row, simulations_dir, 'error_rate')
-        #source nexus must be the subsampled version, if present
-        self.source_nexus_file = msprime_name_from_row(
-            row, simulations_dir, subsample_col="subsample_size") + ".nex"
+        #source tree data must use the subsampled version, if present, but not error
+        self.source_trees_fn = msprime_name_from_row(
+            row, simulations_dir, subsample_col="subsample_size")
+        self.source_nexus_file = self.source_trees_fn + ".nex"
         # This should be set by the run_inference methods.
         self.inferred_nexus_files = None
 
@@ -361,11 +369,16 @@ class InferenceRunner(object):
             ret = self.__run_RentPlus()
         else:
             raise ValueError("unknown tool {}".format(self.tool))
-        if self.compute_tree_metrics:
+        if self.compute_tree_metrics != NO_METRICS:
             #NB Jerome thinks it may be clearer to have get_metrics() return a single set of metrics
             #rather than an average over multiple inferred_nexus_files, and do the averaging in python
             if self.inferred_nexus_files is not None:
-                metrics = ARG_metrics.get_metrics(self.source_nexus_file, self.inferred_nexus_files)
+                if self.compute_tree_metrics == METRICS_AT_VARIANT_SITES:
+                    variant_positions = np.load(self.source_trees_fn + ".pos.npy").tolist()
+                    metrics = ARG_metrics.get_metrics(
+                        self.source_nexus_file, self.inferred_nexus_files, variant_positions)
+                else:
+                    metrics = ARG_metrics.get_metrics(self.source_nexus_file, self.inferred_nexus_files)
                 ret.update(metrics)
             else:
                 logging.info("No inferred tree files so metrics skipped for {} row {} = {}".format(
@@ -679,7 +692,7 @@ class Dataset(object):
     file and raw_data_dir directory. Within this, replicate instances of datasets
     (each with a different RNG seed) are saved under the seed number
     """
-    compute_tree_metrics = False
+    compute_tree_metrics = NO_METRICS
     """
     Set to true if we wish to compute tree metric distances from the source
     tree sequence to the inferred tree sequence(s).
@@ -921,6 +934,12 @@ class Dataset(object):
         return ts, sim_fn
 
 
+    def save_positions(self, ts, fn):
+        outfile = fn + ".pos.npy"
+        pos = np.array([v.position for v in ts.variants()])
+        logging.debug("writing variant positions to {}".format(outfile))
+        np.save(outfile, pos)
+        
 
     def save_variant_matrices(self, ts, fname, error_rate=0, infinite_sites=True):
         if infinite_sites:
@@ -928,15 +947,13 @@ class Dataset(object):
             if not all(p.is_integer() for p in pos):
                 raise ValueError("Variant positions are not all integers")
         S = generate_samples(ts, error_rate)
+        pos = np.array([v.position for v in ts.variants()])
         filename = add_error_param_to_name(fname, error_rate)
         if TSINFER in self.tools:
             outfile = filename + ".npy"
             logging.debug("writing variant matrix to {} for tsinfer".format(outfile))
             np.save(outfile, S)
-            outfile = filename + ".pos.npy"
-            pos = np.array([v.position for v in ts.variants()])
-            logging.debug("writing variant positions to {} for tsinfer".format(outfile))
-            np.save(outfile, pos)
+            self.save_positions(ts,filename)
         if FASTARG in self.tools:
             logging.debug("writing variant matrix to {}.hap for fastARG".format(filename))
             with open(filename+".hap", "w+") as fastarg_in:
@@ -963,7 +980,7 @@ class MetricsByMutationRateDataset(Dataset):
 
     default_replicates = 10
     default_seed = 123
-    compute_tree_metrics = True
+    compute_tree_metrics = METRICS_OVER_ALL_BASES
 
     #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
     exclude_colnames =[]
@@ -1006,6 +1023,8 @@ class MetricsByMutationRateDataset(Dataset):
                     with open(fn +".nex", "w+") as out:
                         ts.write_nexus_trees(
                             out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+                    self.save_positions(ts, fn)
+
                     # Add the rows for each of the error rates in this replicate
                     for error_rate in error_rates:
                         row = data.iloc[row_id]
@@ -1033,7 +1052,8 @@ class MetricsBySampleSizeDataset(Dataset):
     tools = [TSINFER]
     default_replicates = 40
     default_seed = 123
-    compute_tree_metrics = True
+    #to make this a fair comparison, we need to 
+    compute_tree_metrics = METRICS_AT_VARIANT_SITES
 
     #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
     exclude_colnames =[]
@@ -1090,6 +1110,7 @@ class MetricsBySampleSizeDataset(Dataset):
                     with open(subsampled_fn +".nex", "w+") as out:
                         subsampled_ts.write_nexus_trees(
                             out, zero_based_tip_numbers= tree_tip_labels_start_at_0)
+                    self.save_positions(subsampled_ts, subsampled_fn)
                     # Add the rows for each of the error rates in this replicate
                     for tsinfer_srb in shared_breakpoint_params:
                         for tsinfer_sl in shared_length_params:
@@ -1183,7 +1204,7 @@ class TsinferPerformance(Dataset):
     the two main dimensions of sample size and sequence length.
     """
     name = "tsinfer_performance"
-    compute_tree_metrics = False
+    compute_tree_metrics = NO_METRICS
     default_replicates = 10
     default_seed = 123
     tools = [TSINFER]
@@ -1263,7 +1284,7 @@ class ProgramComparison(Dataset):
     The performance of the various programs in terms of running time.
     """
     name = "program_comparison"
-    compute_tree_metrics = False
+    compute_tree_metrics = NO_METRICS
     default_replicates = 2
     default_seed = 1000
     tools = [FASTARG, TSINFER]
@@ -1352,7 +1373,7 @@ class ARGweaverParamChanges(Dataset):
     tools = [ARGWEAVER, TSINFER]
     default_replicates = 40
     default_seed = 123
-    compute_tree_metrics = True
+    compute_tree_metrics = METRICS_OVER_ALL_BASES
 
     #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
     exclude_colnames =[]
