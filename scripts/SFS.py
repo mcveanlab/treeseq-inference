@@ -72,7 +72,6 @@ for i, ((start, end), out_edges, in_edges) in enumerate(diffs):
         
     except:
         print(tree.num_roots)
-        print([n for n in tree.nodes() if tree.get_parent(n) == 12557])
         print(out_edges)
         print(in_edges)
         #print(tree.draw(format="unicode"))
