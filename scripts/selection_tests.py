@@ -75,15 +75,14 @@ plt.set_title("ftprime equivalent (after 1000 generations)")
 fig.savefig("SelectionMeasuresOnNeutral.pdf")
 
 #selective example
-#e.g. from ./examples/selective_sweep.py -N 2000 -r 1e-6 -L 10000 -k 2000 -s 0.05 -of 0.001 -of 0.1 -of 0.5 -of 0.8 -of 1 -of 1 200 -B 50000 -v -v 
-fig, ((ax1, ax2), (ax3, ax4)) = pyplot.subplots(2, 2, sharey=True, figsize=(16, 11))
+#e.g. from 
+fig, ((ax1, ax2, ax3),(ax4, ax5,ax6)) = pyplot.subplots(2, 3, sharey=True, figsize=(21, 11))
 
 for f1, f2, plt in zip(
-    ["0.1","0.7","1","1"],
-    ["","","","+200"],
-    [ax1,ax2,ax3,ax4]):
+    ["0.1","0.5","0.8","1","1","1"],
+    ["","","","","+200","+600"],
+    [ax1,ax2,ax3,ax4,ax5,ax6]):
     fn = "../ftprime/sweepfile{}{}.hdf5".format(f1,f2)
-    #fn = "../ftprime/neutral_ts".format()
     ts = msprime.load(fn)
     T_W  = []
     T_pi = []
@@ -100,10 +99,11 @@ for f1, f2, plt in zip(
     print("H: ", sum([p[0]*p[1] for p in T_H])/ts.get_sequence_length())
     
     #plt.plot([x[0] for x in D],[x[0] for x in T_pi], marker="")
-    plt.hlines(0, 0, ts.get_sequence_length(), colors=["grey"], linestyles=["."])
-    plt.plot(*zip(*D), marker="")
-    plt.plot(*zip(*FayWuH), marker="")
-    plt.legend(["Tajima's D", "Fay & Wu's H"])
+    plt.axhline(y=0, c="grey", label='_nolegend_')
+    Dline = plt.plot(*zip(*D), marker="")
+    Hline = plt.plot(*zip(*FayWuH), marker="")
+    loc = plt.axvline(x=5000, c="red", linestyle=":")
+    plt.legend(["Tajima's D", "Fay & Wu's H", "Selected locus"], loc="lower left")
     plt.set_xlim(0,ts.get_sequence_length())
     #plt.set_ylim(-15000,15000)
     plt.set_title("Selected allele at freq "+ f1 + f2)
