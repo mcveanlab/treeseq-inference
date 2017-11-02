@@ -35,11 +35,6 @@ def Theta_H(sfs, n):
     return 2 * sum([(i**2) * sfs[i] for i in sfs.keys()]) / n / (n-1)
     
 #globals    
-T_W  = []
-T_pi = []
-T_H  = []
-D    = []
-FayWuH=[]
 
 def save_estimates(start, end, sfs, n):
     watt = Theta_W(sfs, n)
@@ -52,28 +47,64 @@ def save_estimates(start, end, sfs, n):
     FayWuH.append(((end+start)/2, ndiv - tH))
 
 
+fig, (ax1, ax2) = pyplot.subplots(1, 2, sharey=True, figsize=(16, 6))
 recombination_rate=1e-6
 mutation_rate=1e-6
 ts = msprime.simulate(10000, 
         Ne=5000, length=10000, recombination_rate=recombination_rate)        
 #or try generating an identical neutral ftprime simulation using 
 # python3 ./examples/examples.py -T 10000 -N 5000 -r 1e-6 -L 10000 -a 0.0001 -b 0.0001 -k 5000 -t neutral_ts
-ts = msprime.load("../ftprime/neutral_ts")
-
-print("Length: ", ts.get_sequence_length(), ", n samples: ", ts.num_samples)
-print(stats.describe([tree.get_total_branch_length() for tree in ts.trees()]))
-
+T_W, T_pi, T_H, D, FayWuH = [], [], [], [], []
 incrementalSFS(ts, save_estimates)
+plt = ax1
+plt.plot(*zip(*D), marker="")
+plt.plot(*zip(*FayWuH), marker="")
+plt.legend(["Tajima's D", "Fay & Wu's H"])
+plt.set_xlim(0,ts.get_sequence_length())
+plt.set_title("msprime simulation")
+#plt.set_ylim(-15000,15000)
+ts = msprime.load("../ftprime/neutral_ts")
+T_W, T_pi, T_H, D, FayWuH = [], [], [], [], []
+incrementalSFS(ts, save_estimates)
+plt = ax2
+plt.plot(*zip(*D), marker="")
+plt.plot(*zip(*FayWuH), marker="")
+plt.legend(["Tajima's D", "Fay & Wu's H"])
+plt.set_xlim(0,ts.get_sequence_length())
+plt.set_title("ftprime equivalent (after 1000 generations)")
+fig.savefig("SelectionMeasuresOnNeutral.pdf")
 
+#selective example
+#e.g. from ./examples/selective_sweep.py -N 2000 -r 1e-6 -L 10000 -k 2000 -s 0.05 -of 0.001 -of 0.1 -of 0.5 -of 0.8 -of 1 -of 1 200 -B 50000 -v -v 
+fig, ((ax1, ax2), (ax3, ax4)) = pyplot.subplots(2, 2, sharey=True, figsize=(16, 11))
 
+for f1, f2, plt in zip(
+    ["0.1","0.7","1","1"],
+    ["","","","+200"],
+    [ax1,ax2,ax3,ax4]):
+    fn = "../ftprime/sweepfile{}{}.hdf5".format(f1,f2)
+    #fn = "../ftprime/neutral_ts".format()
+    ts = msprime.load(fn)
+    T_W  = []
+    T_pi = []
+    T_H  = []
+    D    = []
+    FayWuH=[]
 
-print("Watterson: ", sum([w[0]*w[1] for w in T_W])/ts.get_sequence_length())
-print("Pairwise: ", sum([p[0]*p[1] for p in T_pi])/ts.get_sequence_length())
-print("H: ", sum([p[0]*p[1] for p in T_H])/ts.get_sequence_length())
-
-pyplot.plot(*zip(*D))
-pyplot.plot(*zip(*FayWuH))
-pyplot.legend(["Tajima's D", "Fay & Wu's H"])
-pyplot.xlim(0,ts.get_sequence_length())
-pyplot.marker="o"
-pyplot.show()
+    print(fn, ": length =", ts.get_sequence_length(), ", n samples =", ts.num_samples)
+    
+    incrementalSFS(ts, save_estimates)
+    
+    print("Watterson: ", sum([w[0]*w[1] for w in T_W])/ts.get_sequence_length())
+    print("Pairwise: ", sum([p[0]*p[1] for p in T_pi])/ts.get_sequence_length())
+    print("H: ", sum([p[0]*p[1] for p in T_H])/ts.get_sequence_length())
+    
+    #plt.plot([x[0] for x in D],[x[0] for x in T_pi], marker="")
+    plt.hlines(0, 0, ts.get_sequence_length(), colors=["grey"], linestyles=["."])
+    plt.plot(*zip(*D), marker="")
+    plt.plot(*zip(*FayWuH), marker="")
+    plt.legend(["Tajima's D", "Fay & Wu's H"])
+    plt.set_xlim(0,ts.get_sequence_length())
+    #plt.set_ylim(-15000,15000)
+    plt.set_title("Selected allele at freq "+ f1 + f2)
+fig.savefig("SelectionMeasures.pdf")
