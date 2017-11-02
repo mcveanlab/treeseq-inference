@@ -106,7 +106,7 @@ for f1, f2, plt in zip(
     plt.axhline(y=0, c="grey", label='_nolegend_')
     Dline = plt.plot(*zip(*D), marker="")
     Hline = plt.plot(*zip(*FayWuH), marker="")
-    loc = plt.axvline(x=5000, c="red", linestyle=":")
+    loc = plt.axvline(x=ts.get_sequence_length()/2, c="red", linestyle=":")
     plt.legend(["Tajima's D", "Fay & Wu's H", "Selected locus"], loc="lower left")
     plt.set_xlim(0,ts.get_sequence_length())
     #plt.set_ylim(-15000,15000)
