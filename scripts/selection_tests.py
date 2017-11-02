@@ -1,8 +1,12 @@
 import msprime
 import collections
 import math
+
 from scipy import stats
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as pyplot
+
 from SFS import incrementalSFS
 
 def H(n):
