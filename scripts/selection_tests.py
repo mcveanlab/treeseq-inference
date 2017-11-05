@@ -79,7 +79,7 @@ plt.set_title("ftprime equivalent (after 1000 generations)")
 fig.savefig("SelectionMeasuresOnNeutral.pdf")
 
 #selective example
-#e.g. from 
+#e.g. from python3 ./examples/selective_sweep.py -N 10000 -r 1e-8 -L 100000 -k 10000 -s 0.05 -of 0.1 -of 0.5 -of 0.8 -of 1 -of 1 200 -of 1 600 -d 20 -v
 fig, ((ax1, ax2, ax3),(ax4, ax5,ax6)) = pyplot.subplots(2, 3, sharey=True, figsize=(21, 11))
 
 for f1, f2, plt in zip(
@@ -88,11 +88,7 @@ for f1, f2, plt in zip(
     [ax1,ax2,ax3,ax4,ax5,ax6]):
     fn = "../ftprime/sweepfile{}{}.hdf5".format(f1,f2)
     ts = msprime.load(fn)
-    T_W  = []
-    T_pi = []
-    T_H  = []
-    D    = []
-    FayWuH=[]
+    T_W, T_pi, T_H, D, FayWuH = [], [], [], [], []
 
     print(fn, ": length =", ts.get_sequence_length(), ", n samples =", ts.num_samples)
     
