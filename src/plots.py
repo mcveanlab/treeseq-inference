@@ -36,23 +36,26 @@ import matplotlib.pyplot as pyplot
 import pandas as pd
 import tqdm
 
-# import the local copy of msprime in preference to the global one
+#set up for local imports
 curr_dir = os.path.dirname(os.path.abspath(__file__))
+# import the local copy of msprime in preference to the global one
 sys.path.insert(1,os.path.join(curr_dir,'..','msprime'))
+# import e.g. simulate_sweep
+sys.path.insert(1,os.path.join(curr_dir,'..','ftprime/examples'))
+
 import msprime
 import msprime_extras
 import msprime_fastARG
 import msprime_ARGweaver
 import msprime_RentPlus
 import ARG_metrics
+from selective_sweep import simulate_sweep
 
 fastARG_executable = os.path.join(curr_dir,'..','fastARG','fastARG')
 ARGweaver_executable = os.path.join(curr_dir,'..','argweaver','bin','arg-sample')
 smc2arg_executable = os.path.join(curr_dir,'..','argweaver','bin','smc2arg')
 RentPlus_executable = os.path.join(curr_dir,'..','RentPlus','RentPlus.jar')
 tsinfer_executable = os.path.join(curr_dir,'run_tsinfer.py')
-ftprime_singlelocus_executable = os.path.join(curr_dir,'..','ftprime_ms','sims','run-singlelocus.py')
-ftprime_multilocus_executable = os.path.join(curr_dir,'..','ftprime_ms','sims','run-sim.py')
 
 #monkey-patch write.nexus into msprime
 msprime.TreeSequence.write_nexus_trees = msprime_extras.write_nexus_trees
@@ -61,6 +64,16 @@ FASTARG = "fastARG"
 ARGWEAVER = "ARGweaver"
 RENTPLUS = "RentPlus"
 TSINFER = "tsinfer"
+
+#names for optional columns in the dataset
+ERROR_COLNAME = 'error_rate'
+SUBSAMPLE_COLNAME = 'subsample_size'
+SIMTOOL_COLNAME = 'sim_tool' #if column does not exist, default simulation tool = 'msprime'
+SELECTION_COEFF_COLNAME = 'selection_coefficient'
+DOMINANCE_COEFF_COLNAME = 'dominance_coefficient'
+SELECTED_FREQ_COLNAME = 'output_frequency'
+SELECTED_POSTGEN_COLNAME = 'output_after_generations'
+
 
 NO_METRICS = 0
 METRICS_OVER_ALL_BASES = 1
@@ -128,45 +141,54 @@ def generate_samples(ts, error_p):
                 done = 0 < s < ts.sample_size
     return S
 
-def msprime_name(n, Ne, l, rho, mu, genealogy_seed, mut_seed, directory=None):
+def mk_sim_name(n, Ne, l, rho, mu, genealogy_seed, mut_seed, directory=None, tool="msprime",
+    s=None, h=None, freq=None, post_gens=None):
     """
     Create a filename for saving an msprime simulation (without extension)
     Other functions add error rates and/or a subsample sizes to the name
     """
     #format mut rate & recomb rate to print non-exponential notation without
-    # trailing zeroes 12 dp should be ample for these rates
+    # trailing zeroes. 12 dp should be ample for these rates
     rho = "{:.12f}".format(float(rho)).rstrip('0')
     mu = "{:.12f}".format(float(mu)).rstrip('0')
-    file = "msprime-n{}_Ne{}_l{}_rho{}_mu{}-gs{}_ms{}".format(int(n), float(Ne), int(l), rho, \
-        mu, int(genealogy_seed), int(mut_seed))
+    file = "{}-n{}_Ne{}_l{}_rho{}_mu{}-gs{}_ms{}".format(tool, int(n), float(Ne), int(l),\
+        rho, mu, int(genealogy_seed), int(mut_seed))
+    if s is not None:
+        file += "_s{}".format(s)
+    if h is not None:
+        file += "_h{}".format(h)
+    if freq is not None:
+        file += "_f{}".format(freq)
+        if post_gens is not None:
+            file += "+{}".format(post_gens)
     if directory is None:
         return file
     else:
         return os.path.join(directory,file)
 
-def msprime_name_from_row(row, directory=None, error_col=None, subsample_col=None):
+def mk_sim_name_from_row(row, directory=None, error_col=ERROR_COLNAME, subsample_col=SUBSAMPLE_COLNAME):
     """
-    If error_col and subsample_col are None, this is the same as msprime_name()
+    If error_col and subsample_col are None, this is the same as mk_sim_name()
     but filled out using data from a row. If error_col is a string which exists as
     a column name in the row then add_error_param_to_name() is also called, using
-    the error rate specified in that column. Alternatively (e.g. if error_col is a
-    number) then it is treated as the error rate to add via add_error_param_to_name().
-    The same goes for subsample_col.
+    the error rate specified in that column.
     """
-    name = msprime_name(row.sample_size, row.Ne, row.length, row.recombination_rate,
-        row.mutation_rate, row.seed, row.seed, directory)
-    if subsample_col is not None and not pd.isnull(subsample_col):
-        if isinstance(subsample_col, str):
-            if subsample_col in row:
-                name = add_subsample_param_to_name(name, row[subsample_col])
-        else:
-            name = add_subsample_param_to_name(name, subsample_col)
-    if error_col is not None and not pd.isnull(error_col):
-        if isinstance(error_col, str):
-            if error_col in row:
-                name = add_error_param_to_name(name, row[error_col])
-        else:
-            name = add_error_param_to_name(name, error_col)
+    #fill out optional colnames (these might not exist)
+    tool = row.get(SIMTOOL_COLNAME, 'msprime') #default to 'msprime' if tool not specified in row
+    s = row.get(SELECTION_COEFF_COLNAME)
+    h = row.get(DOMINANCE_COEFF_COLNAME)
+    freq = row.get(SELECTED_FREQ_COLNAME)
+    post_gens = row.get(SELECTED_POSTGEN_COLNAME)
+    
+    name = mk_sim_name(row.sample_size, row.Ne, row.length, row.recombination_rate,
+        row.mutation_rate, row.seed, row.seed, directory, 
+        tool=tool, s=s, h=h, freq=freq, post_gens = post_gens)
+    #in some cases the original simulation (or results frome the simulation) have been
+    # modified and we need a name that reflects that modification 
+    if subsample_col and subsample_col in row:
+        name = add_subsample_param_to_name(name, row[subsample_col])
+    if error_col and error_col in row:
+        name = add_error_param_to_name(name, row[error_col])
     return(name)
 
 def add_subsample_param_to_name(sim_name, subsample_size=None):
@@ -206,11 +228,11 @@ def construct_fastarg_name(sim_name, seed, directory=None):
     d,f = os.path.split(sim_name)
     return os.path.join(d,'+'.join(['fastarg', f, "fs"+str(int(seed))]))
 
-def fastarg_name_from_msprime_row(row, sim_dir):
+def fastarg_name_from_row(row, sim_dir):
     """
-    return the fa name based on an msprime sim specified by row
+    return the fa name based on an sim specified by row
     """
-    return construct_fastarg_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample_size'),
+    return construct_fastarg_name(mk_sim_name_from_row(row, sim_dir),
                                   seed=row.seed)
 
 
@@ -228,12 +250,12 @@ def construct_argweaver_name(sim_name, burnin, ntimes, seed, iteration_number=No
         suffix += "_i."+ str(int(iteration_number))
     return os.path.join(d,'+'.join(['aweaver', f, suffix]))
 
-def argweaver_names_from_msprime_row(row, sim_dir):
+def argweaver_names_from_row(row, sim_dir):
     """
-    return multiple argweaver names based on an msprime sim specified by row
+    return multiple argweaver names based on an sim specified by row
     there is one name per argweaver iteration listed in row.ARGweaver_iterations
     """
-    return [construct_argweaver_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample_size'),
+    return [construct_argweaver_name(mk_sim_name_from_row(row, sim_dir),
                                      burnin=row.ARGweaver_burnin, ntimes=ARGweaver_ntimes,
                                      seed=row.seed, iteration_number=it)
                 for it in nanblank(row.ARGweaver_iterations).split(",") if it]
@@ -250,11 +272,11 @@ def rentplus_name_from_msprime_row(row, sim_dir):
     """
     return the rentplus name based on an msprime sim specified by row
     """
-    return construct_rentplus_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample_size'))
+    return construct_rentplus_name(mk_sim_name_from_row(row, sim_dir))
 
 def construct_tsinfer_name(sim_name, subsample_size=None, shared_breakpoints=0, shared_lengths=0):
     """
-    Returns an MSprime Li & Stevens inference filename.
+    Returns a TSinfer filename.
     If the file is a subset of the original, this can be added to the
     basename in this function, or later using the
     add_subsample_param_to_name() routine.
@@ -269,22 +291,6 @@ def construct_tsinfer_name(sim_name, subsample_size=None, shared_breakpoints=0, 
     if subsample_size is not None and not pd.isnull(subsample_size):
         name = add_subsample_param_to_name(name, subsample_size)
     return name
-
-def tsinfer_name_from_msprime_row(row, sim_dir, subsample_size=None):
-    """
-    return the tsinfer name based on an msprime sim specified by row
-    """
-    if subsample_size is None and not pd.isnull(subsample_size):
-        return construct_tsinfer_name(
-            msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample_size'),
-            shared_breakpoints = getattr(self.row,'tsinfer_srb', None),
-            shared_lengths = getattr(self.row,'tsinfer_sl', None)
-            )
-    else:
-        return construct_tsinfer_name(msprime_name_from_row(row, sim_dir, 'error_rate', 'subsample_size'),
-            shared_breakpoints = getattr(self.row,'tsinfer_srb', None),
-            shared_lengths = getattr(self.row,'tsinfer_sl', None),
-            subsample_size = subsample_size)
 
 
 def time_cmd(cmd, stdout=sys.stdout):
@@ -348,11 +354,11 @@ class InferenceRunner(object):
         self.compute_tree_metrics = compute_tree_metrics
         #base_fn is used for haplotype matrices etc from the simulation, so must include error, 
         #but not subsample size (as subsampling happens *after* inference, when comparing trees)
-        self.base_fn = msprime_name_from_row(
-            row, simulations_dir, 'error_rate')
+        self.base_fn = mk_sim_name_from_row(
+            row, simulations_dir, subsample_col = None)
         #source tree data must use the subsampled version, if present, but not error
-        self.source_trees_fn = msprime_name_from_row(
-            row, simulations_dir, subsample_col="subsample_size")
+        self.source_trees_fn = mk_sim_name_from_row(
+            row, simulations_dir, error_col=None)
         self.source_nexus_file = self.source_trees_fn + ".nex"
         # This should be set by the run_inference methods.
         self.inferred_nexus_files = None
@@ -712,7 +718,7 @@ class Dataset(object):
     """
     sim_cols = [
         "sample_size", "Ne", "length", "recombination_rate", "mutation_rate",
-        "error_rate", "seed"]
+        ERROR_COLNAME, "seed"]
 
     #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
     exclude_colnames = []
@@ -864,7 +870,7 @@ class Dataset(object):
         Returns a tuple of treesequence, filename (without file type extension)
         """
         logging.info(
-            "Running simulation for "
+            "Running neutral simulation for "
             "n = {}, l = {:.2g}, Ne = {}, rho = {}, mu = {}".format(
                 n, l, Ne, rho, mu))
         # Since we want to have a finite site model, we force the recombination map
@@ -890,48 +896,71 @@ class Dataset(object):
             else:
                 done=True
         logging.info(
-            "Simulation done; {} sites and {} trees".format(ts.num_sites, ts.num_trees))
+            "Neutral simulation done; {} sites, {} trees".format(ts.num_sites, ts.num_trees))
         # Here we might want to iterate over mutation rates for the same
         # genealogy, setting a different mut_seed so that we can see for
         # ourselves the effect of mutation rate variation on a single topology
         # but for the moment, we don't bother, and simply write
         # mut_seed==genealogy_seed
-        sim_fn = msprime_name(n, Ne, l, rho, mu, seed, seed, self.simulations_dir)
+        sim_fn = mk_sim_name(n, Ne, l, rho, mu, seed, seed, self.simulations_dir)
         logging.debug("writing {}.hdf5".format(sim_fn))
         ts.dump(sim_fn+".hdf5")
         return ts, sim_fn
 
-    def single_simulation_with_selection(self, n, Ne, l, rho, mu, s, seed, mut_seed=None,
-        discretise_mutations=True):
+    def single_simulation_with_selective_sweep(self, n, Ne, l, rho, mu, s, h, stop_freqs,
+        seed, mut_seed=None):
         """
-        Run a forward simulation with selection for a set of parameter values. 
-        using simuPOP. Convert the output to an .hdf5 file using ftprime. Other
+        Run a forward simulation with a selective sweep for a set of parameter values. 
+        using simuPOP. 
+        
+        Forward simulations are slow, especially for large chromosomes & population sizes.
+        So to save time, we can get multiple results from the same simulation, by saving 
+        populations at different times
+        
+        
+        if stop is a single number it is taken as a stop frequency, and
+        the simulation is stopped when the selected variant reaches that frequency. If it is a
+        tuple, it is taken as (freq, generations), and the simulation is stopped at the
+        specified number of generations after that frequency has been reached (e.g. if
+        stop = (1.0, 200), the simulation is stopped 200 generations after fixation.
+        
+        Convert the output to multiple .hdf5 files using ftprime. Other
         details as for single_simulation()
-        Returns a tuple of treesequence, filename (without file type extension)
+        Returns an iterator over (treesequence, filename, output_freq) tuples 
+        (without file type extension)
+        
+        TO DO - haven't implemented discretising of mutations, but we rarely use this anyway
         """
         logging.info(
-            "Running simulation with selection for "
+            "Running forward simulation with selection for "
             "n = {}, l = {:.2g}, Ne = {}, rho = {}, mu = {}, s = {}".format(
                 n, l, Ne, rho, mu, s))
-        cmd = [sys.executable, ftprime_singlelocus_executable,
-            "--popsize",  Ne,
-            "--recomb_rate", rho,
-            "--length", l,
-            "--neut_mut_rate", mu,
-            "--nsamples", int(n/2), #this is # of diploid samples, so needs halving
-            
-            ]
-        logging.info(
-            "Simulation done; {} sites and {} trees".format(ts.num_sites, ts.num_trees))
-        # Here we might want to iterate over mutation rates for the same
-        # genealogy, setting a different mut_seed so that we can see for
-        # ourselves the effect of mutation rate variation on a single topology
-        # but for the moment, we don't bother, and simply write
-        # mut_seed==genealogy_seed
-        sim_fn = msprime_name(n, Ne, l, rho, mu, seed, seed, self.simulations_dir)
-        logging.debug("writing {}.hdf5".format(sim_fn))
-        ts.dump(sim_fn+".hdf5")
-        return ts, sim_fn
+        sim_fn = mk_sim_name(n, Ne, l, rho, mu, seed, seed, self.simulations_dir, 
+            tool="ftprime", s=s, h=h) + "_f" #freq + post_gens added by simulate_sweep()
+
+
+        saved_files = simulate_sweep(
+            popsize=Ne,
+            chrom_length=l,
+            recomb_rate=rho,
+            mut_rate=mu,
+            selection_coef=s,
+            dominance_coef=h,
+            output_at_freqs=[(s,0) if isinstance(s, (str, float, int)) else (s[0],s[1]) for s in stop_freqs],
+            nsamples = int(n/2), #sample n/2 diploid individuals from the population
+            max_generations=int(1e8), #bail after ridiculous numbers of generations
+            mutations_after_simulation=True,
+            treefile_prefix=sim_fn,
+            seed=seed)
+        
+        expected_suffix = ".hdf5"
+        for outfreq, fn in saved_files.items():
+            assert fn.endswith(expected_suffix)
+            ts = msprime.load(fn)
+            logging.info(
+                "Selective simulation from '{}'; {} sites, {} trees".format(
+                    fn, ts.num_sites, ts.num_trees))
+            yield ts, fn[:-len(expected_suffix)], outfreq
 
 
     def save_positions(self, ts, fn):
@@ -1035,7 +1064,7 @@ class MetricsByMutationRateDataset(Dataset):
                         row.length = length
                         row.Ne = Ne
                         row.seed = replicate_seed
-                        row.error_rate = error_rate
+                        row[ERROR_COLNAME] = error_rate
                         self.save_variant_matrices(ts, fn, error_rate,
                             #infinite_sites=True)
                             infinite_sites=False)
@@ -1052,7 +1081,7 @@ class MetricsBySampleSizeDataset(Dataset):
     tools = [TSINFER]
     default_replicates = 40
     default_seed = 123
-    #to make this a fair comparison, we need to 
+    #to make this a fair comparison, we need to calculate only at the specific variant sites 
     compute_tree_metrics = METRICS_AT_VARIANT_SITES
 
     #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
@@ -1126,7 +1155,7 @@ class MetricsBySampleSizeDataset(Dataset):
                                 row.tsinfer_sl = tsinfer_sl
                                 row.subsample_size = subsample_size
                                 row.seed = replicate_seed
-                                row.error_rate = error_rate
+                                row[ERROR_COLNAME] = error_rate
                                 self.save_variant_matrices(ts, fn, error_rate,
                                     #infinite_sites=True)
                                     infinite_sites=False)
@@ -1134,12 +1163,24 @@ class MetricsBySampleSizeDataset(Dataset):
                                     progress.update()
         return data
 
-class MetricsByMutationRateWithSelectionDataset(MetricsByMutationRateDataset):
+class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
     """
     Accuracy of ARG inference (measured by various statistics)
-    tending to fully accurate as mutation rate increases
+    tending to fully accurate as mutation rate increases, but with a 
+    selective sweep superimposed.
+    
+    The time since / post sweep is likely to be a major factor in 
+    misfitting the model. We judge this by stopping the sweep at a
+    specific frequency, or at a given number of generations post fixation.
     """
-    name = "metrics_by_mutation_rate_with_selection"
+    name = "metrics_by_mutation_rate_with_selective_sweep"
+
+    default_replicates = 10
+    default_seed = 123
+    compute_tree_metrics = METRICS_OVER_ALL_BASES
+
+    #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
+    exclude_colnames =[]
 
     def run_simulations(self, replicates, seed, show_progress):
         if replicates is None:
@@ -1149,15 +1190,20 @@ class MetricsByMutationRateWithSelectionDataset(MetricsByMutationRateDataset):
         rng = random.Random(seed)
         # Variable parameters
         mutation_rates = np.logspace(-8, -5, num=6)[:-1] * 1.5
-        error_rates = [0, 0.01]
+        error_rates = [0]#, 0.01]
         sample_sizes = [10, 20]
+        #what frequencies to output intermediate files: 
+        #use strings for floats as these are saved in the filename
+        stop_at = ['0.2', '0.5', '0.8', '1.0', ('1.0', 200)] 
 
         # Fixed parameters
         Ne = 5000
         length = 10000
-        recombination_rate = 2.5e-8
+        recombination_rate = 1e-7
         selection_coefficient = 0.1
-        num_rows = replicates * len(mutation_rates) * len(error_rates) * len(sample_sizes)
+        dominance_coefficient = 0.5
+        num_rows = replicates * len(mutation_rates) * len(error_rates) * len(sample_sizes) * \
+            len(stop_at)
         data = pd.DataFrame(index=np.arange(0, num_rows), columns= self.sim_cols)
         row_id = 0
         if show_progress:
@@ -1165,36 +1211,45 @@ class MetricsByMutationRateWithSelectionDataset(MetricsByMutationRateDataset):
         for replicate in range(replicates):
             for mutation_rate in mutation_rates:
                 for sample_size in sample_sizes:
+                    sim_base_row_id = row_id
                     done = False
                     while not done:
+                        row_id = sim_base_row_id
+                        done = True
                         replicate_seed = rng.randint(1, 2**31)
                         # Run the simulation
-                        ts, fn = self.single_simulation(
+                        for ts, fn, output_info in self.single_simulation_with_selective_sweep(
                             sample_size, Ne, length, recombination_rate, mutation_rate,
-                            replicate_seed, replicate_seed,
-                            #discretise_mutations=True)
-                            discretise_mutations=False) #stop doing Jerome's discretising step!
-                        # Reject this instances if we got no mutations.
-                        done = ts.get_num_mutations() > 0
-                    with open(fn +".nex", "w+") as out:
-                        ts.write_nexus_trees(
-                            out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
-                    # Add the rows for each of the error rates in this replicate
-                    for error_rate in error_rates:
-                        row = data.iloc[row_id]
-                        row_id += 1
-                        row.sample_size = sample_size
-                        row.recombination_rate = recombination_rate
-                        row.mutation_rate = mutation_rate
-                        row.length = length
-                        row.Ne = Ne
-                        row.seed = replicate_seed
-                        row.error_rate = error_rate
-                        self.save_variant_matrices(ts, fn, error_rate,
-                            #infinite_sites=True)
-                            infinite_sites=False)
-                        if show_progress:
-                            progress.update()
+                            selection_coefficient, dominance_coefficient, stop_at, replicate_seed):
+                            # Reject this entire set if we got no mutations at any point.
+                            if ts.get_num_mutations() == 0:
+                                done=False
+                                logging.info("Rejecting a set of forwards simulations because at lest one has no variants")
+                                break
+                            with open(fn +".nex", "w+") as out:
+                                ts.write_nexus_trees(
+                                    out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+                            # Add the rows for each of the error rates in this replicate
+                            for error_rate in error_rates:
+                                row = data.iloc[row_id]
+                                row_id += 1
+                                row.sample_size = sample_size
+                                row.recombination_rate = recombination_rate
+                                row.mutation_rate = mutation_rate
+                                row.length = length
+                                row.Ne = Ne
+                                row.seed = replicate_seed
+                                row[ERROR_COLNAME] = error_rate
+                                row[SIMTOOL_COLNAME] = "ftprime"
+                                row[SELECTION_COEFF_COLNAME] = selection_coefficient
+                                row[DOMINANCE_COEFF_COLNAME] = dominance_coefficient
+                                row[SELECTED_FREQ_COLNAME] = output_info[0]
+                                row[SELECTED_POSTGEN_COLNAME] = output_info[1] if len(output_info)>1 else 0
+                                self.save_variant_matrices(ts, fn, error_rate,
+                                    #infinite_sites=True)
+                                    infinite_sites=False)
+                                if show_progress:
+                                    progress.update()
         return data
 
 class TsinferPerformance(Dataset):
@@ -1268,7 +1323,7 @@ class TsinferPerformance(Dataset):
                         row.length = length
                         row.Ne = Ne
                         row.seed = replicate_seed
-                        row.error_rate = error_rate
+                        row[ERROR_COLNAME] = error_rate
                         row.tsinfer_srb = tsinfer_srb
                         row.tsinfer_sl = tsinfer_sl
                         row.ts_filesize = os.path.getsize(fn + ".hdf5")
@@ -1281,7 +1336,7 @@ class TsinferPerformance(Dataset):
 
 class ProgramComparison(Dataset):
     """
-    The performance of the various programs in terms of running time.
+    The performance of the various programs in terms of running time and memory usage
     """
     name = "program_comparison"
     compute_tree_metrics = NO_METRICS
@@ -1343,7 +1398,7 @@ class ProgramComparison(Dataset):
                 row.length = length
                 row.Ne = Ne
                 row.seed = replicate_seed
-                row.error_rate = 0.0
+                row[ERROR_COLNAME] = 0.0
                 # for tool in self.tools:
                 #     row[tool + "_completed"] = False
                 # # Hack to prevent RentPlus from running when the sizes are too big.
@@ -1433,7 +1488,7 @@ class ARGweaverParamChanges(Dataset):
                                 row.length = length
                                 row.Ne = Ne
                                 row.seed = replicate_seed
-                                row.error_rate = error_rate
+                                row[ERROR_COLNAME] = error_rate
                                 row.ARGweaver_burnin = burnin
                                 row.ARGweaver_ntimes = n_timesteps
                                 row.only_AW = only_run_ARGweaver_inference
@@ -1492,7 +1547,7 @@ class AllMetricsByMutationRateFigure(Figure):
 
     def plot(self):
         df = self.dataset.data
-        error_rates = df.error_rate.unique()
+        error_rates = df[ERROR_COLNAME].unique()
         sample_sizes = df.sample_size.unique()
 
         metrics = ARG_metrics.get_metric_names()
@@ -1508,7 +1563,7 @@ class AllMetricsByMutationRateFigure(Figure):
                 if j == len(metrics) - 1:
                     ax.set_xlabel("Mutation rate")
                 for n, linestyle in zip(sample_sizes, ["-", "-."]):
-                    df_s = df[np.logical_and(df.sample_size == n, df.error_rate == error_rate)]
+                    df_s = df[np.logical_and(df.sample_size == n, df[ERROR_COLNAME] == error_rate)]
                     group = df_s.groupby(["mutation_rate"])
                     group_mean = group.mean()
                     for tool, setting in self.tools_format.items():
@@ -1529,7 +1584,7 @@ class MetricByMutationRateFigure(Figure):
 
     def plot(self):
         df = self.dataset.data
-        error_rates = df.error_rate.unique()
+        error_rates = df[ERROR_COLNAME].unique()
         sample_sizes = df.sample_size.unique()
 
         linestyles = ["-", ":"]
@@ -1543,7 +1598,7 @@ class MetricByMutationRateFigure(Figure):
             if k == 0:
                 ax.set_ylabel(self.metric + " metric")
             for n, linestyle in zip(sample_sizes, linestyles):
-                df_s = df[np.logical_and(df.sample_size == n, df.error_rate == error_rate)]
+                df_s = df[np.logical_and(df.sample_size == n, df[ERROR_COLNAME] == error_rate)]
                 group = df_s.groupby(["mutation_rate"])
                 mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
                 for tool,setting in self.tools_format.items():
@@ -1614,7 +1669,7 @@ class CputimeMetricByMutationRateFigure(MetricByMutationRateFigure):
         n = 50
         ax.set_xlabel("Mutation rate")
         ax.set_ylabel("CPU time (sec)")
-        df_s = df[np.logical_and(df.sample_size == n, df.error_rate == error_rate)]
+        df_s = df[np.logical_and(df.sample_size == n, df[ERROR_COLNAME] == error_rate)]
         group = df_s.groupby(["mutation_rate"])
         group_mean = group.mean()
         for tool, setting in self.tools_format.items():
@@ -1921,7 +1976,7 @@ class ProgramComparisonFigure(Figure):
         df = self.dataset.data
         tools = self.dataset.tools
 
-        # Rescale the length to MB
+        # Rescale the length to Mb
         length_scale = 10**6
         df.length /= length_scale
         # Scale time to hours
@@ -1944,7 +1999,7 @@ class ProgramComparisonFigure(Figure):
         ax1.legend(
             loc="upper left", numpoints=1, fontsize="small")
 
-        ax1.set_xlabel("Length (MB)")
+        ax1.set_xlabel("Length (Mb) for fixed sample of {}".format(self.datasetClass.fixed_sample_size))
         ax1.set_ylabel(self.y_label)
 
         dfp = df[df.length == self.datasetClass.fixed_length / length_scale]
@@ -1955,7 +2010,8 @@ class ProgramComparisonFigure(Figure):
             col = tool + "_" + self.plotted_column
             ax2.plot(group_mean[col], label=tool, color=self.tools_format[tool]["col"])
 
-        ax2.set_xlabel("Sample size")
+        ax2.set_xlabel("Sample size for fixed length of {} Mb".format(
+            self.datasetClass.fixed_length / length_scale))
 
         # ax1.set_xlim(-5, 105)
         # ax1.set_ylim(-5, 250)
