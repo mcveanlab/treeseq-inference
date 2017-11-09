@@ -1189,8 +1189,6 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
         i, (rows_per_run, variable, fixed, replicate_seed) = params
         replicate, mutation_rate, sample_size = variable
         Ne, length, recombination_rate, selection_coefficient, dominance_coefficient, stop_at, error_rates = fixed
-        
-        print(i)
         base_row_id = i * rows_per_run
         return_value = {}
         done = False
@@ -1266,14 +1264,13 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
                 if progress is not None:
                     progress.update()
         
-        # def single_simulation_with_selective_sweep(self, n, Ne, l, rho, mu, s, h, stop_freqs, seed, mut_seed=None):
-
+        logging.info("Setting up using {} processes".format(num_processes))
         variable_iterator = itertools.product(range(replicates), mutation_rates,  sample_sizes)
         fixed_iterator = itertools.repeat((Ne, length, recombination_rate, 
             selection_coefficient, dominance_coefficient, stop_at, error_rates))
-        rows_per_run = replicates * len(mutation_rates) * len(sample_sizes)
-        seeds = [rng.randint(1, 2**31) for i in range(int(num_rows/rows_per_run))]
-        combined_iterator = enumerate(zip(itertools.repeat(rows_per_run), variable_iterator, fixed_iterator, seeds))
+        n_sims = replicates * len(mutation_rates) * len(sample_sizes)
+        seeds = [rng.randint(1, 2**31) for i in range(n_sims)]
+        combined_iterator = enumerate(zip(itertools.repeat(int(num_rows/n_sims)), variable_iterator, fixed_iterator, seeds))
         
         if num_processes > 1:
             with multiprocessing.Pool(processes=num_processes) as pool:
