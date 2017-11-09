@@ -1268,9 +1268,9 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
         variable_iterator = itertools.product(range(replicates), mutation_rates,  sample_sizes)
         fixed_iterator = itertools.repeat((Ne, length, recombination_rate, 
             selection_coefficient, dominance_coefficient, stop_at, error_rates))
-        rows_per_run = replicates * len(mutation_rates) * len(sample_sizes)
-        seeds = [rng.randint(1, 2**31) for i in range(int(num_rows/rows_per_run))]
-        combined_iterator = enumerate(zip(itertools.repeat(rows_per_run), variable_iterator, fixed_iterator, seeds))
+        n_sims = replicates * len(mutation_rates) * len(sample_sizes)
+        seeds = [rng.randint(1, 2**31) for i in range(n_sims)]
+        combined_iterator = enumerate(zip(itertools.repeat(int(num_rows/n_sims)), variable_iterator, fixed_iterator, seeds))
         
         if num_processes > 1:
             with multiprocessing.Pool(processes=num_processes) as pool:
