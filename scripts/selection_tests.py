@@ -50,7 +50,7 @@ def save_estimates(start, end, sfs, n):
     D.append(((end+start)/2, ndiv - watt))
     FayWuH.append(((end+start)/2, ndiv - tH))
 
-
+"""
 fig, (ax1, ax2) = pyplot.subplots(1, 2, sharey=True, figsize=(16, 6))
 recombination_rate=1e-6
 mutation_rate=1e-6
@@ -77,22 +77,20 @@ plt.legend(["Tajima's D", "Fay & Wu's H"])
 plt.set_xlim(0,ts.get_sequence_length())
 plt.set_title("ftprime equivalent (after 1000 generations)")
 fig.savefig("SelectionMeasuresOnNeutral.pdf")
+"""
 
 #selective example
-#e.g. from 
+#e.g. from python3 ./examples/selective_sweep.py -N 10000 -r 1e-8 -L 100000 -k 10000 -s 0.05 -of 0.1 -of 0.5 -of 0.8 -of 1 -of 1 200 -of 1 600 -d 20 -v
 fig, ((ax1, ax2, ax3),(ax4, ax5,ax6)) = pyplot.subplots(2, 3, sharey=True, figsize=(21, 11))
 
 for f1, f2, plt in zip(
     ["0.1","0.5","0.8","1","1","1"],
-    ["","","","","+200","+600"],
+    ["","","","","+200","+1000"],
     [ax1,ax2,ax3,ax4,ax5,ax6]):
-    fn = "../ftprime/sweepfile{}{}.hdf5".format(f1,f2)
+    fn = "../ftprime/sweep1e-8r20000pop0.1sel{}{}.hdf5".format(f1,f2)
+    #fn = "../ftprime/sweep1e-8r20000pop{}{}.hdf5".format(f1,f2)
     ts = msprime.load(fn)
-    T_W  = []
-    T_pi = []
-    T_H  = []
-    D    = []
-    FayWuH=[]
+    T_W, T_pi, T_H, D, FayWuH = [], [], [], [], []
 
     print(fn, ": length =", ts.get_sequence_length(), ", n samples =", ts.num_samples)
     
@@ -109,6 +107,9 @@ for f1, f2, plt in zip(
     loc = plt.axvline(x=ts.get_sequence_length()/2, c="red", linestyle=":")
     plt.legend(["Tajima's D", "Fay & Wu's H", "Selected locus"], loc="lower left")
     plt.set_xlim(0,ts.get_sequence_length())
+    ticks = plt.get_xticks()/1e3
+    plt.set_xticklabels(ticks)
+    plt.set_xlabel("Kb")
     #plt.set_ylim(-15000,15000)
     plt.set_title("Selected allele at freq "+ f1 + f2)
 fig.savefig("SelectionMeasures.pdf")
