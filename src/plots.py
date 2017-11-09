@@ -49,7 +49,7 @@ import msprime_fastARG
 import msprime_ARGweaver
 import msprime_RentPlus
 import ARG_metrics
-from selective_sweep import simulate_sweep
+
 
 fastARG_executable = os.path.join(curr_dir,'..','fastARG','fastARG')
 ARGweaver_executable = os.path.join(curr_dir,'..','argweaver','bin','arg-sample')
@@ -760,7 +760,7 @@ class Dataset(object):
         os.makedirs(self.simulations_dir)
         self.verbosity = args.verbosity
         logging.info("Creating dir {}".format(self.simulations_dir))
-        self.data = self.run_simulations(args.replicates, args.seed, args.progress)
+        self.data = self.run_simulations(args.replicates, args.seed, args.progress, args.processes)
         for t in self.tools:
             col = t + "_completed"
             if col not in self.data:
@@ -931,6 +931,7 @@ class Dataset(object):
         
         TO DO - haven't implemented discretising of mutations, but we rarely use this anyway
         """
+        from selective_sweep import simulate_sweep #not at top as this fires up a simupop instance
         logging.info(
             "Running forward simulation with selection for "
             "n = {}, l = {:.2g}, Ne = {}, rho = {}, mu = {}, s = {}".format(
@@ -1015,7 +1016,7 @@ class MetricsByMutationRateDataset(Dataset):
     exclude_colnames =[]
 
 
-    def run_simulations(self, replicates, seed, show_progress):
+    def run_simulations(self, replicates, seed, show_progress, num_processes=1):
         if replicates is None:
             replicates = self.default_replicates
         if seed is None:
@@ -1088,7 +1089,7 @@ class MetricsBySampleSizeDataset(Dataset):
     exclude_colnames =[]
 
 
-    def run_simulations(self, replicates, seed, show_progress):
+    def run_simulations(self, replicates, seed, show_progress, num_processes=1):
         if replicates is None:
             replicates = self.default_replicates
         if seed is None:
@@ -1163,6 +1164,7 @@ class MetricsBySampleSizeDataset(Dataset):
                                     progress.update()
         return data
 
+
 class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
     """
     Accuracy of ARG inference (measured by various statistics)
@@ -1173,16 +1175,61 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
     misfitting the model. We judge this by stopping the sweep at a
     specific frequency, or at a given number of generations post fixation.
     """
+
     name = "metrics_by_mutation_rate_with_selective_sweep"
 
     default_replicates = 10
     default_seed = 123
     compute_tree_metrics = METRICS_OVER_ALL_BASES
-
+    
     #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
-    exclude_colnames =[]
+    exclude_colnames =[]  
+              
+    def single_sim(self, params):
+        i, (rows_per_run, variable, fixed, replicate_seed) = params
+        replicate, mutation_rate, sample_size = variable
+        Ne, length, recombination_rate, selection_coefficient, dominance_coefficient, stop_at, error_rates = fixed
+        
+        print(i)
+        base_row_id = i * rows_per_run
+        return_value = {}
+        done = False
+        logging.info("Setting up simulations {}-{}".format(
+            base_row_id, base_row_id + rows_per_run - 1))
+        while not done:
+            done = True
+            row_id = base_row_id
+            # Run the simulation, in parallel if necessary:
+            for ts, fn, output_info in self.single_simulation_with_selective_sweep(
+                sample_size, Ne, length, recombination_rate, mutation_rate,
+                selection_coefficient, dominance_coefficient, stop_at, replicate_seed):
+                # Reject this entire set if we got no mutations at any point.
+                if ts.get_num_mutations() == 0:
+                    done=False
+                    logging.info("Rejecting a set of forwards simulations because at lest one has no variants")
+                    break
+                with open(fn +".nex", "w+") as out:
+                    ts.write_nexus_trees(
+                        out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+                for error_rate in error_rates:
+                    row = return_value[row_id] = {}
+                    row_id += 1
+                    row['sample_size'] = sample_size
+                    row['recombination_rate'] = recombination_rate
+                    row['mutation_rate'] = mutation_rate
+                    row['length'] = length
+                    row['Ne'] = Ne
+                    row['seed'] = replicate_seed
+                    row[ERROR_COLNAME] = error_rate
+                    row[SIMTOOL_COLNAME] = "ftprime"
+                    row[SELECTION_COEFF_COLNAME] = selection_coefficient
+                    row[DOMINANCE_COEFF_COLNAME] = dominance_coefficient
+                    row[SELECTED_FREQ_COLNAME] = output_info[0]
+                    row[SELECTED_POSTGEN_COLNAME] = output_info[1] if len(output_info)>1 else 0
+                    self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
+        return return_value
 
-    def run_simulations(self, replicates, seed, show_progress):
+    def run_simulations(self, replicates, seed, show_progress, num_processes=1):
         if replicates is None:
             replicates = self.default_replicates
         if seed is None:
@@ -1204,52 +1251,40 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
         dominance_coefficient = 0.5
         num_rows = replicates * len(mutation_rates) * len(error_rates) * len(sample_sizes) * \
             len(stop_at)
-        data = pd.DataFrame(index=np.arange(0, num_rows), columns= self.sim_cols)
+            
+        cols = self.sim_cols + [SIMTOOL_COLNAME, SELECTION_COEFF_COLNAME, 
+            DOMINANCE_COEFF_COLNAME, SELECTED_FREQ_COLNAME, SELECTED_POSTGEN_COLNAME]
+        data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
         row_id = 0
-        if show_progress:
-            progress = tqdm.tqdm(total=num_rows)
-        for replicate in range(replicates):
-            for mutation_rate in mutation_rates:
-                for sample_size in sample_sizes:
-                    sim_base_row_id = row_id
-                    done = False
-                    while not done:
-                        row_id = sim_base_row_id
-                        done = True
-                        replicate_seed = rng.randint(1, 2**31)
-                        # Run the simulation
-                        for ts, fn, output_info in self.single_simulation_with_selective_sweep(
-                            sample_size, Ne, length, recombination_rate, mutation_rate,
-                            selection_coefficient, dominance_coefficient, stop_at, replicate_seed):
-                            # Reject this entire set if we got no mutations at any point.
-                            if ts.get_num_mutations() == 0:
-                                done=False
-                                logging.info("Rejecting a set of forwards simulations because at lest one has no variants")
-                                break
-                            with open(fn +".nex", "w+") as out:
-                                ts.write_nexus_trees(
-                                    out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
-                            # Add the rows for each of the error rates in this replicate
-                            for error_rate in error_rates:
-                                row = data.iloc[row_id]
-                                row_id += 1
-                                row.sample_size = sample_size
-                                row.recombination_rate = recombination_rate
-                                row.mutation_rate = mutation_rate
-                                row.length = length
-                                row.Ne = Ne
-                                row.seed = replicate_seed
-                                row[ERROR_COLNAME] = error_rate
-                                row[SIMTOOL_COLNAME] = "ftprime"
-                                row[SELECTION_COEFF_COLNAME] = selection_coefficient
-                                row[DOMINANCE_COEFF_COLNAME] = dominance_coefficient
-                                row[SELECTED_FREQ_COLNAME] = output_info[0]
-                                row[SELECTED_POSTGEN_COLNAME] = output_info[1] if len(output_info)>1 else 0
-                                self.save_variant_matrices(ts, fn, error_rate,
-                                    #infinite_sites=True)
-                                    infinite_sites=False)
-                                if show_progress:
-                                    progress.update()
+        progress = tqdm.tqdm(total=num_rows) if show_progress else None
+
+            
+        def save_result(data, values_by_row, progress):
+            for i,d in values_by_row.items():
+                for colname, val in d.items():
+                    data.iloc[i][colname]=val
+                if progress is not None:
+                    progress.update()
+        
+        # def single_simulation_with_selective_sweep(self, n, Ne, l, rho, mu, s, h, stop_freqs, seed, mut_seed=None):
+
+        variable_iterator = itertools.product(range(replicates), mutation_rates,  sample_sizes)
+        fixed_iterator = itertools.repeat((Ne, length, recombination_rate, 
+            selection_coefficient, dominance_coefficient, stop_at, error_rates))
+        rows_per_run = replicates * len(mutation_rates) * len(sample_sizes)
+        seeds = [rng.randint(1, 2**31) for i in range(int(num_rows/rows_per_run))]
+        combined_iterator = enumerate(zip(itertools.repeat(rows_per_run), variable_iterator, fixed_iterator, seeds))
+        
+        if num_processes > 1:
+            with multiprocessing.Pool(processes=num_processes) as pool:
+                for result in pool.imap_unordered(self.single_sim, combined_iterator):
+                    save_result(data, result, progress)
+        else:
+            # When we have only one process it's easier to keep everything in the same
+            # process for debugging.
+            for result in map(self.single_sim, combined_iterator):
+                save_result(data, result, progress)
+                print(data)
         return data
 
 class TsinferPerformance(Dataset):
@@ -1266,7 +1301,7 @@ class TsinferPerformance(Dataset):
     fixed_length = 5 * 10**6
     fixed_sample_size = 5000
 
-    def run_simulations(self, replicates, seed, show_progress):
+    def run_simulations(self, replicates, seed, show_progress, num_processes=1):
         # TODO abstract some of this functionality up into the superclass.
         # There is quite a lot shared with the other dataset.
         if replicates is None:
@@ -1346,7 +1381,7 @@ class ProgramComparison(Dataset):
     fixed_length = 5 * 10**6
     fixed_sample_size = 10000
 
-    def run_simulations(self, replicates, seed, show_progress):
+    def run_simulations(self, replicates, seed, show_progress, num_processes=1):
         # TODO abstract some of this functionality up into the superclass.
         # There is quite a lot shared with the other dataset.
         if replicates is None:
@@ -1434,7 +1469,7 @@ class ARGweaverParamChanges(Dataset):
     exclude_colnames =[]
 
 
-    def run_simulations(self, replicates, seed, show_progress):
+    def run_simulations(self, replicates, seed, show_progress, num_processes=1):
         if replicates is None:
             replicates = self.default_replicates
         if seed is None:
@@ -2078,6 +2113,9 @@ def main():
     subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
         help='the dataset identifier', choices=[d.name for d in datasets])
+    subparser.add_argument(
+        "--processes", '-p', type=int, default=1,
+        help="number of worker processes, e.g. 40")
     subparser.add_argument(
          '--replicates', '-r', type=int, help="number of replicates")
     subparser.add_argument(
