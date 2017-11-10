@@ -1214,7 +1214,7 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
                     row_id += 1
                     row['sample_size'] = sample_size
                     row['recombination_rate'] = self.recombination_rate
-                    row['mutation_rate'] = self.mutation_rate
+                    row['mutation_rate'] = mutation_rate
                     row['length'] = self.length
                     row['Ne'] = self.Ne
                     row['seed'] = replicate_seed
