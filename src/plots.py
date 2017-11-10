@@ -1189,7 +1189,7 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
         i, (params) = runtime_information
         assert None not in params #one will be none if the lengths of the iterators are different
         replicate_seed, (replicate, mutation_rate, sample_size) = params
-        base_row_id = i * self.num_rows/self.num_sims
+        base_row_id = i * self.num_rows//self.num_sims
         return_value = {}
         done = False
         logging.info("Setting up simulation {} of {}".format(i, self.num_sims))
