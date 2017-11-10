@@ -1184,23 +1184,23 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
     
     #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
     exclude_colnames =[]  
-              
-    def single_sim(self, params):
-        i, (rows_per_run, variable, fixed, replicate_seed) = params
-        replicate, mutation_rate, sample_size = variable
-        Ne, length, recombination_rate, selection_coefficient, dominance_coefficient, stop_at, error_rates = fixed
-        base_row_id = i * rows_per_run
+    
+    def single_sim(self, runtime_information):
+        i, (params) = runtime_information
+        assert None not in params #one will be none if the lengths of the iterators are different
+        replicate_seed, (replicate, mutation_rate, sample_size) = params
+        base_row_id = i * self.num_rows/self.num_sims
         return_value = {}
         done = False
-        logging.info("Setting up simulations {}-{}".format(
-            base_row_id, base_row_id + rows_per_run - 1))
+        logging.info("Setting up simulation {} of {}".format(i, self.num_sims))
         while not done:
             done = True
             row_id = base_row_id
             # Run the simulation, in parallel if necessary:
             for ts, fn, output_info in self.single_simulation_with_selective_sweep(
-                sample_size, Ne, length, recombination_rate, mutation_rate,
-                selection_coefficient, dominance_coefficient, stop_at, replicate_seed):
+                sample_size, self.Ne, self.length, self.recombination_rate, 
+                mutation_rate, self.selection_coefficient, self.dominance_coefficient, 
+                self.stop_at, replicate_seed):
                 # Reject this entire set if we got no mutations at any point.
                 if ts.get_num_mutations() == 0:
                     done=False
@@ -1209,52 +1209,50 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
                 with open(fn +".nex", "w+") as out:
                     ts.write_nexus_trees(
                         out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
-                for error_rate in error_rates:
+                for error_rate in self.error_rates:
                     row = return_value[row_id] = {}
                     row_id += 1
                     row['sample_size'] = sample_size
-                    row['recombination_rate'] = recombination_rate
-                    row['mutation_rate'] = mutation_rate
-                    row['length'] = length
-                    row['Ne'] = Ne
+                    row['recombination_rate'] = self.recombination_rate
+                    row['mutation_rate'] = self.mutation_rate
+                    row['length'] = self.length
+                    row['Ne'] = self.Ne
                     row['seed'] = replicate_seed
                     row[ERROR_COLNAME] = error_rate
                     row[SIMTOOL_COLNAME] = "ftprime"
-                    row[SELECTION_COEFF_COLNAME] = selection_coefficient
-                    row[DOMINANCE_COEFF_COLNAME] = dominance_coefficient
+                    row[SELECTION_COEFF_COLNAME] = self.selection_coefficient
+                    row[DOMINANCE_COEFF_COLNAME] = self.dominance_coefficient
                     row[SELECTED_FREQ_COLNAME] = output_info[0]
                     row[SELECTED_POSTGEN_COLNAME] = output_info[1] if len(output_info)>1 else 0
                     self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
         return return_value
 
     def run_simulations(self, replicates, seed, show_progress, num_processes=1):
-        if replicates is None:
-            replicates = self.default_replicates
-        if seed is None:
-            seed = self.default_seed
-        rng = random.Random(seed)
-        # Variable parameters
-        mutation_rates = np.logspace(-8, -5, num=6)[:-1] * 1.5
-        error_rates = [0]#, 0.01]
-        sample_sizes = [10, 20]
-        #what frequencies to output intermediate files: 
-        #use strings for floats as these are saved in the filename
-        stop_at = ['0.2', '0.5', '0.8', '1.0', ('1.0', 200)] 
+        self.replicates = replicates if replicates else self.default_replicates
+        self.seed = seed if seed else self.default_seed
+        rng = random.Random(self.seed)
+        ## Variable parameters
+        # parameters unique to each simulation
+        self.mutation_rates = np.logspace(-8, -5, num=6)[:-1] * 1.5
+        self.sample_sizes = [10, 20]
+        # parameters across a single simulation        
+        self.error_rates = [0]#, 0.01]
+        self.stop_at = ['0.2', '0.5', '0.8', '1.0', ('1.0', 200)] #frequencies to output a file
 
-        # Fixed parameters
-        Ne = 5000
-        length = 10000
-        recombination_rate = 1e-7
-        selection_coefficient = 0.1
-        dominance_coefficient = 0.5
-        num_rows = replicates * len(mutation_rates) * len(error_rates) * len(sample_sizes) * \
-            len(stop_at)
+        ## Fixed parameters
+        self.Ne = 5000
+        self.length = 10000
+        self.recombination_rate = 1e-7
+        self.selection_coefficient = 0.1
+        self.dominance_coefficient = 0.5
+
+        self.num_sims = self.replicates * len(self.mutation_rates) * len(self.sample_sizes)
+        self.num_rows = self.num_sims * len(self.error_rates) * len(self.stop_at)
             
         cols = self.sim_cols + [SIMTOOL_COLNAME, SELECTION_COEFF_COLNAME, 
             DOMINANCE_COEFF_COLNAME, SELECTED_FREQ_COLNAME, SELECTED_POSTGEN_COLNAME]
-        data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
-        row_id = 0
-        progress = tqdm.tqdm(total=num_rows) if show_progress else None
+        data = pd.DataFrame(index=np.arange(0, self.num_rows), columns=cols)
+        progress = tqdm.tqdm(total=self.num_rows) if show_progress else None
 
             
         def save_result(data, values_by_row, progress):
@@ -1265,12 +1263,10 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
                     progress.update()
         
         logging.info("Setting up using {} processes".format(num_processes))
-        variable_iterator = itertools.product(range(replicates), mutation_rates,  sample_sizes)
-        fixed_iterator = itertools.repeat((Ne, length, recombination_rate, 
-            selection_coefficient, dominance_coefficient, stop_at, error_rates))
-        n_sims = replicates * len(mutation_rates) * len(sample_sizes)
-        seeds = [rng.randint(1, 2**31) for i in range(n_sims)]
-        combined_iterator = enumerate(zip(itertools.repeat(int(num_rows/n_sims)), variable_iterator, fixed_iterator, seeds))
+        variable_iterator = itertools.product(
+            range(self.replicates), self.mutation_rates,  self.sample_sizes)
+        seeds = [rng.randint(1, 2**31) for i in range(self.num_sims)]
+        combined_iterator = enumerate(itertools.zip_longest(seeds, variable_iterator))
         
         if num_processes > 1:
             with multiprocessing.Pool(processes=num_processes) as pool:
