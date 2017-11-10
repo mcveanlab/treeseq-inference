@@ -223,11 +223,13 @@ def compare_fastARG_haplotypes(fastARG_fn_in, ts_in, save=False):
         fastARG_from_ts.flush()
         files_identical = filecmp.cmp(fastARG_fn_in, fastARG_from_ts.name, shallow=False)
         if save and files_identical==False:
-            debug_file = os.path.join(os.path.dirname(fastARG_from_ts.name), "bad.hap")
-            shutil.copyfile(fastARG_from_ts.name, debug_file)
+            debug_hap_file = os.path.join(os.path.dirname(fastARG_from_ts.name), "bad.hap")
+            shutil.copyfile(fastARG_from_ts.name, debug_hap_file)
+            debug_ts_file = os.path.join(os.path.dirname(fastARG_from_ts.name), "bad.ts")
+            ts_in.dump(debug_ts_file)
             logging.warning("File '{}' differs from '{}'"
-                "(temp file copied to '{}' for debugging)"
-                .format(fastARG_from_ts.name, fastARG_fn_in, debug_file))
+                "(haplotype file copied to '{}' and ts saved in {} for debugging)"
+                .format(fastARG_from_ts.name, fastARG_fn_in, debug_hap_file, debug_ts_file))
         return files_identical
 
 
