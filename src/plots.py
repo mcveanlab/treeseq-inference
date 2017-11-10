@@ -1185,48 +1185,6 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
     #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
     exclude_colnames =[]  
     
-    def single_sim(self, runtime_information):
-        i, (params) = runtime_information
-        assert None not in params #one will be none if the lengths of the iterators are different
-        replicate_seed, (replicate, mutation_rate, sample_size) = params
-        base_row_id = i * self.num_rows//self.num_sims
-        return_value = {}
-        done = False
-        logging.info("Setting up simulation {} of {}".format(i, self.num_sims))
-        while not done:
-            done = True
-            row_id = base_row_id
-            # Run the simulation, in parallel if necessary:
-            for ts, fn, output_info in self.single_simulation_with_selective_sweep(
-                sample_size, self.Ne, self.length, self.recombination_rate, 
-                mutation_rate, self.selection_coefficient, self.dominance_coefficient, 
-                self.stop_at, replicate_seed):
-                # Reject this entire set if we got no mutations at any point.
-                if ts.get_num_mutations() == 0:
-                    done=False
-                    logging.info("Rejecting a set of forwards simulations because at lest one has no variants")
-                    break
-                with open(fn +".nex", "w+") as out:
-                    ts.write_nexus_trees(
-                        out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
-                for error_rate in self.error_rates:
-                    row = return_value[row_id] = {}
-                    row_id += 1
-                    row['sample_size'] = sample_size
-                    row['recombination_rate'] = self.recombination_rate
-                    row['mutation_rate'] = mutation_rate
-                    row['length'] = self.length
-                    row['Ne'] = self.Ne
-                    row['seed'] = replicate_seed
-                    row[ERROR_COLNAME] = error_rate
-                    row[SIMTOOL_COLNAME] = "ftprime"
-                    row[SELECTION_COEFF_COLNAME] = self.selection_coefficient
-                    row[DOMINANCE_COEFF_COLNAME] = self.dominance_coefficient
-                    row[SELECTED_FREQ_COLNAME] = output_info[0]
-                    row[SELECTED_POSTGEN_COLNAME] = output_info[1] if len(output_info)>1 else 0
-                    self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
-        return return_value
-
     def run_simulations(self, replicates, seed, show_progress, num_processes=1):
         self.replicates = replicates if replicates else self.default_replicates
         self.seed = seed if seed else self.default_seed
@@ -1237,7 +1195,8 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
         self.sample_sizes = [10, 20]
         # parameters across a single simulation        
         self.error_rates = [0]#, 0.01]
-        self.stop_at = ['0.2', '0.5', '0.8', '1.0', ('1.0', 200)] #frequencies to output a file
+        self.stop_at = ['0.2', '0.5', '0.8', '1.0', ('1.0', 200)] #frequencies to output a file. 
+        #NB - these are strings because they are output as part of the filename
 
         ## Fixed parameters
         self.Ne = 5000
@@ -1279,6 +1238,52 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
                 save_result(data, result, progress)
                 print(data)
         return data
+    def single_sim(self, runtime_information):
+        i, (params) = runtime_information
+        assert None not in params #one will be none if the lengths of the iterators are different
+        replicate_seed, (replicate, mutation_rate, sample_size) = params
+        base_row_id = i * self.num_rows//self.num_sims
+        return_value = {}
+        done = False
+        while not done:
+            logging.info("Setting up simulation {} of {}".format(i, self.num_sims))
+            row_id = base_row_id
+            # Run the simulation, in parallel if necessary:
+            for ts, fn, output_info in self.single_simulation_with_selective_sweep(
+                sample_size, self.Ne, self.length, self.recombination_rate, 
+                mutation_rate, self.selection_coefficient, self.dominance_coefficient, 
+                self.stop_at, replicate_seed):
+                # Reject this entire set if we got no mutations at any point, or all mutations are fixed
+                done = False
+                for v in ts.variants(as_bytes=False):
+                    if np.any(v.genotypes) and not np.all(v.genotypes):
+                        #at least one variable site, so we are OK
+                        done=True
+                        break
+                if done == False:
+                    #we must reject the entire set
+                    logging.info("Rejecting simulation & retrying: at least one output file has no variable sites")
+                    break
+                with open(fn +".nex", "w+") as out:
+                    ts.write_nexus_trees(
+                        out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+                for error_rate in self.error_rates:
+                    row = return_value[row_id] = {}
+                    row_id += 1
+                    row['sample_size'] = sample_size
+                    row['recombination_rate'] = self.recombination_rate
+                    row['mutation_rate'] = mutation_rate
+                    row['length'] = self.length
+                    row['Ne'] = self.Ne
+                    row['seed'] = replicate_seed
+                    row[ERROR_COLNAME] = error_rate
+                    row[SIMTOOL_COLNAME] = "ftprime"
+                    row[SELECTION_COEFF_COLNAME] = self.selection_coefficient
+                    row[DOMINANCE_COEFF_COLNAME] = self.dominance_coefficient
+                    row[SELECTED_FREQ_COLNAME] = output_info[0]
+                    row[SELECTED_POSTGEN_COLNAME] = output_info[1] if len(output_info)>1 else 0
+                    self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
+        return return_value
 
 class TsinferPerformance(Dataset):
     """

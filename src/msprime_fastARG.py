@@ -30,8 +30,6 @@ def msprime_to_fastARG_in(ts, fastARG_filehandle):
             genotypes = out_arr[:,j]
             if (b'0' in genotypes) and (b'1' in genotypes):
                 print(m.position, b"".join(genotypes.view("S1")).decode("utf-8") , sep="\t", file=fastARG_filehandle)
-            else:
-                logging.warning("Skipping site {} ({})".format(j, genotypes))
         fastARG_filehandle.flush()
         return
 
