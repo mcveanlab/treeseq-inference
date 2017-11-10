@@ -25,14 +25,19 @@ def msprime_to_fastARG_in(ts, fastARG_filehandle):
         for i, s in enumerate(ts.haplotypes()):
             out_arr[i]=s
         #convert to 2d array of chars
-        out_arr = out_arr.view('S1').reshape((out_arr.size, -1))
+        out_arr = out_arr.reshape((out_arr.size, -1))
         for j, m in enumerate(ts.sites()):
-            print(m.position, b"".join(out_arr[:,j]).decode("utf-8") , sep="\t", file=fastARG_filehandle)
+            genotypes = out_arr[:,j]
+            #do not print out non-variable sites
+            if np.any(genotypes) and not np.all(genotypes):
+                print(m.position, b"".join(genotypes.view('S1')).decode("utf-8") , sep="\t", file=fastARG_filehandle)
         fastARG_filehandle.flush()
         return
 
-    for v in ts.variants(as_bytes=True):
-        print(v.position, v.genotypes.decode(), sep="\t", file=fastARG_filehandle)
+    for v in ts.variants(as_bytes=False):
+        #do not print out non-variable sites
+        if np.any(v.genotypes) and not np.all(v.genotypes):
+            print(v.position, b"".join(v.genotypes.view('S1')).decode("utf-8"), sep="\t", file=fastARG_filehandle)
     fastARG_filehandle.flush()
 
 def variant_matrix_to_fastARG_in(var_matrix, var_positions, fastARG_filehandle):
