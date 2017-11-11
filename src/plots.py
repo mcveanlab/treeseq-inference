@@ -553,8 +553,11 @@ class InferenceRunner(object):
             return ts_simplified, cpu_time, memory_use
         except ValueError as e:
             # temporary hack around tsinfer bug
-            if 'time[parent] must be greater than time[child]' in str(e):
+            if "time[parent] must be greater than time[child]" in str(e):
                 logging.info("Hit tsinfer bug. Skipping")
+                return None, None, None
+            elif "block_allocator_get: Assertion `size < self->chunk_size' failed." in str(e):
+                logging.info("Hit tsinfer bug https://github.com/mcveanlab/tsinfer/issues/5. Skipping")
                 return None, None, None
             else:
                 raise
