@@ -1589,7 +1589,7 @@ class AllMetricsByMutationRateFigure(Figure):
         sample_sizes = df.sample_size.unique()
 
         metrics = ARG_metrics.get_metric_names()
-        fig, axes = pyplot.subplots(len(metrics), 3, figsize=(12, 30))
+        fig, axes = pyplot.subplots(len(metrics), len(error_rates), figsize=(12, 30))
         lines = []
         for j, metric in enumerate(metrics):
             for k, error_rate in enumerate(error_rates):
@@ -1720,6 +1720,65 @@ class CputimeMetricByMutationRateFigure(MetricByMutationRateFigure):
         ax.set_ylim(-20, 1000)
         self.savefig(fig)
 
+class AllMetricsByMutationRateSweepFigure(Figure):
+    """
+    Simple figure that shows all the metrics at the same time for 
+    a genome under a selective sweep
+    """
+    datasetClass = MetricsByMutationRateWithSelectiveSweepDataset
+    name = "all_metrics_by_mutation_rate_sweep"
+
+    def plot(self):
+        df = self.dataset.data
+        output_freqs = df[[SELECTED_FREQ_COLNAME, SELECTED_POSTGEN_COLNAME]].drop_duplicates()
+        sample_sizes = df.sample_size.unique()
+
+        metrics = ARG_metrics.get_metric_names()
+        fig, axes = pyplot.subplots(len(metrics), len(output_freqs), figsize=(20, 30))
+        linestyles = ["-", "-."]
+        for j, metric in enumerate(metrics):
+            for k, output_data in output_freqs.iterrows():
+                freq = output_data[0]
+                gens = output_data[1]
+                ax = axes[j][k]
+                if j == 0:
+                    ax.set_title("Swept variant @ freq {}{}".format(
+                        freq, "+{} gens".format(int(gens)) if gens else ""))
+                if k == 0:
+                    ax.set_ylabel(metric + " metric")
+                if j == len(metrics) - 1:
+                    ax.set_xlabel("Mutation rate")
+                for n, linestyle in zip(sample_sizes, linestyles):
+                    df_s = df[np.logical_and.reduce((
+                        df.sample_size == n, 
+                        df[SELECTED_FREQ_COLNAME] == freq, 
+                        df[SELECTED_POSTGEN_COLNAME] == gens))]
+                    group = df_s.groupby(["mutation_rate"])
+                    group_mean = group.mean()
+                    for tool, setting in self.tools_format.items():
+                        if (group_mean[tool + "_" + metric].isnull().all()):
+                            pass
+                        else:
+                            ax.semilogx(
+                                group_mean[tool + "_" + metric], linestyle,
+                                    color=setting["col"], marker= setting["mark"])
+                            # ax.plot(group_mean[tool + "_" + metric])
+
+        # Create legends from custom artists
+        artists = [
+            pyplot.Line2D((0,1),(0,0), color= setting["col"],
+                marker= setting["mark"], linestyle='')
+            for tool,setting in self.tools_format.items()]
+        first_legend = axes[0][0].legend(
+            artists, self.tools_format.keys(), numpoints=3, loc="upper right")
+        artists = [
+            pyplot.Line2D(
+                (0,0),(0,0), color="black", linestyle=linestyle, linewidth=2)
+            for linestyle in linestyles]
+        axes[1][0].legend(
+            artists, ["Sample size = {}".format(n) for n in sample_sizes],
+            loc="upper right")
+        self.savefig(fig)
 
 class AllMetricsBySampleSizeFigure(Figure):
     """
@@ -2103,6 +2162,7 @@ def main():
         FileSizePerformanceFigure,
         ProgramComparisonTimeFigure,
         ProgramComparisonMemoryFigure,
+        AllMetricsByMutationRateSweepFigure,
     ]
     name_map = dict([(d.name, d) for d in datasets + figures])
     parser = argparse.ArgumentParser(
