@@ -1238,6 +1238,7 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
                 save_result(data, result, progress)
                 print(data)
         return data
+        
     def single_sim(self, runtime_information):
         i, (params) = runtime_information
         assert None not in params #one will be none if the lengths of the iterators are different
@@ -1263,6 +1264,7 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
                 if done == False:
                     #we must reject the entire set
                     logging.info("Rejecting simulation & retrying: at least one output file has no variable sites")
+                    replicate_seed += 1 #must change the seed, so we get a different result
                     break
                 with open(fn +".nex", "w+") as out:
                     ts.write_nexus_trees(
