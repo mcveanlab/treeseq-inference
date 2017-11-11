@@ -42,8 +42,10 @@ def msprime_to_fastARG_in(ts, fastARG_filehandle):
 def variant_matrix_to_fastARG_in(var_matrix, var_positions, fastARG_filehandle):
     assert len(var_matrix)==len(var_positions)
     for pos, row in zip(var_positions, var_matrix):
-        s = (row + ord('0')).tobytes().decode()
-        print(str(pos), s, sep= "\t", file=fastARG_filehandle)
+        #do not print out non-variable sites
+        if np.any(row) and not np.all(row):
+            s = (row + ord('0')).tobytes().decode()
+            print(str(pos), s, sep= "\t", file=fastARG_filehandle)
     fastARG_filehandle.flush()
 
 def get_cmd(executable, fastARG_in, seed):
