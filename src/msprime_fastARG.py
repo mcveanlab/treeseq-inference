@@ -9,8 +9,9 @@ E.g. ./msprime_fastARG.py ../test_files/4000.hdf5 -x ../fastARG/fastARG
 import os
 import sys
 import logging
-
 import tempfile
+
+import numpy as np
 
 sys.path.insert(1,os.path.join(sys.path[0],'..','msprime')) # use the local copy of msprime in preference to the global one
 import msprime
