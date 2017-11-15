@@ -38,8 +38,9 @@ def get_metrics(true_nexus_fn, inferred_nexus_fns, variant_positions = rinterfac
     """
     Returns a dictionary of metrics for the specified pair of nexus files.
     """
-    logging.debug("get_ARG_metrics() is comparing {} against {}".format(
-        true_nexus_fn, inferred_nexus_fns))
+    logging.debug("get_ARG_metrics() is comparing {} against {}{}".format(
+        true_nexus_fn, inferred_nexus_fns,
+        ' randomly breaking polytomies before comparison' if randomly_resolve_inferred else ''))
     # load the true_nexus into the R session (but don't convert it to a python obj)
     orig_tree = ape.read_nexus(true_nexus_fn, force_multi=True)
     m = ARGmetrics.genome_trees_dist_multi(
