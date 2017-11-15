@@ -383,14 +383,20 @@ class InferenceRunner(object):
             #NB Jerome thinks it may be clearer to have get_metrics() return a single set of metrics
             #rather than an average over multiple inferred_nexus_files, and do the averaging in python
             if self.inferred_nexus_files is not None:
-                if self.compute_tree_metrics & METRICS_AT_VARIANT_SITES:
-                    variant_positions = np.load(self.source_trees_fn + ".pos.npy").tolist()
-                    metrics = ARG_metrics.get_metrics(
-                        self.source_nexus_file, self.inferred_nexus_files, variant_positions, 
-                        randomly_resolve_inferred = bool(self.compute_tree_metrics & METRICS_RANDOMLY_BREAK_POLYTOMIES))
+                if (self.compute_tree_metrics & METRICS_AT_VARIANT_SITES):
+                    positions = np.load(self.source_trees_fn + ".pos.npy").tolist()
                 else:
-                    metrics = ARG_metrics.get_metrics(self.source_nexus_file, self.inferred_nexus_files,
-                        randomly_resolve_inferred = bool(self.compute_tree_metrics & METRICS_RANDOMLY_BREAK_POLYTOMIES))
+                    positions = None
+                if self.compute_tree_metrics & METRICS_RANDOMLY_BREAK_POLYTOMIES:
+                    metrics = []
+                    for i in range(10): #average over 10 random polytomy resolvings
+                        metrics.append(ARG_metrics.get_metrics(
+                            self.source_nexus_file, self.inferred_nexus_files, variant_positions = positions, 
+                            randomly_resolve_inferred = int(self.row.seed)+i*11))
+                    metrics = pd.DataFrame(metrics).mean().to_dict()
+                else:
+                    metrics = ARG_metrics.get_metrics(
+                        self.source_nexus_file, self.inferred_nexus_files, variant_positions = positions)
                 ret.update(metrics)
             else:
                 logging.info("No inferred tree files so metrics skipped for {} row {} = {}".format(
@@ -1189,7 +1195,7 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
 
     name = "metrics_by_mutation_rate_with_selective_sweep"
 
-    default_replicates = 1
+    default_replicates = 10
     default_seed = 123
     compute_tree_metrics = METRICS_ON | METRICS_RANDOMLY_BREAK_POLYTOMIES
     
@@ -1202,8 +1208,8 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
         rng = random.Random(self.seed)
         ## Variable parameters
         # parameters unique to each simulation
-        self.mutation_rates = (np.logspace(-8, -5, num=6)[:-1] * 1.5)[2:3]
-        self.sample_sizes = [10]#, 20]
+        self.mutation_rates = (np.logspace(-8, -5, num=6)[:-1] * 1.5)
+        self.sample_sizes = [10, 20]
         # parameters across a single simulation        
         self.error_rates = [0]#, 0.01]
         self.stop_at = ['0.2', '0.5', '0.8', '1.0', ('1.0', 200)] #frequencies to output a file. 
