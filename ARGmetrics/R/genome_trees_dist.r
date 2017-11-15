@@ -72,7 +72,7 @@ genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FA
                     multiphy[[i]]$root.edge <- 0
             b <- process.b(multiphy)
         } else {
-             b <- process.b(treeseq.b)
+            b <- process.b(treeseq.b)
         }
         catchTreeDistErrors <- function(f, metric="", rooted=FALSE) {
             #allow processing to continue even if there are errors
