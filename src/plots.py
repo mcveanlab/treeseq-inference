@@ -74,10 +74,11 @@ DOMINANCE_COEFF_COLNAME = 'dominance_coefficient'
 SELECTED_FREQ_COLNAME = 'output_frequency'
 SELECTED_POSTGEN_COLNAME = 'output_after_generations'
 
-
-NO_METRICS = 0
-METRICS_OVER_ALL_BASES = 1
-METRICS_AT_VARIANT_SITES = 2
+#bit flags for metrics
+METRICS_OFF = 0
+METRICS_ON = 2**0
+METRICS_AT_VARIANT_SITES = 2**1 #should we calculate over all bases, or at variant sites only
+METRICS_RANDOMLY_BREAK_POLYTOMIES = 2**2
 
 #R tree metrics assume tips are numbered from 1 not 0
 tree_tip_labels_start_at_0 = False
@@ -344,9 +345,12 @@ class InferenceRunner(object):
     metrics.
         """
     def __init__(
-            self, tool, row, simulations_dir, num_threads, compute_tree_metrics=0):
+            self, tool, row, simulations_dir, num_threads, 
+            compute_tree_metrics=METRICS_ON):
         """
-        Compute_tree_metrics should be NO_METRICS (0), METRICS_OVER_ALL_BASES (1) or METRICS_AT_VARIANT_SITES (2)
+        Compute_tree_metrics is a combination of bitfields as defined at the start
+        or by default, 0, which means calculate all metrics over all bases without
+        randomly breaking polytomies
         """
         self.tool = tool
         self.row = row
@@ -375,16 +379,18 @@ class InferenceRunner(object):
             ret = self.__run_RentPlus()
         else:
             raise ValueError("unknown tool {}".format(self.tool))
-        if self.compute_tree_metrics != NO_METRICS:
+        if (self.compute_tree_metrics & METRICS_ON):
             #NB Jerome thinks it may be clearer to have get_metrics() return a single set of metrics
             #rather than an average over multiple inferred_nexus_files, and do the averaging in python
             if self.inferred_nexus_files is not None:
-                if self.compute_tree_metrics == METRICS_AT_VARIANT_SITES:
+                if self.compute_tree_metrics & METRICS_AT_VARIANT_SITES:
                     variant_positions = np.load(self.source_trees_fn + ".pos.npy").tolist()
                     metrics = ARG_metrics.get_metrics(
-                        self.source_nexus_file, self.inferred_nexus_files, variant_positions)
+                        self.source_nexus_file, self.inferred_nexus_files, variant_positions, 
+                        randomly_resolve_inferred = bool(self.compute_tree_metrics & METRICS_RANDOMLY_BREAK_POLYTOMIES))
                 else:
-                    metrics = ARG_metrics.get_metrics(self.source_nexus_file, self.inferred_nexus_files)
+                    metrics = ARG_metrics.get_metrics(self.source_nexus_file, self.inferred_nexus_files,
+                        randomly_resolve_inferred = bool(self.compute_tree_metrics & METRICS_RANDOMLY_BREAK_POLYTOMIES))
                 ret.update(metrics)
             else:
                 logging.info("No inferred tree files so metrics skipped for {} row {} = {}".format(
@@ -701,10 +707,10 @@ class Dataset(object):
     file and raw_data_dir directory. Within this, replicate instances of datasets
     (each with a different RNG seed) are saved under the seed number
     """
-    compute_tree_metrics = NO_METRICS
+    compute_tree_metrics = METRICS_OFF
     """
-    Set to true if we wish to compute tree metric distances from the source
-    tree sequence to the inferred tree sequence(s).
+    Set to METRICS_ON (which can be combined with other flags) if you wish to compute
+    tree metric distances from the source tree sequence to the inferred tree sequence(s).
     """
 
     data_dir = "data"
@@ -1013,7 +1019,7 @@ class MetricsByMutationRateDataset(Dataset):
 
     default_replicates = 10
     default_seed = 123
-    compute_tree_metrics = METRICS_OVER_ALL_BASES
+    compute_tree_metrics = METRICS_ON
 
     #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
     exclude_colnames =[]
@@ -1085,8 +1091,10 @@ class MetricsBySampleSizeDataset(Dataset):
     tools = [TSINFER]
     default_replicates = 40
     default_seed = 123
-    #to make this a fair comparison, we need to calculate only at the specific variant sites 
-    compute_tree_metrics = METRICS_AT_VARIANT_SITES
+    #to make this a fair comparison, we need to calculate only at the specific variant sites
+    #because different sample sizes will be based on different original variant positions
+    #which are then cut down to the subsampled ones.
+    compute_tree_metrics = METRICS_ON & METRICS_AT_VARIANT_SITES
 
     #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
     exclude_colnames =[]
@@ -1181,9 +1189,9 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
 
     name = "metrics_by_mutation_rate_with_selective_sweep"
 
-    default_replicates = 10
+    default_replicates = 1
     default_seed = 123
-    compute_tree_metrics = METRICS_OVER_ALL_BASES
+    compute_tree_metrics = METRICS_ON | METRICS_RANDOMLY_BREAK_POLYTOMIES
     
     #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
     exclude_colnames =[]  
@@ -1194,8 +1202,8 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
         rng = random.Random(self.seed)
         ## Variable parameters
         # parameters unique to each simulation
-        self.mutation_rates = np.logspace(-8, -5, num=6)[:-1] * 1.5
-        self.sample_sizes = [10, 20]
+        self.mutation_rates = (np.logspace(-8, -5, num=6)[:-1] * 1.5)[2:3]
+        self.sample_sizes = [10]#, 20]
         # parameters across a single simulation        
         self.error_rates = [0]#, 0.01]
         self.stop_at = ['0.2', '0.5', '0.8', '1.0', ('1.0', 200)] #frequencies to output a file. 
@@ -1297,7 +1305,7 @@ class TsinferPerformance(Dataset):
     the two main dimensions of sample size and sequence length.
     """
     name = "tsinfer_performance"
-    compute_tree_metrics = NO_METRICS
+    compute_tree_metrics = METRICS_ON
     default_replicates = 10
     default_seed = 123
     tools = [TSINFER]
@@ -1377,7 +1385,7 @@ class ProgramComparison(Dataset):
     The performance of the various programs in terms of running time and memory usage
     """
     name = "program_comparison"
-    compute_tree_metrics = NO_METRICS
+    compute_tree_metrics = METRICS_OFF
     default_replicates = 2
     default_seed = 1000
     tools = [FASTARG, TSINFER]
@@ -1466,7 +1474,7 @@ class ARGweaverParamChanges(Dataset):
     tools = [ARGWEAVER, TSINFER]
     default_replicates = 40
     default_seed = 123
-    compute_tree_metrics = METRICS_OVER_ALL_BASES
+    compute_tree_metrics = METRICS_ON
 
     #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
     exclude_colnames =[]
@@ -1589,7 +1597,7 @@ class AllMetricsByMutationRateFigure(Figure):
         sample_sizes = df.sample_size.unique()
 
         metrics = ARG_metrics.get_metric_names()
-        fig, axes = pyplot.subplots(len(metrics), 3, figsize=(12, 30))
+        fig, axes = pyplot.subplots(len(metrics), len(error_rates), figsize=(12, 30))
         lines = []
         for j, metric in enumerate(metrics):
             for k, error_rate in enumerate(error_rates):
@@ -1720,6 +1728,65 @@ class CputimeMetricByMutationRateFigure(MetricByMutationRateFigure):
         ax.set_ylim(-20, 1000)
         self.savefig(fig)
 
+class AllMetricsByMutationRateSweepFigure(Figure):
+    """
+    Simple figure that shows all the metrics at the same time for 
+    a genome under a selective sweep
+    """
+    datasetClass = MetricsByMutationRateWithSelectiveSweepDataset
+    name = "all_metrics_by_mutation_rate_sweep"
+
+    def plot(self):
+        df = self.dataset.data
+        output_freqs = df[[SELECTED_FREQ_COLNAME, SELECTED_POSTGEN_COLNAME]].drop_duplicates()
+        sample_sizes = df.sample_size.unique()
+
+        metrics = ARG_metrics.get_metric_names()
+        fig, axes = pyplot.subplots(len(metrics), len(output_freqs), figsize=(20, 30))
+        linestyles = ["-", "-."]
+        for j, metric in enumerate(metrics):
+            for k, output_data in output_freqs.iterrows():
+                freq = output_data[0]
+                gens = output_data[1]
+                ax = axes[j][k]
+                if j == 0:
+                    ax.set_title("Swept variant @ freq {}{}".format(
+                        freq, "+{} gens".format(int(gens)) if gens else ""))
+                if k == 0:
+                    ax.set_ylabel(metric + " metric")
+                if j == len(metrics) - 1:
+                    ax.set_xlabel("Mutation rate")
+                for n, linestyle in zip(sample_sizes, linestyles):
+                    df_s = df[np.logical_and.reduce((
+                        df.sample_size == n, 
+                        df[SELECTED_FREQ_COLNAME] == freq, 
+                        df[SELECTED_POSTGEN_COLNAME] == gens))]
+                    group = df_s.groupby(["mutation_rate"])
+                    group_mean = group.mean()
+                    for tool, setting in self.tools_format.items():
+                        if (group_mean[tool + "_" + metric].isnull().all()):
+                            pass
+                        else:
+                            ax.semilogx(
+                                group_mean[tool + "_" + metric], linestyle,
+                                    color=setting["col"], marker= setting["mark"])
+                            # ax.plot(group_mean[tool + "_" + metric])
+
+        # Create legends from custom artists
+        artists = [
+            pyplot.Line2D((0,1),(0,0), color= setting["col"],
+                marker= setting["mark"], linestyle='')
+            for tool,setting in self.tools_format.items()]
+        first_legend = axes[0][0].legend(
+            artists, self.tools_format.keys(), numpoints=3, loc="upper right")
+        artists = [
+            pyplot.Line2D(
+                (0,0),(0,0), color="black", linestyle=linestyle, linewidth=2)
+            for linestyle in linestyles]
+        axes[1][0].legend(
+            artists, ["Sample size = {}".format(n) for n in sample_sizes],
+            loc="upper right")
+        self.savefig(fig)
 
 class AllMetricsBySampleSizeFigure(Figure):
     """
@@ -2103,6 +2170,7 @@ def main():
         FileSizePerformanceFigure,
         ProgramComparisonTimeFigure,
         ProgramComparisonMemoryFigure,
+        AllMetricsByMutationRateSweepFigure,
     ]
     name_map = dict([(d.name, d) for d in datasets + figures])
     parser = argparse.ArgumentParser(

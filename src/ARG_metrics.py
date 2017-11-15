@@ -34,18 +34,32 @@ def get_metric_names():
     return list(ARGmetrics.genome_trees_dist().names)
 
 
-def get_metrics(true_nexus_fn, inferred_nexus_fns, variant_positions = rinterface.NULL):
+def get_metrics(true_nexus_fn, inferred_nexus_fns, variant_positions = rinterface.NULL, randomly_resolve_inferred=False):
     """
     Returns a dictionary of metrics for the specified pair of nexus files.
     """
-    logging.debug("get_ARG_metrics() is comparing {} against {}".format(
-        true_nexus_fn, inferred_nexus_fns))
+    logging.debug("get_ARG_metrics() is comparing {} against {}{}".format(
+        true_nexus_fn, inferred_nexus_fns,
+        ' randomly breaking polytomies before comparison' if randomly_resolve_inferred else ''))
     # load the true_nexus into the R session (but don't convert it to a python obj)
     orig_tree = ape.read_nexus(true_nexus_fn, force_multi=True)
-    weights = 1
     m = ARGmetrics.genome_trees_dist_multi(
-            orig_tree, inferred_nexus_fns, variant_positions=variant_positions, weights=1)
+            orig_tree, inferred_nexus_fns, variant_positions=variant_positions, 
+            weights=1, randomly_resolve_multi = randomly_resolve_inferred)
     return dict(m.items())
+
+def get_full_metrics(true_nexus_fn, inferred_nexus_fn, variant_positions = rinterface.NULL):
+    """
+    Returns the full metric array (several metrics for each tree) for the specified pair of nexus files
+    """
+    logging.debug("get_ARG_metrics() is comparing {} against {}".format(
+        true_nexus_fn, inferred_nexus_fn))
+    # load the true_nexus into the R session (but don't convert it to a python obj)
+    orig_trees = ape.read_nexus(true_nexus_fn, force_multi=True)
+    infer_trees = ape.read_nexus(inferred_nexus_fn, force_multi=True)
+    m = ARGmetrics.genome_trees_dist(
+            orig_trees, infer_trees, output_full_table=True, variant_positions=variant_positions)
+    return m
 
 
 if __name__ == "__main__":
