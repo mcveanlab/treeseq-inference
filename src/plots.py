@@ -389,7 +389,7 @@ class InferenceRunner(object):
                     positions = None
                 if self.compute_tree_metrics & METRICS_RANDOMLY_BREAK_POLYTOMIES:
                     metrics = []
-                    for i in range(10): #average over 10 random polytomy resolvings
+                    for i in range(self.random_resolve_polytomy_replicates):
                         metrics.append(ARG_metrics.get_metrics(
                             self.source_nexus_file, self.inferred_nexus_files, variant_positions = positions, 
                             randomly_resolve_inferred = int(self.row.seed)+i*11))
@@ -718,7 +718,13 @@ class Dataset(object):
     Set to METRICS_ON (which can be combined with other flags) if you wish to compute
     tree metric distances from the source tree sequence to the inferred tree sequence(s).
     """
-
+    random_resolve_polytomy_replicates = 10
+    """
+    If metrics are calculated by randomly resolving polytomies (by setting 
+    compute_tree_metrics to |= METRICS_RANDOMLY_BREAK_POLYTOMIES, this parameter gives
+    the number of times the same tree will replicate the polytomy breaking process
+    (the final metric will be a simple mean of these replicates)
+    """
     data_dir = "data"
 
     tools = [
@@ -1195,7 +1201,8 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
 
     name = "metrics_by_mutation_rate_with_selective_sweep"
 
-    default_replicates = 10
+    default_replicates = 40
+    random_resolve_polytomy_replicates = 20
     default_seed = 123
     compute_tree_metrics = METRICS_ON | METRICS_RANDOMLY_BREAK_POLYTOMIES
     
@@ -1209,10 +1216,10 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
         ## Variable parameters
         # parameters unique to each simulation
         self.mutation_rates = (np.logspace(-8, -5, num=6)[:-1] * 1.5)
-        self.sample_sizes = [10, 20]
+        self.sample_sizes = [10, 20, 50]
         # parameters across a single simulation        
         self.error_rates = [0]#, 0.01]
-        self.stop_at = ['0.2', '0.5', '0.8', '1.0', ('1.0', 200)] #frequencies to output a file. 
+        self.stop_at = ['0.2', '0.5', '0.8', '1.0', ('1.0', 200), ('1.0', 1000)] #frequencies to output a file. 
         #NB - these are strings because they are output as part of the filename
 
         ## Fixed parameters
