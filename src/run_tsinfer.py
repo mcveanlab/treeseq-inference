@@ -45,7 +45,7 @@ def main():
         help="The scaled recombination rate.")
     parser.add_argument(
         "-e", "--error-probability", default=0, type=float,
-        help="The probablity of observing an error")
+        help="The probability of observing an error")
     parser.add_argument(
         "-t", "--threads", default=1, type=int,
         help="The number of worker threads to use")
@@ -53,6 +53,10 @@ def main():
     args = parser.parse_args()
     S = np.load(args.samples)
     pos = np.load(args.positions)
+    #remove non-variable columns
+    variable_columns = ~np.all(S == S[0,:], axis = 0)
+    S = S[:,variable_columns]
+    pos = pos[:,variable_columns]
     # We need to transpose this now as
     genotypes = S.astype(np.uint8).T
     ts = tsinfer.infer(
