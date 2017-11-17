@@ -56,7 +56,7 @@ def main():
     #remove non-variable columns
     variable_columns = ~np.all(S == S[0,:], axis = 0)
     S = S[:,variable_columns]
-    pos = pos[:,variable_columns]
+    pos = pos[variable_columns]
     # We need to transpose this now as
     genotypes = S.astype(np.uint8).T
     ts = tsinfer.infer(
