@@ -16,3 +16,10 @@
 [submodule "icytree"]
 	path = icytree
 	url = git@github.com:tgvaughan/icytree
+[submodule "ftprime_ms"]
+	path = ftprime_ms
+	url = https://github.com/petrelharp/ftprime_ms
+	branch = add/single-locus-example
+[submodule "ftprime"]
+	path = ftprime
+	url = https://github.com/ashander/ftprime

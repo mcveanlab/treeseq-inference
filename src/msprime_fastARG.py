@@ -9,8 +9,9 @@ E.g. ./msprime_fastARG.py ../test_files/4000.hdf5 -x ../fastARG/fastARG
 import os
 import sys
 import logging
-
 import tempfile
+
+import numpy as np
 
 sys.path.insert(1,os.path.join(sys.path[0],'..','msprime')) # use the local copy of msprime in preference to the global one
 import msprime
@@ -27,19 +28,25 @@ def msprime_to_fastARG_in(ts, fastARG_filehandle):
         #convert to 2d array of chars
         out_arr = out_arr.view('S1').reshape((out_arr.size, -1))
         for j, m in enumerate(ts.sites()):
-            print(m.position, b"".join(out_arr[:,j]).decode("utf-8") , sep="\t", file=fastARG_filehandle)
+            genotypes = out_arr[:,j]
+            if (b'0' in genotypes) and (b'1' in genotypes):
+                print(m.position, b"".join(genotypes.view("S1")).decode("utf-8") , sep="\t", file=fastARG_filehandle)
         fastARG_filehandle.flush()
         return
 
-    for v in ts.variants(as_bytes=True):
-        print(v.position, v.genotypes.decode(), sep="\t", file=fastARG_filehandle)
+    for v in ts.variants(as_bytes=False):
+        #do not print out non-variable sites
+        if np.any(v.genotypes) and not np.all(v.genotypes):
+            print(v.position, b"".join(v.genotypes.view("S1")).decode("utf-8"), sep="\t", file=fastARG_filehandle)
     fastARG_filehandle.flush()
 
 def variant_matrix_to_fastARG_in(var_matrix, var_positions, fastARG_filehandle):
     assert len(var_matrix)==len(var_positions)
     for pos, row in zip(var_positions, var_matrix):
-        s = (row + ord('0')).tobytes().decode()
-        print(str(pos), s, sep= "\t", file=fastARG_filehandle)
+        #do not print out non-variable sites
+        if np.any(row) and not np.all(row):
+            s = (row + ord('0')).tobytes().decode()
+            print(str(pos), s, sep= "\t", file=fastARG_filehandle)
     fastARG_filehandle.flush()
 
 def get_cmd(executable, fastARG_in, seed):
@@ -208,8 +215,7 @@ def fastARG_out_to_msprime(fastARG_out_filehandle, variant_positions, seq_len=No
         tempfile.NamedTemporaryFile("w+") as mutations:
         fastARG_out_to_msprime_txts(fastARG_out_filehandle, variant_positions,
             nodes, edges, sites, mutations, seq_len=seq_len)
-        ts, node_map = msprime.load_text(nodes=nodes, edges=edges, sites=sites, mutations=mutations).simplify()
-        #logging.info("Node map after fastarg round trip is {}".format(node_map))
+        ts = msprime.load_text(nodes=nodes, edges=edges, sites=sites, mutations=mutations).simplify()
         return ts
 
 def compare_fastARG_haplotypes(fastARG_fn_in, ts_in, save=False):
@@ -224,11 +230,13 @@ def compare_fastARG_haplotypes(fastARG_fn_in, ts_in, save=False):
         fastARG_from_ts.flush()
         files_identical = filecmp.cmp(fastARG_fn_in, fastARG_from_ts.name, shallow=False)
         if save and files_identical==False:
-            debug_file = os.path.join(os.path.dirname(fastARG_from_ts.name), "bad.hap")
-            shutil.copyfile(fastARG_from_ts.name, debug_file)
+            debug_hap_file = os.path.join(os.path.dirname(fastARG_from_ts.name), "bad.hap")
+            shutil.copyfile(fastARG_from_ts.name, debug_hap_file)
+            debug_ts_file = os.path.join(os.path.dirname(fastARG_from_ts.name), "bad.ts")
+            ts_in.dump(debug_ts_file)
             logging.warning("File '{}' differs from '{}'"
-                "(temp file copied to '{}' for debugging)"
-                .format(fastARG_from_ts.name, fastARG_fn_in, debug_file))
+                "(haplotype file copied to '{}' and ts saved in {} for debugging)"
+                .format(fastARG_from_ts.name, fastARG_fn_in, debug_hap_file, debug_ts_file))
         return files_identical
 
 
@@ -244,7 +252,7 @@ def main(ts, fastARG_executable, fa_in, fa_out, nodes_fh, edges_fh, sites_fh, mu
         nodes_fh, edges_fh, sites_fh, muts_fh, seq_len=seq_len)
 
     new_ts = msprime.load_text(nodes=nodes_fh, edges=edges_fh, sites=sites_fh, mutations=muts_fh)
-    simple_ts = new_ts.simplify()[0]
+    simple_ts = new_ts.simplify()
     logging.debug("Simplified num_records should always be < unsimplified num_records.\n"
         "For low mutationRate:recombinationRate ratio,"
         " the initial num records will probably be higher than the"
