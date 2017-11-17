@@ -53,13 +53,13 @@ def main():
     args = parser.parse_args()
     S = np.load(args.samples)
     pos = np.load(args.positions)
-    S = S.astype(np.int8)
+    # We need to transpose this now as
+    genotypes = S.astype(np.uint8).T
     ts = tsinfer.infer(
-        S, pos, args.length,
+        genotypes, pos, args.length,
         args.recombination_rate,
         args.error_probability,
-        num_threads=args.threads,
-        resolve_shared_recombinations=args.shared_recombinations, resolve_polytomies=args.shared_lengths)
+        num_threads=args.threads)
     ts.dump(args.output)
 
     # # TODO add command line arg here for when we're comparing run time performance.
