@@ -1653,26 +1653,41 @@ class AllMetricsByMutationRateFigure(Figure):
         sample_sizes = df.sample_size.unique()
 
         metrics = ARG_metrics.get_metric_names()
-        fig, axes = pyplot.subplots(len(metrics), len(error_rates), figsize=(12, 30))
-        lines = []
-        for j, metric in enumerate(metrics):
+        topology_only_metrics = [m for m in metrics if not m.startswith('w')]
+        fig, axes = pyplot.subplots(len(topology_only_metrics),
+            len(error_rates), figsize=(12, 20))
+        linestyles = ["-", "-."]
+        for j, metric in enumerate(topology_only_metrics):
             for k, error_rate in enumerate(error_rates):
                 ax = axes[j][k]
                 if j == 0:
                     ax.set_title("Error = {}".format(error_rate))
                 if k == 0:
                     ax.set_ylabel(metric + " metric")
-                if j == len(metrics) - 1:
+                if j == len(topology_only_metrics) - 1:
                     ax.set_xlabel("Mutation rate")
-                for n, linestyle in zip(sample_sizes, ["-", "-."]):
+                for n, linestyle in zip(sample_sizes, linestyles):
                     df_s = df[np.logical_and(df.sample_size == n, df[ERROR_COLNAME] == error_rate)]
                     group = df_s.groupby(["mutation_rate"])
                     group_mean = group.mean()
                     for tool, setting in self.tools_format.items():
                         ax.semilogx(
                             group_mean[tool + "_" + metric], linestyle, color=setting["col"])
-                        # ax.plot(group_mean[tool + "_" + metric])
-
+        artists = [
+            pyplot.Line2D((0,1),(0,0), color= setting["col"],
+                marker= setting["mark"], linestyle='')
+            for tool,setting in self.tools_format.items()]
+        first_legend = axes[0][0].legend(
+            artists, self.tools_format.keys(), numpoints=3, loc="upper right")
+            # bbox_to_anchor=(0.0, 0.1))
+        # ax = pyplot.gca().add_artist(first_legend)
+        artists = [
+            pyplot.Line2D(
+                (0,0),(0,0), color="black", linestyle=linestyle, linewidth=2)
+            for linestyle in linestyles]
+        axes[0][-1].legend(
+            artists, ["Sample size = {}".format(n) for n in sample_sizes],
+            loc="upper right")
         self.savefig(fig)
 
 
@@ -1798,9 +1813,11 @@ class AllMetricsByMutationRateSweepFigure(Figure):
         sample_sizes = df.sample_size.unique()
 
         metrics = ARG_metrics.get_metric_names()
-        fig, axes = pyplot.subplots(len(metrics), len(output_freqs), figsize=(20, 30))
+        topology_only_metrics = [m for m in metrics if not m.startswith('w')]
+        fig, axes = pyplot.subplots(len(topology_only_metrics), 
+            len(output_freqs), figsize=(20, 20))
         linestyles = ["-", "-.", ":"]
-        for j, metric in enumerate(metrics):
+        for j, metric in enumerate(topology_only_metrics):
             for k, output_data in output_freqs.iterrows():
                 freq = output_data[0]
                 gens = output_data[1]
@@ -1811,7 +1828,7 @@ class AllMetricsByMutationRateSweepFigure(Figure):
                         freq, "+{} gens".format(int(gens)) if gens else ""))
                 if k == 0:
                     ax.set_ylabel(metric + " metric")
-                if j == len(metrics) - 1:
+                if j == len(topology_only_metrics) - 1:
                     ax.set_xlabel("Mutation rate")
                 for n, linestyle in zip(sample_sizes, linestyles):
                     df_s = df[np.logical_and.reduce((
@@ -1825,17 +1842,17 @@ class AllMetricsByMutationRateSweepFigure(Figure):
                         yerr=[m['sem'] for m in mean_sem]
                     else:
                         yerr = None
-                        
-                    if all(m['mean'][tool + "_" + metric].isnull() for m in mean_sem):
-                        #don't plot if all NAs
-                        continue
-                    ax.errorbar(
-                        [m['mu'] for m in mean_sem], 
-                        [m['mean'][tool + "_" + metric] for m in mean_sem],
-                        yerr=yerr, color=setting["col"],
-                        linestyle= linestyle,
-                        marker=setting["mark"], fillstyle='none',
-                        elinewidth=1)
+                    for tool, setting in self.tools_format.items():
+                        if all(np.isnan(m['mean'][tool + "_" + metric]) for m in mean_sem):
+                            #don't plot if all NAs
+                            continue
+                        ax.errorbar(
+                            [m['mu'] for m in mean_sem], 
+                            [m['mean'][tool + "_" + metric] for m in mean_sem],
+                            yerr=yerr, color=setting["col"],
+                            linestyle= linestyle,
+                            marker=setting["mark"], fillstyle='none',
+                            elinewidth=1)
 
         # Create legends from custom artists
         artists = [
@@ -1869,16 +1886,18 @@ class AllMetricsBySampleSizeFigure(Figure):
         col="black"
         inferred_linestyles = {False:{False:':',True:'-.'},True:{False:'--',True:'-'}}
         metrics = ARG_metrics.get_metric_names()
-        fig, axes = pyplot.subplots(len(metrics), len(lengths), figsize=(12, 30))
+        topology_only_metrics = [m for m in metrics if not m.startswith('w')]
+        fig, axes = pyplot.subplots(len(topology_only_metrics),
+            len(lengths), figsize=(12, 16))
         lines = []
-        for j, metric in enumerate(metrics):
+        for j, metric in enumerate(topology_only_metrics):
             for k, length in enumerate(lengths):
                 ax = axes[j][k]
                 if j == 0:
-                    ax.set_title("Sequence length = {} Kb".format(length/1000))
+                    ax.set_title("Sequence length = {} Kb".format(int(length/1000)))
                 if k == 0:
                     ax.set_ylabel(metric + " metric")
-                if j == len(metrics) - 1:
+                if j == len(topology_only_metrics) - 1:
                     ax.set_xlabel("Original sample size")
                 for shared_breakpoint in [False,True]:
                     for shared_length in [False, True]:
@@ -1900,7 +1919,7 @@ class AllMetricsBySampleSizeFigure(Figure):
                             linestyle=inferred_linestyles[shared_breakpoint][shared_length],
                             marker="o", fillstyle='none',
                             elinewidth=1)
-        params = [
+        """params = [
             pyplot.Line2D(
                 (0,0),(0,0), color= col, 
                 linestyle=inferred_linestyles[shared_breakpoint][shared_length], linewidth=2)
@@ -1911,6 +1930,7 @@ class AllMetricsBySampleSizeFigure(Figure):
                 for srb, linestyles2 in inferred_linestyles.items()
                 for sl, linestyle in  linestyles2.items()],
             loc="upper right", fontsize=10, title="Polytomy resolution")
+        """
         pyplot.suptitle('ARG metric for trees subsampled down to {} tips'.format(
             subsample_size[0]))
         self.savefig(fig)
