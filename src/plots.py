@@ -523,8 +523,8 @@ class InferenceRunner(object):
         out_fn = construct_argweaver_name(self.base_fn, burnin, n_timesteps, inference_seed)
         if skip_infer:
             #must get the iteration IDs off the row
-            if self.row.iterations:
-                iteration_ids = self.row.iterations.split(",")
+            if self.row.ARGweaver_iterations:
+                iteration_ids = self.row.ARGweaver_iterations.split(",")
         else:
             infile = self.base_fn + ".sites"
             time = memory = None
@@ -539,34 +539,38 @@ class InferenceRunner(object):
         for it in iteration_ids:
             base = construct_argweaver_name(self.base_fn, burnin, n_timesteps, inference_seed, it)
             self.inferred_filenames.append(base)
-            if skip_infer==False and self.compute_tree_metrics:
-                with open(base + ".nex", "w+") as out:
-                    msprime_ARGweaver.ARGweaver_smc_to_nexus(
-                        base+".smc.gz", out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
-            try:
-                #if we want to record number of coalescence records we need
-                #to convert the ARGweaver output to msprime, which is buggy
-                with open(base+".TSnodes", "w+") as msprime_nodes, \
-                        open(base+".TSedges", "w+") as msprime_edges:
-                    msprime_ARGweaver.ARGweaver_smc_to_msprime_txts(
-                        smc2arg_executable, base, msprime_nodes, msprime_edges)
-                    msprime_nodes.seek(0)
-                    msprime_edges.seek(0)
-                    inferred_ts = msprime.load_text(
-                        nodes=msprime_nodes, edges=msprime_edges).simplify()
-                    inferred_ts.dump(base + ".hdf5")
-                    filesizes.append(os.path.getsize(base + ".hdf5"))
-                    edges.append(inferred_ts.num_edges)
-            except msprime_ARGweaver.CyclicalARGError as e:
-                logging.info("Exception caught converting {}: {}".format(
-                    base + ".msp", e))
-        return {
-            save_stats['cpu']: time,
-            save_stats['mem']: memory,
-            save_stats['n_edges']: statistics.mean(edges) if len(edges) else None,
-            save_stats['ts_filesize']: statistics.mean(filesizes) if len(filesizes) else None,
-            "iterations": ",".join(iteration_ids),
-        }
+            if skip_infer==False:
+                if self.compute_tree_metrics:
+                    with open(base + ".nex", "w+") as out:
+                        msprime_ARGweaver.ARGweaver_smc_to_nexus(
+                            base+".smc.gz", out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+                try:
+                    #if we want to record number of edges we need
+                    #to convert the ARGweaver output to msprime, which is buggy
+                    with open(base+".TSnodes", "w+") as msprime_nodes, \
+                            open(base+".TSedges", "w+") as msprime_edges:
+                        msprime_ARGweaver.ARGweaver_smc_to_msprime_txts(
+                            smc2arg_executable, base, msprime_nodes, msprime_edges)
+                        msprime_nodes.seek(0)
+                        msprime_edges.seek(0)
+                        inferred_ts = msprime.load_text(
+                            nodes=msprime_nodes, edges=msprime_edges).simplify()
+                        inferred_ts.dump(base + ".hdf5")
+                        filesizes.append(os.path.getsize(base + ".hdf5"))
+                        edges.append(inferred_ts.num_edges)
+                except msprime_ARGweaver.CyclicalARGError as e:
+                    logging.info("Exception caught converting {}: {}".format(
+                        base + ".msp", e))
+        if skip_infer:
+            return {}
+        else:
+            return {
+                save_stats['cpu']: time,
+                save_stats['mem']: memory,
+                save_stats['n_edges']: statistics.mean(edges) if len(edges) else None,
+                save_stats['ts_filesize']: statistics.mean(filesizes) if len(filesizes) else None,
+                "iterations": ",".join(iteration_ids),
+            }
 
     @staticmethod
     def run_tsinfer(sample_fn, positions_fn, length, rho, error_probability, 
@@ -1057,7 +1061,7 @@ class MetricsByMutationRateDataset(Dataset):
 
     default_replicates = 10
     default_seed = 123
-    compute_tree_metrics = METRICS_ON
+    compute_tree_metrics = METRICS_ON | METRICS_RANDOMLY_BREAK_POLYTOMIES
 
     #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
     exclude_colnames =[]
@@ -1871,7 +1875,7 @@ class AllMetricsBySampleSizeFigure(Figure):
             for k, length in enumerate(lengths):
                 ax = axes[j][k]
                 if j == 0:
-                    ax.set_title("Sequence length = {}".format(length))
+                    ax.set_title("Sequence length = {} Kb".format(length/1000))
                 if k == 0:
                     ax.set_ylabel(metric + " metric")
                 if j == len(metrics) - 1:
