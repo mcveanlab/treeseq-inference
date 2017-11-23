@@ -24,7 +24,7 @@
 
 genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FALSE, acceptable.length.diff.pct = 0.1, variant.positions=NULL, randomly.resolve.a=FALSE, randomly.resolve.b=FALSE, force.rooted=TRUE) { 
     require(phangorn)
-    has.KC.metric=require(treescape)
+    has.KC.metric=require(treespace)
     results=data.frame(lft=numeric(), rgt=numeric(), RFrooted=numeric(), RFunrooted=numeric(),
         wRFrooted=numeric(), wRFunrooted=numeric(), SPRunrooted=numeric(), pathunrooted=numeric(), KCrooted=numeric())
     

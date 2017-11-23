@@ -7,7 +7,7 @@ Depends: R (>= 3.3.2)
 Imports:
     ape (>= 4.1),
     phangorn,
-    treescape
+    treespace
 License: CC-0
 Encoding: UTF-8
 LazyData: true
