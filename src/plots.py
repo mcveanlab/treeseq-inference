@@ -276,7 +276,7 @@ def rentplus_name_from_msprime_row(row, sim_dir):
     """
     return construct_rentplus_name(mk_sim_name_from_row(row, sim_dir))
 
-def construct_tsinfer_name(sim_name, subsample_size=None, shared_breakpoints=0, shared_lengths=0):
+def construct_tsinfer_name(sim_name, subsample_size, shared_breakpoints, shared_lengths):
     """
     Returns a TSinfer filename.
     If the file is a subset of the original, this can be added to the
@@ -411,15 +411,15 @@ class InferenceRunner(object):
 
     def __run_tsinfer(self, skip_infer=False):
         #default to no srb & no length breaking if nothing specified in the file
-        shared_recombinations = bool(getattr(self.row,'tsinfer_srb', False))
+        shared_recombinations = bool(getattr(self.row,'tsinfer_srb', True))
         shared_lengths = bool(getattr(self.row,'tsinfer_sl', False))
         #default to no subsampling
         subsample_size = getattr(self.row,'subsample_size', None)
         #construct filenames - these can be used even if inference does not occur
         samples_fn = self.base_fn + ".npy"
         positions_fn = self.base_fn + ".pos.npy"
-        out_fn = construct_tsinfer_name(self.base_fn)
-        out_fn = add_subsample_param_to_name(out_fn, subsample_size)
+        out_fn = construct_tsinfer_name(self.base_fn, 
+            subsample_size, shared_breakpoints, shared_lengths)
         self.inferred_filenames = [out_fn]
         if skip_infer:
             return {}
