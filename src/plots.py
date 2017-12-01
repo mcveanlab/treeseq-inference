@@ -419,7 +419,7 @@ class InferenceRunner(object):
         samples_fn = self.base_fn + ".npy"
         positions_fn = self.base_fn + ".pos.npy"
         out_fn = construct_tsinfer_name(self.base_fn, 
-            subsample_size, shared_breakpoints, shared_lengths)
+            subsample_size, shared_recombinations, shared_lengths)
         self.inferred_filenames = [out_fn]
         if skip_infer:
             return {}
