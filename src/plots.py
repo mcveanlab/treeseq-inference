@@ -1061,7 +1061,7 @@ class MetricsByMutationRateDataset(Dataset):
 
     default_replicates = 10
     default_seed = 123
-    compute_tree_metrics = METRICS_ON | METRICS_RANDOMLY_BREAK_POLYTOMIES
+    compute_tree_metrics = METRICS_ON #| METRICS_RANDOMLY_BREAK_POLYTOMIES
 
     #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
     exclude_colnames =[]
@@ -1075,7 +1075,7 @@ class MetricsByMutationRateDataset(Dataset):
         rng = random.Random(seed)
         # Variable parameters
         mutation_rates = np.logspace(-8, -5, num=6)[:-1] * 1.5
-        error_rates = [0, 0.01]
+        error_rates = [0, 0.01, 0.1]
         sample_sizes = [10, 20]
 
         # Fixed parameters
@@ -1655,7 +1655,7 @@ class AllMetricsByMutationRateFigure(Figure):
         metrics = ARG_metrics.get_metric_names()
         topology_only_metrics = [m for m in metrics if not m.startswith('w')]
         fig, axes = pyplot.subplots(len(topology_only_metrics),
-            len(error_rates), figsize=(12, 20))
+            len(error_rates), figsize=(6*len(error_rates), 20))
         linestyles = ["-", "-."]
         for j, metric in enumerate(topology_only_metrics):
             for k, error_rate in enumerate(error_rates):
