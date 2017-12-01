@@ -276,7 +276,7 @@ def rentplus_name_from_msprime_row(row, sim_dir):
     """
     return construct_rentplus_name(mk_sim_name_from_row(row, sim_dir))
 
-def construct_tsinfer_name(sim_name, subsample_size=None, shared_breakpoints=0, shared_lengths=0):
+def construct_tsinfer_name(sim_name, subsample_size, shared_breakpoints, shared_lengths):
     """
     Returns a TSinfer filename.
     If the file is a subset of the original, this can be added to the
@@ -411,15 +411,15 @@ class InferenceRunner(object):
 
     def __run_tsinfer(self, skip_infer=False):
         #default to no srb & no length breaking if nothing specified in the file
-        shared_recombinations = bool(getattr(self.row,'tsinfer_srb', False))
+        shared_recombinations = bool(getattr(self.row,'tsinfer_srb', True))
         shared_lengths = bool(getattr(self.row,'tsinfer_sl', False))
         #default to no subsampling
         subsample_size = getattr(self.row,'subsample_size', None)
         #construct filenames - these can be used even if inference does not occur
         samples_fn = self.base_fn + ".npy"
         positions_fn = self.base_fn + ".pos.npy"
-        out_fn = construct_tsinfer_name(self.base_fn)
-        out_fn = add_subsample_param_to_name(out_fn, subsample_size)
+        out_fn = construct_tsinfer_name(self.base_fn, 
+            subsample_size, shared_breakpoints, shared_lengths)
         self.inferred_filenames = [out_fn]
         if skip_infer:
             return {}
@@ -1127,7 +1127,7 @@ class MetricsByMutationRateDataset(Dataset):
 class MetricsBySampleSizeDataset(Dataset):
     """
     Accuracy of ARG inference of a fixed subset of samples (measured by various statistics)
-    as the population sample size increases. We also want to see what difference SRBs makes
+    as the population sample size increases. 
     """
     name = "metrics_by_sample_size"
     tools = [TSINFER]
@@ -1153,8 +1153,8 @@ class MetricsBySampleSizeDataset(Dataset):
         lengths = [10000, 100000, 1000000]
         error_rates = [0]
         sample_sizes = [12, 50, 100, 500, 1000]
-        shared_breakpoint_params = [False, True]
-        shared_length_params = [False, True]
+        shared_breakpoint_params = [True]#, False]
+        shared_length_params = [False]#, True]
 
         # Fixed parameters
         subsample_size=10
@@ -1380,8 +1380,8 @@ class TsinferPerformance(Dataset):
         num_points = 20
         sample_sizes = np.linspace(10, 2 * self.fixed_sample_size, num_points).astype(int)
         lengths = np.linspace(self.fixed_length / 10, 2 * self.fixed_length, num_points).astype(int)
-        shared_breakpoint_params = [False, True]
-        shared_length_params = [False, True]
+        shared_breakpoint_params = [True]#, False]
+        shared_length_params = [False]#, True]
         # Fixed parameters
         Ne = 5000
         # TODO we'll want to do this for multiple error rates eventually. For now
@@ -1899,8 +1899,8 @@ class AllMetricsBySampleSizeFigure(Figure):
                     ax.set_ylabel(metric + " metric")
                 if j == len(topology_only_metrics) - 1:
                     ax.set_xlabel("Original sample size")
-                for shared_breakpoint in [False,True]:
-                    for shared_length in [False, True]:
+                for shared_breakpoint in df.tsinfer_srb.unique():
+                    for shared_length in df.tsinfer_sl.unique():
                         dfp = df[np.logical_and.reduce((
                             df.length == length,
                             df.tsinfer_srb == shared_breakpoint,
@@ -2057,8 +2057,8 @@ class PerformanceFigure(Figure):
         ax1.set_title("Fixed number of chromosomes ({})".format(self.datasetClass.fixed_sample_size))
         ax1.set_xlabel("Sequence length (MB)")
         ax1.set_ylabel(self.y_axis_label)
-        for shared_breakpoint in [False,True]:
-            for shared_length in [False, True]:
+        for shared_breakpoint in df.tsinfer_srb.unique():
+            for shared_length in df.tsinfer_sl.unique():
                 dfp = df[np.logical_and.reduce((
                     df.sample_size == self.datasetClass.fixed_sample_size,
                     df.tsinfer_srb == shared_breakpoint,
@@ -2082,8 +2082,8 @@ class PerformanceFigure(Figure):
         ax2.set_title("Fixed sequence length ({:.2f} Mb)".format(self.datasetClass.fixed_length / 10**6))
         ax2.set_xlabel("Sample size")
         ax2.set_ylabel(self.y_axis_label)
-        for shared_breakpoint in [False,True]:
-            for shared_length in [False, True]:
+        for shared_breakpoint in df.tsinfer_srb.unique():
+            for shared_length in df.tsinfer_sl.unique():
                 dfp = df[np.logical_and.reduce((
                     df.length == self.datasetClass.fixed_length / 10**6,
                     df.tsinfer_srb == shared_breakpoint,

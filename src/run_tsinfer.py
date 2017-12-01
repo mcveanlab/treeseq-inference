@@ -12,6 +12,7 @@ sys.path.insert(1,os.path.join(sys.path[0],'..','msprime'))
 sys.path.insert(1,os.path.join(sys.path[0],'..','tsinfer'))
 import msprime
 import tsinfer
+import logging
 
 def main():
 
@@ -53,6 +54,8 @@ def main():
     args = parser.parse_args()
     S = np.load(args.samples)
     pos = np.load(args.positions)
+    if args.shared_recombinations == False:
+        logging.warning("The current version of tsinfer always assumes shared recombinations")
     # We need to transpose this now as
     genotypes = S.astype(np.uint8).T
     ts = tsinfer.infer(
