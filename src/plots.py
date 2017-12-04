@@ -2145,7 +2145,6 @@ class PerformanceFigure(Figure):
         # Rescale the length to MB
         df.length /= 10**6
         # Set statistics to the ratio of observed over expected
-        fig, (ax1, ax2) = pyplot.subplots(1, 2, sharey=True, figsize=(8, 5.5))
         source_colour = "red"
         inferred_colour = "blue"
         inferred_linestyles = {False:{False:':',True:'-.'},True:{False:'--',True:'-'}}
@@ -2250,6 +2249,69 @@ class FileSizePerformanceFigure(PerformanceFigure):
         self.dataset.data[self.plotted_column] = self.dataset.data["tsinfer_ts_filesize"] / self.dataset.data["ts_filesize"]
         PerformanceFigure.plot(self)
 
+class TracebackDebugFigure(Figure):
+    """
+    Superclass for the performance metrics figures to debug traceback problems
+    """
+    datasetClass = TsinferTracebackDebug
+    plotted_column = None
+    y_axis_label = None
+
+    def plot(self):
+        df = self.dataset.data
+        source_colour = "red"
+        inferred_colour = "blue"
+        inferred_linestyles = {False:{False:':',True:'-.'},True:{False:'--',True:'-'}}
+        inferred_markers =    {False:{False:':',True:'-.'},True:{False:'--',True:'-'}}
+        fig, (ax1) = pyplot.subplots(1, 1, figsize=(6, 6), sharey=True)
+        ax1.set_xlabel("Mutation rate per bp")
+        ax1.set_ylabel(self.y_axis_label)
+        for shared_breakpoint in df.tsinfer_srb.unique():
+            for shared_length in df.tsinfer_sl.unique():
+                dfp = df[np.logical_and.reduce((
+                    df.tsinfer_srb == shared_breakpoint,
+                    df.tsinfer_sl == shared_length))]
+                group = dfp.groupby(["mutation_rate"])
+                #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
+                mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
+                ax1.errorbar(
+                    [m['mu'] for m in mean_sem], 
+                    [m['mean'][self.plotted_column] for m in mean_sem],
+                    yerr=[m['sem'][self.plotted_column] for m in mean_sem] if getattr(self, 'error_bars') else None,
+                    linestyle=inferred_linestyles[shared_breakpoint][shared_length],
+                    color=inferred_colour,
+                    #marker=self.tools_format[tool]["mark"],
+                    elinewidth=1)
+                
+        params = [
+            pyplot.Line2D(
+                (0,0),(0,0), color= inferred_colour, 
+                linestyle=inferred_linestyles[shared_breakpoint][shared_length], linewidth=2)
+            for shared_breakpoint, linestyles2 in inferred_linestyles.items()
+            for shared_length, linestyle in linestyles2.items()]
+        ax1.legend(
+            params, ["breakpoints={}, lengths={}".format(srb, sl)
+                for srb, linestyles2 in inferred_linestyles.items()
+                for sl, linestyle in  linestyles2.items()],
+            loc="lower right", fontsize=10, title="Polytomy resolution")
+
+        # fig.text(0.19, 0.97, "Sample size = 1000")
+        # fig.text(0.60, 0.97, "Sequence length = 50Mb")
+        # pyplot.savefig("plots/simulators.pdf")
+        pyplot.suptitle('Tsinfer debug performance')
+        self.savefig(fig)
+
+
+
+class TracebackDebugEdgesFigure(TracebackDebugFigure):
+    name = "traceback_debug_edges"
+    plotted_column = "metric"
+    y_axis_label = "inferred_edges / real_edges"
+    error_bars = True
+    def plot(self):
+        # Set statistics to the ratio of observed over expected
+        self.dataset.data[self.plotted_column] = self.dataset.data["tsinfer_edges"] / self.dataset.data["edges"]
+        TracebackDebugFigure.plot(self)
 
 class ProgramComparisonFigure(Figure):
     """
@@ -2351,6 +2413,7 @@ def main():
         RFRootedMetricByARGweaverParametersFigure,
         EdgesPerformanceFigure,
         FileSizePerformanceFigure,
+        TracebackDebugEdgesFigure,
         ProgramComparisonTimeFigure,
         ProgramComparisonMemoryFigure,
         AllMetricsByMutationRateSweepFigure,
