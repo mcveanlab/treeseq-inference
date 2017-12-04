@@ -70,6 +70,7 @@ TSINFER = "tsinfer"
 ERROR_COLNAME = 'error_rate'
 SUBSAMPLE_COLNAME = 'subsample_size'
 SIMTOOL_COLNAME = 'sim_tool' #if column does not exist, default simulation tool = 'msprime'
+MUTATION_SEED_COLNAME = 'mut_seed'
 SELECTION_COEFF_COLNAME = 'selection_coefficient'
 DOMINANCE_COEFF_COLNAME = 'dominance_coefficient'
 SELECTED_FREQ_COLNAME = 'output_frequency'
@@ -143,7 +144,7 @@ def generate_samples(ts, error_p):
                 done = 0 < s < ts.sample_size
     return S
 
-def mk_sim_name(n, Ne, l, rho, mu, genealogy_seed, mut_seed, directory=None, tool="msprime",
+def mk_sim_name(n, Ne, l, rho, mu, genealogy_seed, mut_seed=None, directory=None, tool="msprime",
     s=None, h=None, freq=None, post_gens=None):
     """
     Create a filename for saving an msprime simulation (without extension)
@@ -153,8 +154,10 @@ def mk_sim_name(n, Ne, l, rho, mu, genealogy_seed, mut_seed, directory=None, too
     # trailing zeroes. 12 dp should be ample for these rates
     rho = "{:.12f}".format(float(rho)).rstrip('0')
     mu = "{:.12f}".format(float(mu)).rstrip('0')
-    file = "{}-n{}_Ne{}_l{}_rho{}_mu{}-gs{}_ms{}".format(tool, int(n), float(Ne), int(l),\
-        rho, mu, int(genealogy_seed), int(mut_seed))
+    file = "{}-n{}_Ne{}_l{}_rho{}_mu{}-gs{}".format(tool, int(n), float(Ne), int(l),\
+        rho, mu, int(genealogy_seed))
+    if mut_seed is not None:
+        file += "_ms{}".format(int(mut_seed))
     if s is not None:
         file += "_s{}".format(s)
     if h is not None:
@@ -177,13 +180,14 @@ def mk_sim_name_from_row(row, directory=None, error_col=ERROR_COLNAME, subsample
     """
     #fill out optional colnames (these might not exist)
     tool = row.get(SIMTOOL_COLNAME, 'msprime') #default to 'msprime' if tool not specified in row
+    mut_seed = row.get(MUTATION_SEED_COLNAME)
     s = row.get(SELECTION_COEFF_COLNAME)
     h = row.get(DOMINANCE_COEFF_COLNAME)
     freq = row.get(SELECTED_FREQ_COLNAME)
     post_gens = row.get(SELECTED_POSTGEN_COLNAME)
     
     name = mk_sim_name(row.sample_size, row.Ne, row.length, row.recombination_rate,
-        row.mutation_rate, row.seed, row.seed, directory, 
+        row.mutation_rate, row.seed, mut_seed, directory, 
         tool=tool, s=s, h=h, freq=freq, post_gens = post_gens)
     #in some cases the original simulation (or results frome the simulation) have been
     # modified and we need a name that reflects that modification 
@@ -903,8 +907,7 @@ class Dataset(object):
     #
     # Utilities for running simulations and saving files.
     #
-    def single_simulation(self, n, Ne, l, rho, mu, seed, mut_seed=None,
-        discretise_mutations=True):
+    def single_simulation(self, n, Ne, l, rho, mu, seed, mut_seed=None):
         """
         The standard way to run one msprime simulation for a set of parameter
         values. Saves the output to an .hdf5 file, and also saves variant files
@@ -913,10 +916,11 @@ class Dataset(object):
         http://mdrasmus.github.io/argweaver/doc/#sec-file-sites) tsinfer
         (currently a numpy array containing the variant matrix)
 
-        mutation_seed is not yet implemented, but should allow the same
+        mutation_seed allows the same
         ancestry to be simulated (if the same genealogy_seed is given) but have
         different mutations thrown onto the trees (even with different
-        mutation_rates)
+        mutation_rates). If None, then different vaues of mu will create different
+        simulations.
 
         Returns a tuple of treesequence, filename (without file type extension)
         """
@@ -927,33 +931,32 @@ class Dataset(object):
         # Since we want to have a finite site model, we force the recombination map
         # to have exactly l loci with a recombination rate of rho between them.
         recombination_map = msprime.RecombinationMap.uniform_map(l, rho, l)
-        # We need to rejection sample any instances that we can't discretise under
-        # the current model. The simplest way to do this is to have a local RNG
-        # which we seed with the specified seed.
-        rng = random.Random(seed)
-        # TODO replace this with a proper finite site mutation model in msprime.
-        done = False
-        while not done:
-            sim_seed = rng.randint(1, 2**31)
+        rng1 = random.Random(seed)
+        sim_seed = rng1.randint(1, 2**31)
+        if mut_seed is None:
             ts = msprime.simulate(
                 n, Ne, recombination_map=recombination_map, mutation_rate=mu,
                 random_seed=sim_seed)
-            if discretise_mutations:
-                try:
-                    ts = msprime_extras.discretise_mutations(ts)
-                    done = True
-                except ValueError as ve:
-                    logging.info("Rejecting simulation: seed={}: {}".format(sim_seed, ve))
-            else:
-                done=True
+        else:
+            #run with no mutations (should give same result regardless of mutation rate)
+            ts = msprime.simulate(
+                n, Ne, recombination_map=recombination_map, mutation_rate=0,
+                random_seed=sim_seed)
+            #now add the mutations
+            rng2 = msprime.RandomGenerator(mut_seed)
+            nodes = msprime.NodeTable()
+            edges = msprime.EdgeTable()
+            sites = msprime.SiteTable()
+            muts = msprime.MutationTable()
+            ts.dump_tables(nodes=nodes, edges=edges)
+            mutgen = msprime.MutationGenerator(rng2, mu)
+            mutgen.generate(nodes, edges, sites, muts)
+            msprime.sort_tables(nodes=nodes, edges=edges, sites=sites, mutations=muts)
+            ts = msprime.load_tables(nodes=nodes, edges=edges, sites=sites, mutations=muts)
+
         logging.info(
             "Neutral simulation done; {} sites, {} trees".format(ts.num_sites, ts.num_trees))
-        # Here we might want to iterate over mutation rates for the same
-        # genealogy, setting a different mut_seed so that we can see for
-        # ourselves the effect of mutation rate variation on a single topology
-        # but for the moment, we don't bother, and simply write
-        # mut_seed==genealogy_seed
-        sim_fn = mk_sim_name(n, Ne, l, rho, mu, seed, seed, self.simulations_dir)
+        sim_fn = mk_sim_name(n, Ne, l, rho, mu, seed, mut_seed, self.simulations_dir)
         logging.debug("writing {}.hdf5".format(sim_fn))
         ts.dump(sim_fn+".hdf5")
         return ts, sim_fn
@@ -987,7 +990,7 @@ class Dataset(object):
             "Running forward simulation with selection for "
             "n = {}, l = {:.2g}, Ne = {}, rho = {}, mu = {}, s = {}".format(
                 n, l, Ne, rho, mu, s))
-        sim_fn = mk_sim_name(n, Ne, l, rho, mu, seed, seed, self.simulations_dir, 
+        sim_fn = mk_sim_name(n, Ne, l, rho, mu, seed, mut_seed, self.simulations_dir, 
             tool="ftprime", s=s, h=h) + "_f" #freq + post_gens added by simulate_sweep()
 
 
@@ -1094,11 +1097,8 @@ class MetricsByMutationRateDataset(Dataset):
                     while not done:
                         replicate_seed = rng.randint(1, 2**31)
                         # Run the simulation
-                        ts, fn = self.single_simulation(
-                            sample_size, Ne, length, recombination_rate, mutation_rate,
-                            replicate_seed, replicate_seed,
-                            #discretise_mutations=True)
-                            discretise_mutations=False) #stop doing Jerome's discretising step!
+                        ts, fn = self.single_simulation(sample_size, Ne, length, 
+                            recombination_rate, mutation_rate, replicate_seed)
                         # Reject this instances if we got no mutations.
                         done = ts.get_num_mutations() > 0
                     with open(fn +".nex", "w+") as out:
@@ -1175,11 +1175,8 @@ class MetricsBySampleSizeDataset(Dataset):
                 while not done:
                     replicate_seed = rng.randint(1, 2**31)
                     # Run the simulation
-                    base_ts, unused_fn = self.single_simulation(
-                        max(sample_sizes), Ne, length, recombination_rate, mutation_rate,
-                        replicate_seed, replicate_seed,
-                        #discretise_mutations=True)
-                        discretise_mutations=False) #stop doing Jerome's discretising step!
+                    base_ts, unused_fn = self.single_simulation(max(sample_sizes), Ne, length, 
+                        recombination_rate, mutation_rate, replicate_seed)
                     # Reject this instances if we got no mutations.
                     done = base_ts.get_num_mutations() > 0
                 #Take the same base simulation and sample down to get comparable test sets
@@ -1402,9 +1399,8 @@ class TsinferPerformance(Dataset):
             for _ in range(replicates):
                 replicate_seed = rng.randint(1, 2**31)
                 #use same simulation seed for different params
-                ts, fn = self.single_simulation(
-                    sample_size, Ne, length, recombination_rate, mutation_rate,
-                    replicate_seed, replicate_seed, discretise_mutations=False)
+                ts, fn = self.single_simulation(sample_size, Ne, length, 
+                    recombination_rate, mutation_rate, replicate_seed)
                 assert ts.get_num_mutations() > 0
                 # Tsinfer should be robust to this, but it currently isn't. Fail
                 # noisily now rather than obscurely later. This will only ever happen
@@ -1435,6 +1431,88 @@ class TsinferPerformance(Dataset):
                             progress.update()
         return data
 
+class TsinferTracebackDebug(Dataset):
+    """
+    As discussed between Yan and Jerome on 4th Dec, running the current implementation of tsinfer in real data is not giving good enough performance 
+    in terms of the number of inferred vs real edges. Jerome thinks this is because of the traceback process. In particular, there are multiple routes 
+    back through the L&S traceback matrix which have the maximum (normalised) likelihood calculated as 1. Previously we simply took the one that involved 
+    the oldest ancestor: there are many different recent ancestors with L=1, but fewer older ancestors with L=1, so picking e.g. the most recent ancestor leads 
+    to essentially arbitrary resolving of branch points on the trees, whereas picking the oldest means that ancestors inferred for different rows end up pointing to the same parent (creating a polytomy), which can then be compressed and resolved sensibly, resulting in better compression.  Jerome has been trying to improve the choice of which ancestor to pick by keeping a pool of all the ancestors which start out with L=1 and taking e.g. the one that results in the longest L=1 stretch back along the genome. However, this seems to make only about a 5% difference.
+    
+    This dataset is a first sally into the problem, by using a dataset large enough to reveal the problem (n=1000, Ne=10e4, rho=1e-8, l=2Mb) and gradually 
+    cranking up the mutation rate, which we hope will allow better resolution of the trees (hopefully by reducing the number of L=1 paths). We can then try to spot
+    features of the correct L=1 paths that will help us pick a method to choose between euqally likely paths under lower mutation rates. 
+    
+    We run the simulations with different mutation rates using the same TS, to reduce one source of variation
+    """
+    name = "tsinfer_traceback_debug"
+    compute_tree_metrics = METRICS_OFF
+    default_replicates = 10
+    default_seed = 123
+    tools = [TSINFER]
+
+    def run_simulations(self, replicates, seed, show_progress, num_processes=1):
+        # TODO abstract some of this functionality up into the superclass.
+        # There is quite a lot shared with the other dataset.
+        if replicates is None:
+            replicates = self.default_replicates
+        if seed is None:
+            seed = self.default_seed
+        rng = random.Random(seed)
+        # Variable parameters
+        self.mutation_rates = (np.logspace(-8, -5, num=6)[:-1] * 1.5)
+        self.shared_breakpoint_params = [True]#, False]
+        self.shared_length_params = [False]#, True]
+        self.error_rates = [0]
+        # TODO we'll want to do this for multiple error rates eventually. For now
+        # Fixed parameters
+        Ne = 5000
+        sample_size = 1000
+        length = 10**6
+        recombination_rate = 2e-8
+        num_rows = replicates * len(self.mutation_rates) * len(self.error_rates) * \
+            len(self.shared_breakpoint_params) * len(self.shared_length_params)
+        cols = self.sim_cols + ["edges", "ts_filesize", "tsinfer_srb", "tsinfer_sl"]
+        data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
+        row_id = 0
+        if show_progress:
+            progress = tqdm.tqdm(total=num_rows)
+        for _ in range(replicates):
+            replicate_seed = rng.randint(1, 2**31)
+            for mutation_rate in self.mutation_rates:
+                mutation_seed = rng.randint(1, 2**31)
+                ts, fn = self.single_simulation(sample_size, Ne, length,
+                    recombination_rate, mutation_rate, replicate_seed, mutation_seed)
+                assert ts.get_num_mutations() > 0
+                # Tsinfer should be robust to this, but it currently isn't. Fail
+                # noisily now rather than obscurely later. This will only ever happen
+                # in trivially small data sets, so it doesn't matter.
+                non_singletons = False
+                for v in ts.variants():
+                    if np.sum(v.genotypes) > 1:
+                        non_singletons = True
+                if not non_singletons:
+                    raise ValueError("No non-single mutations present")
+                for error_rate in self.error_rates:
+                    for tsinfer_srb in self.shared_breakpoint_params:
+                        for tsinfer_sl in self.shared_length_params:
+                            row = data.iloc[row_id]
+                            row_id += 1
+                            row.sample_size = sample_size
+                            row.recombination_rate = recombination_rate
+                            row.mutation_rate = mutation_rate
+                            row.length = length
+                            row.Ne = Ne
+                            row.seed = replicate_seed
+                            row[ERROR_COLNAME] = error_rate
+                            row.tsinfer_srb = tsinfer_srb
+                            row.tsinfer_sl = tsinfer_sl
+                            row.ts_filesize = os.path.getsize(fn + ".hdf5")
+                            row.edges = ts.num_edges
+                            self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
+                            if show_progress:
+                                progress.update()
+        return data
 
 class ProgramComparison(Dataset):
     """
@@ -1479,9 +1557,8 @@ class ProgramComparison(Dataset):
         for sample_size, length in work:
             for _ in range(replicates):
                 replicate_seed = rng.randint(1, 2**31)
-                ts, fn = self.single_simulation(
-                    sample_size, Ne, length, recombination_rate, mutation_rate,
-                    replicate_seed, replicate_seed, discretise_mutations=False)
+                ts, fn = self.single_simulation(sample_size, Ne, length,
+                    recombination_rate, mutation_rate, replicate_seed)
                 assert ts.get_num_mutations() > 0
                 # Tsinfer should be robust to this, but it currently isn't. Fail
                 # noisily now rather than obscurely later. This will only ever happen
@@ -1568,9 +1645,7 @@ class ARGweaverParamChanges(Dataset):
                         # Run the simulation
                         ts, fn = self.single_simulation(
                             sample_size, Ne, length, recombination_rate, mutation_rate,
-                            replicate_seed, replicate_seed,
-                            #discretise_mutations=True)
-                            discretise_mutations=False) #stop doing Jerome's discretising step!
+                            replicate_seed, replicate_seed)
                         # Reject this instances if we got no mutations.
                         done = ts.get_num_mutations() > 0
                     with open(fn +".nex", "w+") as out:
