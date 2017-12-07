@@ -1430,17 +1430,39 @@ class TsinferPerformance(Dataset):
 
 class TsinferTracebackDebug(Dataset):
     """
-    As discussed between Yan and Jerome on 4th Dec, running the current implementation of tsinfer in real data is not giving good enough performance
-    in terms of the number of inferred vs real edges. Jerome thinks this is because of the traceback process. In particular, there are multiple routes
-    back through the L&S traceback matrix which have the maximum (normalised) likelihood calculated as 1. Previously we simply took the one that involved
-    the oldest ancestor: there are many different recent ancestors with L=1, but fewer older ancestors with L=1, so picking e.g. the most recent ancestor leads
-    to essentially arbitrary resolving of branch points on the trees, whereas picking the oldest means that ancestors inferred for different rows end up pointing to the same parent (creating a polytomy), which can then be compressed and resolved sensibly, resulting in better compression.  Jerome has been trying to improve the choice of which ancestor to pick by keeping a pool of all the ancestors which start out with L=1 and taking e.g. the one that results in the longest L=1 stretch back along the genome. However, this seems to make only about a 5% difference.
-
-    This dataset is a first sally into the problem, by using a dataset large enough to reveal the problem (n=1000, Ne=10e4, rho=1e-8, l=2Mb) and gradually
-    cranking up the mutation rate, which we hope will allow better resolution of the trees (hopefully by reducing the number of L=1 paths). We can then try to spot
-    features of the correct L=1 paths that will help us pick a method to choose between euqally likely paths under lower mutation rates.
-
-    We run the simulations with different mutation rates using the same TS, to reduce one source of variation
+    As discussed between Yan and Jerome on 4th Dec, running the current
+    implementation of tsinfer in real data is not giving good enough performance
+    in terms of the number of inferred vs real edges. Jerome thinks this is because
+    of the traceback process. In particular, there are multiple routes
+    back through the L&S traceback matrix which have the maximum (normalised)
+    likelihood calculated as 1. Previously we simply took the one that involved
+    the oldest ancestor: there are many different recent ancestors with L=1, but
+    fewer older ancestors with L=1, so picking e.g. the most recent ancestor leads
+    to essentially arbitrary resolving of branch points on the trees, whereas
+    picking the oldest means that ancestors inferred for different rows end up
+    pointing to the same parent (creating a polytomy), which can then be compressed
+    and resolved sensibly, resulting in better compression.  Jerome has been trying
+    to improve the choice of which ancestor to pick by keeping a pool of all the
+    ancestors which start out with L=1 and taking e.g. the one that results in the
+    longest L=1 stretch back along the genome. However, this seems to make only
+    about a 5% difference.
+    
+    This dataset is a first sally into the problem, by using a dataset large enough
+    to reveal the problem (n=1000, Ne=10e4, rho=1e-8, l=2Mb) and gradually
+    cranking up the mutation rate, which we hope will allow better resolution of the
+    trees (hopefully by reducing the number of L=1 paths). We can then try to spot
+    features of the correct L=1 paths that will help us pick a method to choose
+    between euqally likely paths under lower mutation rates.
+    
+    We run the simulations with different mutation rates using the same TS, to
+    reduce one source of variation
+    
+    Note that one problem is that we may create too many ancestors, as we create a
+    new ancestor for each possible permutation of variants at a locus, 
+    but a single ancestor may have more than one permutation, if there have been
+    later recombinations which swap the ancestral state back into a subset of the 
+    descendants of that ancestor. This may result in more edges than strictly
+    necessary.
     """
     name = "tsinfer_traceback_debug"
     compute_tree_metrics = METRICS_OFF
