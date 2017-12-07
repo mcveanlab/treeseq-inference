@@ -55,7 +55,7 @@ def main():
     S = np.load(args.samples)
     pos = np.load(args.positions)
     if args.shared_recombinations == False:
-        logging.warning("The current version of tsinfer always assumes shared recombinations")
+        logging.warning("The current version of tsinfer always uses shared recombinations ('edge compression')")
     # We need to transpose this now as
     genotypes = S.astype(np.uint8).T
     ts = tsinfer.infer(
