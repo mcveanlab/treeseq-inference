@@ -2266,6 +2266,7 @@ class TracebackDebugFigure(Figure):
         fig, (ax1) = pyplot.subplots(1, 1, figsize=(6, 6), sharey=True)
         ax1.set_xlabel("Mutation rate per bp")
         ax1.set_ylabel(self.y_axis_label)
+        ax1.set_xscale('log')
         for shared_breakpoint in df.tsinfer_srb.unique():
             for shared_length in df.tsinfer_sl.unique():
                 dfp = df[np.logical_and.reduce((
