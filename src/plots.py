@@ -33,6 +33,7 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as pyplot
+import matplotlib.backends.backend_pdf
 import pandas as pd
 import tqdm
 
@@ -983,7 +984,6 @@ class Dataset(object):
         Returns an iterator over (treesequence, filename, output_freq) tuples
         (without file type extension)
 
-        TO DO - haven't implemented discretising of mutations, but we rarely use this anyway
         """
         from selective_sweep import simulate_sweep #not at top as this fires up a simupop instance
         logging.info(
@@ -1232,7 +1232,7 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
 
     default_replicates = 40
     default_seed = 123
-    compute_tree_metrics = METRICS_ON | METRICS_RANDOMLY_BREAK_POLYTOMIES
+    compute_tree_metrics = METRICS_ON #| METRICS_RANDOMLY_BREAK_POLYTOMIES
 
     #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
     exclude_colnames =[]
@@ -1246,7 +1246,7 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
         self.mutation_rates = (np.logspace(-8, -5, num=6)[:-1] * 1.5)
         self.sample_sizes = [50, 20, 10]
         # parameters across a single simulation
-        self.error_rates = [0]#, 0.01]
+        self.error_rates = [0, 0.01]
         self.stop_at = ['0.2', '0.5', '0.8', '1.0', ('1.0', 200), ('1.0', 1000)] #frequencies to output a file.
         #NB - these are strings because they are output as part of the filename
 
@@ -1756,9 +1756,11 @@ class Figure(object):
         self.dataset = self.datasetClass()
         self.dataset.load_data()
 
-    def savefig(self, figure):
+    def savefig(self, *figures):
         filename = os.path.join(self.figures_dir, "{}.pdf".format(self.name))
-        figure.savefig(filename)
+        with matplotlib.backends.backend_pdf.PdfPages(filename) as pdf:
+            for fig in figures:
+                pdf.savefig(fig)
 
     def plot(self):
         raise NotImplementedError()
@@ -1901,9 +1903,11 @@ class CputimeMetricByMutationRateFigure(MetricByMutationRateFigure):
 
     def plot(self):
         df = self.dataset.data
+        error_rates = df[ERROR_COLNAME].unique()
         sample_sizes = df.sample_size.unique()
 
         linestyles = ["-", ":"]
+        
         fig, ax = pyplot.subplots(1, 1)
         lines = []
         error_rate = 0
