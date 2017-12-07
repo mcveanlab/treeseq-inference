@@ -33,6 +33,7 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as pyplot
+import matplotlib.backends.backend_pdf
 import pandas as pd
 import tqdm
 
@@ -983,7 +984,6 @@ class Dataset(object):
         Returns an iterator over (treesequence, filename, output_freq) tuples
         (without file type extension)
 
-        TO DO - haven't implemented discretising of mutations, but we rarely use this anyway
         """
         from selective_sweep import simulate_sweep #not at top as this fires up a simupop instance
         logging.info(
@@ -1232,7 +1232,7 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
 
     default_replicates = 40
     default_seed = 123
-    compute_tree_metrics = METRICS_ON | METRICS_RANDOMLY_BREAK_POLYTOMIES
+    compute_tree_metrics = METRICS_ON #| METRICS_RANDOMLY_BREAK_POLYTOMIES
 
     #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
     exclude_colnames =[]
@@ -1246,7 +1246,7 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
         self.mutation_rates = (np.logspace(-8, -5, num=6)[:-1] * 1.5)
         self.sample_sizes = [50, 20, 10]
         # parameters across a single simulation
-        self.error_rates = [0]#, 0.01]
+        self.error_rates = [0, 0.01]
         self.stop_at = ['0.2', '0.5', '0.8', '1.0', ('1.0', 200), ('1.0', 1000)] #frequencies to output a file.
         #NB - these are strings because they are output as part of the filename
 
@@ -1756,9 +1756,11 @@ class Figure(object):
         self.dataset = self.datasetClass()
         self.dataset.load_data()
 
-    def savefig(self, figure):
+    def savefig(self, *figures):
         filename = os.path.join(self.figures_dir, "{}.pdf".format(self.name))
-        figure.savefig(filename)
+        with matplotlib.backends.backend_pdf.PdfPages(filename) as pdf:
+            for fig in figures:
+                pdf.savefig(fig)
 
     def plot(self):
         raise NotImplementedError()
@@ -1904,6 +1906,7 @@ class CputimeMetricByMutationRateFigure(MetricByMutationRateFigure):
         sample_sizes = df.sample_size.unique()
 
         linestyles = ["-", ":"]
+        
         fig, ax = pyplot.subplots(1, 1)
         lines = []
         error_rate = 0
@@ -1933,66 +1936,70 @@ class AllMetricsByMutationRateSweepFigure(Figure):
 
     def plot(self):
         df = self.dataset.data
+        error_rates = df[ERROR_COLNAME].unique()
         output_freqs = df[[SELECTED_FREQ_COLNAME, SELECTED_POSTGEN_COLNAME]].drop_duplicates()
         sample_sizes = df.sample_size.unique()
 
         metrics = ARG_metrics.get_metric_names()
         topology_only_metrics = [m for m in metrics if not m.startswith('w')]
-        fig, axes = pyplot.subplots(len(topology_only_metrics),
-            len(output_freqs), figsize=(20, 20))
-        linestyles = ["-", "-.", ":"]
-        for j, metric in enumerate(topology_only_metrics):
-            for k, output_data in output_freqs.iterrows():
-                freq = output_data[0]
-                gens = output_data[1]
-                ax = axes[j][k]
-                ax.set_xscale('log')
-                if j == 0:
-                    ax.set_title("Swept variant @ freq {}{}".format(
-                        freq, "+{} gens".format(int(gens)) if gens else ""))
-                if k == 0:
-                    ax.set_ylabel(metric + " metric")
-                if j == len(topology_only_metrics) - 1:
-                    ax.set_xlabel("Mutation rate")
-                for n, linestyle in zip(sample_sizes, linestyles):
-                    df_s = df[np.logical_and.reduce((
-                        df.sample_size == n,
-                        df[SELECTED_FREQ_COLNAME] == freq,
-                        df[SELECTED_POSTGEN_COLNAME] == gens))]
-                    group = df_s.groupby(["mutation_rate"])
-                    #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
-                    mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-                    if getattr(self, 'error_bars', None):
-                        yerr=[m['sem'] for m in mean_sem]
-                    else:
-                        yerr = None
-                    for tool, setting in self.tools_format.items():
-                        if all(np.isnan(m['mean'][tool + "_" + metric]) for m in mean_sem):
-                            #don't plot if all NAs
-                            continue
-                        ax.errorbar(
-                            [m['mu'] for m in mean_sem],
-                            [m['mean'][tool + "_" + metric] for m in mean_sem],
-                            yerr=yerr, color=setting["col"],
-                            linestyle= linestyle,
-                            marker=setting["mark"], fillstyle='none',
-                            elinewidth=1)
-
-        # Create legends from custom artists
-        artists = [
-            pyplot.Line2D((0,1),(0,0), color= setting["col"],
-                marker= setting["mark"], linestyle='')
-            for tool,setting in self.tools_format.items()]
-        first_legend = axes[0][0].legend(
-            artists, self.tools_format.keys(), numpoints=3, loc="upper right")
-        artists = [
-            pyplot.Line2D(
-                (0,0),(0,0), color="black", linestyle=linestyle, linewidth=2)
-            for linestyle in linestyles]
-        axes[1][0].legend(
-            artists, ["Sample size = {}".format(n) for n in sample_sizes],
-            loc="upper right")
-        self.savefig(fig)
+        figures = [] #save figures for putting onto a multi-page pdf
+        for error_rate in error_rates:
+            fig, axes = pyplot.subplots(len(topology_only_metrics),
+                len(output_freqs), figsize=(20, 20))
+            fig.suptitle("Error-rate = {}".format(error_rate))
+            linestyles = ["-", "-.", ":"]
+            for j, metric in enumerate(topology_only_metrics):
+                for k, output_data in output_freqs.iterrows():
+                    freq = output_data[0]
+                    gens = output_data[1]
+                    ax = axes[j][k]
+                    ax.set_xscale('log')
+                    if j == 0:
+                        ax.set_title("Swept variant @ freq {}{}".format(
+                            freq, "+{} gens".format(int(gens)) if gens else ""))
+                    if k == 0:
+                        ax.set_ylabel(metric + " metric")
+                    if j == len(topology_only_metrics) - 1:
+                        ax.set_xlabel("Mutation rate")
+                    for n, linestyle in zip(sample_sizes, linestyles):
+                        df_s = df[np.logical_and.reduce((
+                            df.sample_size == n,
+                            df[ERROR_COLNAME] == error_rate,
+                            df[SELECTED_FREQ_COLNAME] == freq,
+                            df[SELECTED_POSTGEN_COLNAME] == gens))]
+                        group = df_s.groupby(["mutation_rate"])
+                        #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
+                        mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
+                        for tool, setting in self.tools_format.items():
+                            if all(np.isnan(m['mean'][tool + "_" + metric]) for m in mean_sem):
+                                #don't plot if all NAs
+                                continue
+                            ax.errorbar(
+                                [m['mu'] for m in mean_sem],
+                                [m['mean'][tool + "_" + metric] for m in mean_sem],
+                                yerr=[m['sem'][tool + "_" + metric] for m in mean_sem] \
+                                    if getattr(self, 'error_bars') else None,
+                                color=setting["col"],
+                                linestyle= linestyle,
+                                marker=setting["mark"], fillstyle='none',
+                                elinewidth=1)
+    
+            # Create legends from custom artists
+            artists = [
+                pyplot.Line2D((0,1),(0,0), color= setting["col"],
+                    marker= setting["mark"], linestyle='')
+                for tool,setting in self.tools_format.items()]
+            first_legend = axes[0][0].legend(
+                artists, self.tools_format.keys(), numpoints=3, loc="upper right")
+            artists = [
+                pyplot.Line2D(
+                    (0,0),(0,0), color="black", linestyle=linestyle, linewidth=2)
+                for linestyle in linestyles]
+            axes[1][0].legend(
+                artists, ["Sample size = {}".format(n) for n in sample_sizes],
+                loc="upper right")
+            figures.append(fig)
+        self.savefig(*figures)
 
 class AllMetricsBySampleSizeFigure(Figure):
     """
