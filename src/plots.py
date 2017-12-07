@@ -766,7 +766,7 @@ class Dataset(object):
     """
     sim_cols = [
         "sample_size", "Ne", "length", "recombination_rate", "mutation_rate",
-        ERROR_COLNAME, "seed"]
+        ERROR_COLNAME, "edges", "seed"]
 
     #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
     exclude_colnames = []
@@ -1117,6 +1117,7 @@ class MetricsByMutationRateDataset(Dataset):
                         row.Ne = Ne
                         row.seed = replicate_seed
                         row[ERROR_COLNAME] = error_rate
+                        row.edges = ts.num_edges
                         self.save_variant_matrices(ts, fn, error_rate,
                             #infinite_sites=True)
                             infinite_sites=False)
@@ -1207,6 +1208,7 @@ class MetricsBySampleSizeDataset(Dataset):
                                 row.subsample_size = subsample_size
                                 row.seed = replicate_seed
                                 row[ERROR_COLNAME] = error_rate
+                                row.edges = subsampled_ts.num_edges
                                 self.save_variant_matrices(ts, fn, error_rate,
                                     #infinite_sites=True)
                                     infinite_sites=False)
@@ -1334,6 +1336,7 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
                         row['Ne'] = self.Ne
                         row['seed'] = replicate_seed
                         row[ERROR_COLNAME] = error_rate
+                        row['edges'] = ts.num_edges
                         row[SIMTOOL_COLNAME] = "ftprime"
                         row[SELECTION_COEFF_COLNAME] = self.selection_coefficient
                         row[DOMINANCE_COEFF_COLNAME] = self.dominance_coefficient
@@ -1384,7 +1387,7 @@ class TsinferPerformance(Dataset):
         recombination_rate = 2.5e-8
         mutation_rate = recombination_rate
         num_rows = 2 * num_points * self.replicates * len(shared_breakpoint_params) * len(shared_length_params)
-        cols = self.sim_cols + ["edges", "ts_filesize", "tsinfer_srb", "tsinfer_sl"]
+        cols = self.sim_cols + ["ts_filesize", "tsinfer_srb", "tsinfer_sl"]
         data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
         work = [
             (self.fixed_sample_size, l) for l in lengths] + [
@@ -1419,10 +1422,10 @@ class TsinferPerformance(Dataset):
                         row.Ne = Ne
                         row.seed = replicate_seed
                         row[ERROR_COLNAME] = error_rate
+                        row.edges = ts.num_edges
                         row.tsinfer_srb = tsinfer_srb
                         row.tsinfer_sl = tsinfer_sl
                         row.ts_filesize = os.path.getsize(fn + ".hdf5")
-                        row.edges = ts.num_edges
                         self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
                         if show_progress:
                             progress.update()
@@ -1489,7 +1492,7 @@ class TsinferTracebackDebug(Dataset):
         self.num_sims = self.replicates * len(self.mutation_rates)
         self.num_rows = self.num_sims * len(self.error_rates) * \
             len(self.shared_breakpoint_params) * len(self.shared_length_params)
-        cols = self.sim_cols + [MUTATION_SEED_COLNAME, "edges", "ts_filesize", "tsinfer_srb", "tsinfer_sl"]
+        cols = self.sim_cols + [MUTATION_SEED_COLNAME, "ts_filesize", "tsinfer_srb", "tsinfer_sl"]
         data = pd.DataFrame(index=np.arange(0, self.num_rows), columns=cols)
         progress = tqdm.tqdm(total=self.num_rows) if show_progress else None
 
@@ -1551,10 +1554,10 @@ class TsinferTracebackDebug(Dataset):
                     row['seed'] = replicate_seed
                     row[MUTATION_SEED_COLNAME] = mutation_seed
                     row[ERROR_COLNAME] = error_rate
+                    row['edges'] = ts.num_edges
                     row['tsinfer_srb'] = tsinfer_srb
                     row['tsinfer_sl'] = tsinfer_sl
                     row['ts_filesize'] = os.path.getsize(fn + ".hdf5")
-                    row['edges'] = ts.num_edges
                     self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
         return return_value
 
@@ -1622,6 +1625,7 @@ class ProgramComparison(Dataset):
                 row.Ne = Ne
                 row.seed = replicate_seed
                 row[ERROR_COLNAME] = 0.0
+                row.edges = ts.num_edges
                 # for tool in self.tools:
                 #     row[tool + "_completed"] = False
                 # # Hack to prevent RentPlus from running when the sizes are too big.
@@ -1710,6 +1714,7 @@ class ARGweaverParamChanges(Dataset):
                                 row.Ne = Ne
                                 row.seed = replicate_seed
                                 row[ERROR_COLNAME] = error_rate
+                                row.edges = ts.num_edges
                                 row.ARGweaver_burnin = burnin
                                 row.ARGweaver_ntimes = n_timesteps
                                 row.only_AW = only_run_ARGweaver_inference
@@ -1824,7 +1829,7 @@ class MetricByMutationRateFigure(Figure):
         sample_sizes = df.sample_size.unique()
 
         linestyles = ["-", ":"]
-        fig, axes = pyplot.subplots(1, 3, figsize=(12, 6), sharey=True)
+        fig, axes = pyplot.subplots(1, len(error_rates), figsize=(12, 6), sharey=True)
         lines = []
         for k, error_rate in enumerate(error_rates):
             ax = axes[k]
@@ -1881,7 +1886,7 @@ class RFRootedMetricByMutationRateFigure(MetricByMutationRateFigure):
 class KCRootedMetricByMutationRateFigure(MetricByMutationRateFigure):
     name = "kc_rooted_by_mutation_rate"
     metric = "KCrooted"
-    ylim = (0, 110)
+    ylim = (0, 40)
     error_bars = True
 
 class CputimeMetricByMutationRateFigure(MetricByMutationRateFigure):
