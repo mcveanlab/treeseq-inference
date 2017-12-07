@@ -1182,8 +1182,8 @@ class MetricsBySampleSizeDataset(Dataset):
                 #Take the same base simulation and sample down to get comparable test sets
                 for sample_size in sample_sizes:
                     ts = base_ts.simplify(list(range(sample_size)))
-                    fn = msprime_name(sample_size, Ne, length, recombination_rate, mutation_rate,
-                        replicate_seed, replicate_seed, self.simulations_dir)
+                    fn = mk_sim_name(sample_size, Ne, length, recombination_rate, mutation_rate,
+                        replicate_seed, directory=self.simulations_dir)
                     #subsample to produce a nexus file for metric comparison
                     subsampled_fn=add_subsample_param_to_name(fn, subsample_size)
                     subsampled_ts = ts.simplify(list(range(subsample_size)))
