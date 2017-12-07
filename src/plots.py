@@ -1131,12 +1131,12 @@ class MetricsBySampleSizeDataset(Dataset):
     """
     name = "metrics_by_sample_size"
     tools = [TSINFER]
-    default_replicates = 40
+    default_replicates = 100
     default_seed = 123
     #to make this a fair comparison, we need to calculate only at the specific variant sites
     #because different sample sizes will be based on different original variant positions
     #which are then cut down to the subsampled ones.
-    compute_tree_metrics = METRICS_ON | METRICS_AT_VARIANT_SITES | METRICS_RANDOMLY_BREAK_POLYTOMIES
+    compute_tree_metrics = METRICS_ON | METRICS_AT_VARIANT_SITES # | METRICS_RANDOMLY_BREAK_POLYTOMIES
 
     #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
     exclude_colnames =[]
@@ -1996,7 +1996,8 @@ class AllMetricsBySampleSizeFigure(Figure):
     """
     datasetClass = MetricsBySampleSizeDataset
     name = "all_metrics_by_sample_size"
-
+    error_bars=True
+    
     def plot(self):
         df = self.dataset.data
         lengths = df.length.unique()
@@ -2034,22 +2035,12 @@ class AllMetricsBySampleSizeFigure(Figure):
                         ax.errorbar(
                             [m['mu'] for m in mean_sem],
                             [m['mean'][TSINFER + "_" + metric] for m in mean_sem],
-                            yerr=yerr, color=col,
+                            yerr=[m['sem'][TSINFER + "_" + metric] for m in mean_sem] \
+                                if getattr(self, 'error_bars', None) else None, 
+                            color=col,
                             linestyle=inferred_linestyles[shared_breakpoint][shared_length],
                             marker="o", fillstyle='none',
                             elinewidth=1)
-        """params = [
-            pyplot.Line2D(
-                (0,0),(0,0), color= col,
-                linestyle=inferred_linestyles[shared_breakpoint][shared_length], linewidth=2)
-            for shared_breakpoint, linestyles2 in inferred_linestyles.items()
-            for shared_length, linestyle in linestyles2.items()]
-        axes[0][-1].legend(
-            params, ["breakpoints={}, lengths={}".format(int(srb), int(sl))
-                for srb, linestyles2 in inferred_linestyles.items()
-                for sl, linestyle in  linestyles2.items()],
-            loc="upper right", fontsize=10, title="Polytomy resolution")
-        """
         pyplot.suptitle('ARG metric for trees subsampled down to {} tips'.format(
             subsample_size[0]))
         self.savefig(fig)
