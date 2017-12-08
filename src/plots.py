@@ -2286,9 +2286,13 @@ class TracebackDebugFigure(Figure):
         df = self.dataset.data
         source_colour = "red"
         inferred_colour = "blue"
-        inferred_linestyles = {False:{False:':',True:'-.'},True:{False:'--',True:'-'}}
-        inferred_markers =    {False:{False:':',True:'-.'},True:{False:'--',True:'-'}}
+        inferred_linestyles = {False:{False:':',True:'-.'},True:{False:'-',True:'--'}}
+        inferred_markers =    {False:{False:':',True:'-.'},True:{False:'-',True:'--'}}
         fig, (ax1) = pyplot.subplots(1, 1, figsize=(6, 6), sharey=True)
+        ax1.set_title("{} samples, seq length = {}Mb, rho = {}".format(
+            ",".join("{}".format(x) for x in df.sample_size.unique()),
+            ",".join("{:.1f}".format(x) for x in df.length.unique()/1e6), 
+            ",".join("{}".format(x) for x in df.recombination_rate.unique())))
         ax1.set_xlabel("Mutation rate per bp")
         ax1.set_ylabel(self.y_axis_label)
         ax1.set_xscale('log')
@@ -2308,18 +2312,18 @@ class TracebackDebugFigure(Figure):
                     color=inferred_colour,
                     #marker=self.tools_format[tool]["mark"],
                     elinewidth=1)
-
-        params = [
-            pyplot.Line2D(
-                (0,0),(0,0), color= inferred_colour,
-                linestyle=inferred_linestyles[shared_breakpoint][shared_length], linewidth=2)
-            for shared_breakpoint, linestyles2 in inferred_linestyles.items()
-            for shared_length, linestyle in linestyles2.items()]
-        ax1.legend(
-            params, ["breakpoints={}, lengths={}".format(srb, sl)
-                for srb, linestyles2 in inferred_linestyles.items()
-                for sl, linestyle in  linestyles2.items()],
-            loc="lower right", fontsize=10, title="Polytomy resolution")
+        if len(df.tsinfer_srb.unique())>1 or len(df.tsinfer_sl.unique())>1:
+            params = [
+                pyplot.Line2D(
+                    (0,0),(0,0), color= inferred_colour,
+                    linestyle=inferred_linestyles[shared_breakpoint][shared_length], linewidth=2)
+                for shared_breakpoint, linestyles2 in inferred_linestyles.items()
+                for shared_length, linestyle in linestyles2.items()]
+            ax1.legend(
+                params, ["breakpoints={}, lengths={}".format(srb, sl)
+                    for srb, linestyles2 in inferred_linestyles.items()
+                    for sl, linestyle in  linestyles2.items()],
+                loc="lower right", fontsize=10, title="Polytomy resolution")
 
         # fig.text(0.19, 0.97, "Sample size = 1000")
         # fig.text(0.60, 0.97, "Sequence length = 50Mb")
