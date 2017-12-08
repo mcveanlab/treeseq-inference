@@ -1377,59 +1377,85 @@ class TsinferPerformance(Dataset):
         num_points = 20
         sample_sizes = np.linspace(10, 2 * self.fixed_sample_size, num_points).astype(int)
         lengths = np.linspace(self.fixed_length / 10, 2 * self.fixed_length, num_points).astype(int)
-        shared_breakpoint_params = [True]#, False]
-        shared_length_params = [False]#, True]
+        self.shared_breakpoint_params = [True]#, False]
+        self.shared_length_params = [False]#, True]
         # Fixed parameters
-        Ne = 5000
+        self.Ne = 5000
         # TODO we'll want to do this for multiple error rates eventually. For now
         # just look at perfect data.
-        error_rate = 0
-        recombination_rate = 2.5e-8
-        mutation_rate = recombination_rate
-        num_rows = 2 * num_points * self.replicates * len(shared_breakpoint_params) * len(shared_length_params)
+        self.error_rates = [0]
+        self.recombination_rate = 2.5e-8
+        self.mutation_rate = recombination_rate
+        self.num_sims = (len(sample_sizes) + len(lengths)) * self.replicates
+        self.num_rows = self.num_sims * len(self.error_rates) * \
+            len(self.shared_breakpoint_params) * len(self.shared_length_params)
         cols = self.sim_cols + ["ts_filesize", "tsinfer_srb", "tsinfer_sl"]
-        data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
-        work = [
-            (self.fixed_sample_size, l) for l in lengths] + [
-            (n, self.fixed_length) for n in sample_sizes]
-        row_id = 0
-        if show_progress:
-            progress = tqdm.tqdm(total=num_rows)
-        for sample_size, length in work:
-            for _ in range(self.replicates):
-                replicate_seed = rng.randint(1, 2**31)
-                #use same simulation seed for different params
-                ts, fn = self.single_simulation(sample_size, Ne, length,
-                    recombination_rate, mutation_rate, replicate_seed)
-                assert ts.get_num_mutations() > 0
-                # Tsinfer should be robust to this, but it currently isn't. Fail
-                # noisily now rather than obscurely later. This will only ever happen
-                # in trivially small data sets, so it doesn't matter.
-                non_singletons = False
-                for v in ts.variants():
-                    if np.sum(v.genotypes) > 1:
-                        non_singletons = True
-                if not non_singletons:
-                    raise ValueError("No non-single mutations present")
-                for tsinfer_srb in shared_breakpoint_params:
-                    for tsinfer_sl in shared_length_params:
-                        row = data.iloc[row_id]
-                        row_id += 1
-                        row.sample_size = sample_size
-                        row.recombination_rate = recombination_rate
-                        row.mutation_rate = mutation_rate
-                        row.length = length
-                        row.Ne = Ne
-                        row.seed = replicate_seed
-                        row[ERROR_COLNAME] = error_rate
-                        row.edges = ts.num_edges
-                        row.tsinfer_srb = tsinfer_srb
-                        row.tsinfer_sl = tsinfer_sl
-                        row.ts_filesize = os.path.getsize(fn + ".hdf5")
-                        self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
-                        if show_progress:
-                            progress.update()
+        data = pd.DataFrame(index=np.arange(0, self.num_rows), columns=cols)
+        progress = tqdm.tqdm(total=self.num_rows) if show_progress else None
+
+        def save_result(data, values_by_row, progress):
+            for i,d in values_by_row.items():
+                for colname, val in d.items():
+                    data.iloc[i][colname]=val
+                if progress is not None:
+                    progress.update()
+
+        logging.info("Setting up using {} processes".format(num_processes))
+        variable_iterator = [
+            (self.fixed_sample_size, l) for l in np.tile(lengths, self.replicates)] + [
+            (n, self.fixed_length) for n in np.tile(sample_sizes, self.replicates)]
+        seeds = [rng.randint(1, 2**31) for i in range(self.num_sims)]
+        combined_iterator = enumerate(itertools.zip_longest(seeds, variable_iterator))
+
+        if num_processes > 1:
+            with multiprocessing.Pool(processes=num_processes, maxtasksperchild=2) as pool:
+                for result in pool.imap_unordered(self.single_sim, combined_iterator):
+                    save_result(data, result, progress)
+        else:
+            # When we have only one process it's easier to keep everything in the same
+            # process for debugging.
+            for result in map(self.single_sim, combined_iterator):
+                save_result(data, result, progress)
         return data
+
+
+    def single_sim(self, runtime_information):
+        i, (params) = runtime_information
+        assert None not in params #one will be none if the lengths of the iterators are different
+        replicate_seed, (sample_size, length) = params
+        base_row_id = i * self.num_rows//self.num_sims
+        return_value = {}
+        ts, fn = self.single_simulation(sample_size, self.Ne, length,
+            self.recombination_rate, self.mutation_rate, replicate_seed)
+        assert ts.get_num_mutations() > 0
+        # Tsinfer should be robust to this, but it currently isn't. Fail
+        # noisily now rather than obscurely later. This will only ever happen
+        # in trivially small data sets, so it doesn't matter.
+        row_id = base_row_id
+        non_singletons = False
+        for v in ts.variants():
+            if np.sum(v.genotypes) > 1:
+                non_singletons = True
+        if not non_singletons:
+            raise ValueError("No non-single mutations present")
+        for tsinfer_srb in self.shared_breakpoint_params:
+            for tsinfer_sl in self.shared_length_params:
+                for error_rate in self.error_rates:
+                    row = return_value[row_id] = {}
+                    row_id += 1
+                    row['sample_size'] = sample_size
+                    row['recombination_rate'] = self.recombination_rate
+                    row['mutation_rate'] = self.mutation_rate
+                    row['length'] = length
+                    row['Ne'] = self.Ne
+                    row['seed'] = replicate_seed
+                    row[ERROR_COLNAME] = error_rate
+                    row['edges'] = ts.num_edges
+                    row['tsinfer_srb'] = tsinfer_srb
+                    row['tsinfer_sl'] = tsinfer_sl
+                    row['ts_filesize'] = os.path.getsize(fn + ".hdf5")
+                    self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
+        return return_value
 
 class TsinferTracebackDebug(Dataset):
     """
