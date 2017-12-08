@@ -2172,8 +2172,8 @@ class PerformanceFigure(Figure):
         # Set statistics to the ratio of observed over expected
         source_colour = "red"
         inferred_colour = "blue"
-        inferred_linestyles = {False:{False:':',True:'-.'},True:{False:'--',True:'-'}}
-        inferred_markers =    {False:{False:':',True:'-.'},True:{False:'--',True:'-'}}
+        inferred_linestyles = {False:{False:':',True:'-.'},True:{False:'-',True:'--'}}
+        #inferred_markers =    {False:{False:':',True:'-.'},True:{False:'--',True:'-'}}
         fig, (ax1, ax2) = pyplot.subplots(1, 2, figsize=(12, 6), sharey=True)
         ax1.set_title("Fixed number of chromosomes ({})".format(self.datasetClass.fixed_sample_size))
         ax1.set_xlabel("Sequence length (MB)")
@@ -2237,17 +2237,18 @@ class PerformanceFigure(Figure):
         # ax1.set_ylim(-5, 250)
         # ax2.set_xlim(-5, 105)
 
-        params = [
-            pyplot.Line2D(
-                (0,0),(0,0), color= inferred_colour,
-                linestyle=inferred_linestyles[shared_breakpoint][shared_length], linewidth=2)
-            for shared_breakpoint, linestyles2 in inferred_linestyles.items()
-            for shared_length, linestyle in linestyles2.items()]
-        ax1.legend(
-            params, ["breakpoints={}, lengths={}".format(srb, sl)
-                for srb, linestyles2 in inferred_linestyles.items()
-                for sl, linestyle in  linestyles2.items()],
-            loc="lower right", fontsize=10, title="Polytomy resolution")
+        if len(df.tsinfer_srb.unique())>1 or len(df.tsinfer_sl.unique())>1:
+            params = [
+                pyplot.Line2D(
+                    (0,0),(0,0), color= inferred_colour,
+                    linestyle=inferred_linestyles[shared_breakpoint][shared_length], linewidth=2)
+                for shared_breakpoint, linestyles2 in inferred_linestyles.items()
+                for shared_length, linestyle in linestyles2.items()]
+            ax1.legend(
+                params, ["breakpoints={}, lengths={}".format(srb, sl)
+                    for srb, linestyles2 in inferred_linestyles.items()
+                    for sl, linestyle in  linestyles2.items()],
+                loc="lower right", fontsize=10, title="Polytomy resolution")
 
         # fig.text(0.19, 0.97, "Sample size = 1000")
         # fig.text(0.60, 0.97, "Sequence length = 50Mb")
@@ -2287,7 +2288,7 @@ class TracebackDebugFigure(Figure):
         source_colour = "red"
         inferred_colour = "blue"
         inferred_linestyles = {False:{False:':',True:'-.'},True:{False:'-',True:'--'}}
-        inferred_markers =    {False:{False:':',True:'-.'},True:{False:'-',True:'--'}}
+        #inferred_markers =    {False:{False:':',True:'-.'},True:{False:'-',True:'--'}}
         fig, (ax1) = pyplot.subplots(1, 1, figsize=(6, 6), sharey=True)
         ax1.set_title("{} samples, seq length = {}Mb, rho = {}".format(
             ",".join("{}".format(x) for x in df.sample_size.unique()),
