@@ -37,12 +37,9 @@ import matplotlib.backends.backend_pdf
 import pandas as pd
 import tqdm
 
-#set up for local imports
-curr_dir = os.path.dirname(os.path.abspath(__file__))
 # import the local copy of msprime in preference to the global one
-sys.path.insert(1,os.path.join(curr_dir,'..','msprime'))
-# import e.g. simulate_sweep
-sys.path.insert(1,os.path.join(curr_dir,'..','ftprime/examples'))
+sys.path.insert(1,os.path.join(sys.path[0],'..','msprime'))
+sys.path.insert(1,os.path.join(sys.path[0],'..','ftprime', 'examples'))
 
 import msprime
 import _msprime
