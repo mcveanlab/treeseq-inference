@@ -1236,8 +1236,7 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
 
     def run_simulations(self, replicates, seed, show_progress, num_processes=1):
         self.replicates = replicates if replicates else self.default_replicates
-        self.seed = seed if seed else self.default_seed
-        rng = random.Random(self.seed)
+        rng = random.Random(seed if seed else self.default_seed)
         ## Variable parameters
         # parameters unique to each simulation
         self.mutation_rates = (np.logspace(-8, -5, num=6)[:-1] * 1.5)
@@ -1363,30 +1362,31 @@ class TsinferPerformance(Dataset):
     tools = [TSINFER]
     fixed_length = 5 * 10**6
     fixed_sample_size = 5000
+    mutation_rate = 1e-10
 
-    def run_simulations(self, replicates, seed, show_progress, num_processes=1):
+    def run_simulations(self, user_specified_replicates, seed, show_progress, num_processes=1):
         # TODO abstract some of this functionality up into the superclass.
         # There is quite a lot shared with the other dataset.
-        self.replicates = replicates if replicates else self.default_replicates
-        self.seed = seed if seed else self.default_seed
-        rng = random.Random(self.seed)
-        # Variable parameters
-        num_points = 20
-        sample_sizes = np.linspace(10, 2 * self.fixed_sample_size, num_points).astype(int)
-        lengths = np.linspace(self.fixed_length / 10, 2 * self.fixed_length, num_points).astype(int)
-        self.shared_breakpoint_params = [True]#, False]
-        self.shared_length_params = [False]#, True]
+        replicates = user_specified_replicates or self.default_replicates
+        rng = random.Random(seed if seed else self.default_seed)
         # Fixed parameters
         self.Ne = 5000
         # TODO we'll want to do this for multiple error rates eventually. For now
         # just look at perfect data.
+        # Variable parameters
+        num_points = 20
+        sample_sizes = np.linspace(10, 2 * self.fixed_sample_size, num_points).astype(int)
+        lengths = np.linspace(self.fixed_length / 10, 2 * self.fixed_length, num_points).astype(int)
+        recombination_rates = np.array([1/4,1,4]) * self.mutation_rate 
+        #parameters that are iterated over within a single simulation
         self.error_rates = [0]
-        self.recombination_rate = 2.5e-8
-        self.mutation_rate = recombination_rate
-        self.num_sims = (len(sample_sizes) + len(lengths)) * self.replicates
+        self.shared_breakpoint_params = [True]#, False]
+        self.shared_length_params = [False]#, True]
+
+        self.num_sims = (len(sample_sizes) + len(lengths)) * len(recombination_rates) * replicates
         self.num_rows = self.num_sims * len(self.error_rates) * \
             len(self.shared_breakpoint_params) * len(self.shared_length_params)
-        cols = self.sim_cols + ["ts_filesize", "tsinfer_srb", "tsinfer_sl"]
+        cols = self.sim_cols + ["sites", "ts_filesize", "tsinfer_srb", "tsinfer_sl"]
         data = pd.DataFrame(index=np.arange(0, self.num_rows), columns=cols)
         progress = tqdm.tqdm(total=self.num_rows) if show_progress else None
 
@@ -1398,9 +1398,9 @@ class TsinferPerformance(Dataset):
                     progress.update()
 
         logging.info("Setting up using {} processes".format(num_processes))
-        variable_iterator = [
-            (self.fixed_sample_size, l) for l in np.tile(lengths, self.replicates)] + [
-            (n, self.fixed_length) for n in np.tile(sample_sizes, self.replicates)]
+        nl = [(self.fixed_sample_size, l) for l in lengths] + [
+            (n, self.fixed_length) for n in sample_sizes]
+        variable_iterator = itertools.product(nl, recombination_rates, range(replicates))
         seeds = [rng.randint(1, 2**31) for i in range(self.num_sims)]
         combined_iterator = enumerate(itertools.zip_longest(seeds, variable_iterator))
 
@@ -1419,11 +1419,11 @@ class TsinferPerformance(Dataset):
     def single_sim(self, runtime_information):
         i, (params) = runtime_information
         assert None not in params #one will be none if the lengths of the iterators are different
-        replicate_seed, (sample_size, length) = params
+        replicate_seed, ((sample_size, length), recombination_rate, _) = params
         base_row_id = i * self.num_rows//self.num_sims
         return_value = {}
         ts, fn = self.single_simulation(sample_size, self.Ne, length,
-            self.recombination_rate, self.mutation_rate, replicate_seed)
+            recombination_rate, self.mutation_rate, replicate_seed)
         assert ts.get_num_mutations() > 0
         # Tsinfer should be robust to this, but it currently isn't. Fail
         # noisily now rather than obscurely later. This will only ever happen
@@ -1441,13 +1441,14 @@ class TsinferPerformance(Dataset):
                     row = return_value[row_id] = {}
                     row_id += 1
                     row['sample_size'] = sample_size
-                    row['recombination_rate'] = self.recombination_rate
+                    row['recombination_rate'] = recombination_rate
                     row['mutation_rate'] = self.mutation_rate
                     row['length'] = length
                     row['Ne'] = self.Ne
                     row['seed'] = replicate_seed
                     row[ERROR_COLNAME] = error_rate
                     row['edges'] = ts.num_edges
+                    row['sites'] = ts.num_sites
                     row['tsinfer_srb'] = tsinfer_srb
                     row['tsinfer_sl'] = tsinfer_sl
                     row['ts_filesize'] = os.path.getsize(fn + ".hdf5")
@@ -2276,7 +2277,7 @@ class PerformanceFigure(Figure):
         # fig.text(0.19, 0.97, "Sample size = 1000")
         # fig.text(0.60, 0.97, "Sequence length = 50Mb")
         # pyplot.savefig("plots/simulators.pdf")
-        pyplot.suptitle('Tsinfer large dataset performance')
+        pyplot.suptitle('Tsinfer large dataset performance for mu={}'.format(self.datasetClass.mutation_rate))
         self.savefig(fig)
 
 
