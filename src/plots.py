@@ -2316,6 +2316,7 @@ class PerformanceFigure2(Figure):
     datasetClass = TsinferPerformance
     plotted_column = None
     y_axis_label = None
+    error_bars = True
 
     def plot(self):
         df = self.dataset.data
@@ -2340,18 +2341,13 @@ class PerformanceFigure2(Figure):
                 group = dfp.groupby(["length"])
                     #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
                 mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-                if getattr(self, 'error_bars', None):
-                    yerr=[m['sem'] for m in mean_sem]
-                else:
-                    yerr = None
                 ax1.errorbar(
                     [m['mu'] for m in mean_sem],
                     [m['mean'][self.plotted_column] for m in mean_sem],
-                    yerr=yerr,
+                    yerr=[m['sem'][self.plotted_column] for m in mean_sem] if getattr(self, 'error_bars') else None,
                     linestyle=inferred_linestyles[shared_breakpoint][shared_length],
                     color=inferred_colour,
-                    #marker=self.tools_format[tool]["mark"],
-                    elinewidth=1)
+                    )
 
         ax2.set_title("Fixed number of chromosomes ({})".format(self.datasetClass.fixed_sample_size))
         ax2.set_xlabel("Number of variable sites")
@@ -2366,8 +2362,7 @@ class PerformanceFigure2(Figure):
                     dfp['sites'],
                     dfp[self.plotted_column],
                     color=inferred_colour,
-                    #marker=self.tools_format[tool]["mark"],
-                    elinewidth=1)
+                    linestyle="",marker="o")
 
         pyplot.suptitle('Tsinfer large dataset performance for mu={}'.format(self.datasetClass.mutation_rate))
         self.savefig(fig)
@@ -2542,6 +2537,7 @@ def main():
         RFRootedMetricByARGweaverParametersFigure,
         EdgesPerformanceFigure,
         FileSizePerformanceFigure,
+        PerformanceFigure2,
         TracebackDebugEdgesFigure,
         ProgramComparisonTimeFigure,
         ProgramComparisonMemoryFigure,
