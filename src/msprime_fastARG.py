@@ -17,27 +17,10 @@ sys.path.insert(1,os.path.join(sys.path[0],'..','msprime')) # use the local copy
 import msprime
 
 def msprime_to_fastARG_in(ts, fastARG_filehandle):
-    #temporary hack until https://github.com/jeromekelleher/msprime/issues/169 is solved
-    hack_around_variants = True
-    if hack_around_variants:
-        import numpy as np
-        #store in a single huge list of strings
-        out_arr = np.empty(ts.get_sample_size(), dtype=np.dtype((bytes, ts.num_sites)))
-        for i, s in enumerate(ts.haplotypes()):
-            out_arr[i]=s
-        #convert to 2d array of chars
-        out_arr = out_arr.view('S1').reshape((out_arr.size, -1))
-        for j, m in enumerate(ts.sites()):
-            genotypes = out_arr[:,j]
-            if (b'0' in genotypes) and (b'1' in genotypes):
-                print(m.position, b"".join(genotypes.view("S1")).decode("utf-8") , sep="\t", file=fastARG_filehandle)
-        fastARG_filehandle.flush()
-        return
-
-    for v in ts.variants(as_bytes=False):
+    for v in ts.variants(as_bytes=True):
         #do not print out non-variable sites
-        if np.any(v.genotypes) and not np.all(v.genotypes):
-            print(v.position, b"".join(v.genotypes.view("S1")).decode("utf-8"), sep="\t", file=fastARG_filehandle)
+        if len(v.alleles) > 1:
+            print(v.site.position, v.genotypes.decode(), sep="\t", file=fastARG_filehandle)
     fastARG_filehandle.flush()
 
 def variant_matrix_to_fastARG_in(var_matrix, var_positions, fastARG_filehandle):
