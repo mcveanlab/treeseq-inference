@@ -1059,7 +1059,7 @@ class MetricsByMutationRateDataset(Dataset):
     """
     name = "metrics_by_mutation_rate"
 
-    default_replicates = 40
+    default_replicates = 50
     default_seed = 123
     compute_tree_metrics = METRICS_ON #| METRICS_RANDOMLY_BREAK_POLYTOMIES
 
@@ -1839,11 +1839,11 @@ class AllMetricsByMutationRateFigure(Figure):
         axes[0][-1].legend(
             artists, ["Sample size = {}".format(n) for n in sample_sizes],
             loc="upper right")
-        fig.suptitle("Tree comparisons for neutral simulation with" +
-            " Ne = " + ",".join(["{}".format(x) for x in df.Ne.unique()]) +
-            " rho = "+ ",".join(["{}".format(x) for x in df.recombination_rate.unique()]) +
-            " l = "  + ",".join(["{:.1f}kb".format(x/1e3) for x in df.length.unique()])
-            )
+        fig.suptitle("Tree comparisons for neutral simulation" +
+            " over "  + ",".join(["{:.1f}kb".format(x/1e3) for x in df.length.unique()]) +
+            " (Ne=" + ",".join(["{}".format(x) for x in df.Ne.unique()]) +
+            " rho="+ ",".join(["{}".format(x) for x in df.recombination_rate.unique()]) +
+            ")", fontsize=16)
         self.savefig(fig)
 
 
@@ -2369,7 +2369,7 @@ class PerformanceFigure2(Figure):
                     #marker=self.tools_format[tool]["mark"],
                     elinewidth=1)
 
-        pyplot.suptitle('Tsinfer performance for mu={}'.format(self.datasetClass.mutation_rate))
+        pyplot.suptitle('Tsinfer large dataset performance for mu={}'.format(self.datasetClass.mutation_rate))
         self.savefig(fig)
 
 
