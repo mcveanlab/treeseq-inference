@@ -20,7 +20,13 @@ def msprime_to_fastARG_in(ts, fastARG_filehandle):
     for v in ts.variants(as_bytes=True):
         #do not print out non-variable sites
         if len(v.alleles) > 1:
-            print(v.site.position, v.genotypes.decode(), sep="\t", file=fastARG_filehandle)
+            print(
+                v.site.position, v.genotypes.decode(), sep="\t",
+                file=fastARG_filehandle, end="")
+            # There is an odd intermittent bug in FastARG which fails unpredictably
+            # when there is a trailing newline in the file.
+            if v.site.index < ts.num_sites - 1:
+                print(file=fastARG_filehandle)
     fastARG_filehandle.flush()
 
 def variant_matrix_to_fastARG_in(var_matrix, var_positions, fastARG_filehandle):
@@ -201,27 +207,6 @@ def fastARG_out_to_msprime(fastARG_out_filehandle, variant_positions, seq_len=No
         ts = msprime.load_text(nodes=nodes, edges=edges, sites=sites, mutations=mutations).simplify()
         return ts
 
-def compare_fastARG_haplotypes(fastARG_fn_in, ts_in, save=False):
-    """
-    check that the fn_in (a haplotype list) is the same as the
-    equivalent haplotype file when output from the treesequence ts_in
-    """
-    import filecmp
-    import shutil
-    with tempfile.NamedTemporaryFile("w+") as fastARG_from_ts:
-        msprime_to_fastARG_in(ts_in, fastARG_from_ts)
-        fastARG_from_ts.flush()
-        files_identical = filecmp.cmp(fastARG_fn_in, fastARG_from_ts.name, shallow=False)
-        if save and files_identical==False:
-            debug_hap_file = os.path.join(os.path.dirname(fastARG_from_ts.name), "bad.hap")
-            shutil.copyfile(fastARG_from_ts.name, debug_hap_file)
-            debug_ts_file = os.path.join(os.path.dirname(fastARG_from_ts.name), "bad.ts")
-            ts_in.dump(debug_ts_file)
-            logging.warning("File '{}' differs from '{}'"
-                "(haplotype file copied to '{}' and ts saved in {} for debugging)"
-                .format(fastARG_from_ts.name, fastARG_fn_in, debug_hap_file, debug_ts_file))
-        return files_identical
-
 
 def main(ts, fastARG_executable, fa_in, fa_out, nodes_fh, edges_fh, sites_fh, muts_fh):
     """
@@ -246,12 +231,6 @@ def main(ts, fastARG_executable, fa_in, fa_out, nodes_fh, edges_fh, sites_fh, mu
     logging.debug(
         "Initial num records = {}, fastARG (simplified) = {}, fastARG (unsimplified) = {}".format(
         ts.get_num_records(), simple_ts.get_num_records(), new_ts.get_num_records()))
-
-    if compare_fastARG_haplotypes(fa_in.name, simple_ts):
-        print("All input and output haplotypes are the same. Hurrah")
-    else:
-        raise ValueError("Initial fastARG input file differs from processed fastARG file")
-    # check the haplotype files (in fastARG input format) are the same
 
 
 if __name__ == "__main__":

@@ -609,8 +609,6 @@ class InferenceRunner(object):
             logging.debug("ran fastarg for seq length {} [{} s]: '{}'".format(seq_length, cpu_time, cmd))
             var_pos = msprime_fastARG.variant_positions_from_fastARGin_name(file_name)
             inferred_ts = msprime_fastARG.fastARG_out_to_msprime(fa_out, var_pos, seq_len=seq_length)
-            #check fastARG conversion give same haplotypes
-            assert msprime_fastARG.compare_fastARG_haplotypes(file_name, inferred_ts, save=True)
             return inferred_ts, cpu_time, memory_use
 
     @staticmethod
@@ -1377,8 +1375,8 @@ class TsinferPerformance(Dataset):
         num_points = 20
         sample_sizes = np.linspace(10, 2 * self.fixed_sample_size, num_points).astype(int)
         lengths = np.linspace(self.fixed_length / 10, 2 * self.fixed_length, num_points).astype(int)
-        recombination_rates = np.array([1/4,1,4]) * self.mutation_rate 
-        recombination_rates = np.array([1]) * self.mutation_rate 
+        recombination_rates = np.array([1/4,1,4]) * self.mutation_rate
+        recombination_rates = np.array([1]) * self.mutation_rate
         #parameters that are iterated over within a single simulation
         self.error_rates = [0]
         self.shared_breakpoint_params = [True]#, False]
@@ -1474,21 +1472,21 @@ class TsinferTracebackDebug(Dataset):
     ancestors which start out with L=1 and taking e.g. the one that results in the
     longest L=1 stretch back along the genome. However, this seems to make only
     about a 5% difference.
-    
+
     This dataset is a first sally into the problem, by using a dataset large enough
     to reveal the problem (n=1000, Ne=10e4, rho=1e-8, l=2Mb) and gradually
     cranking up the mutation rate, which we hope will allow better resolution of the
     trees (hopefully by reducing the number of L=1 paths). We can then try to spot
     features of the correct L=1 paths that will help us pick a method to choose
     between euqally likely paths under lower mutation rates.
-    
+
     We run the simulations with different mutation rates using the same TS, to
     reduce one source of variation
-    
+
     Note that one problem is that we may create too many ancestors, as we create a
-    new ancestor for each possible permutation of variants at a locus, 
+    new ancestor for each possible permutation of variants at a locus,
     but a single ancestor may have more than one permutation, if there have been
-    later recombinations which swap the ancestral state back into a subset of the 
+    later recombinations which swap the ancestral state back into a subset of the
     descendants of that ancestor. This may result in more edges than strictly
     necessary.
     """
@@ -1803,7 +1801,7 @@ class AllMetricsByMutationRateFigure(Figure):
         error_rates = df[ERROR_COLNAME].unique()
         sample_sizes = df.sample_size.unique()
         metrics = ARG_metrics.get_metric_names()
-        
+
         topology_only_metrics = [m for m in metrics if not m.startswith('w')]
         fig, axes = pyplot.subplots(len(topology_only_metrics),
             len(error_rates), figsize=(6*len(error_rates), 20))
@@ -1936,7 +1934,7 @@ class CputimeMetricByMutationRateFigure(MetricByMutationRateFigure):
         sample_sizes = df.sample_size.unique()
 
         linestyles = ["-", ":"]
-        
+
         fig, ax = pyplot.subplots(1, 1)
         lines = []
         error_rate = 0
@@ -2013,7 +2011,7 @@ class AllMetricsByMutationRateSweepFigure(Figure):
                                 linestyle= linestyle,
                                 marker=setting["mark"], fillstyle='none',
                                 elinewidth=1)
-    
+
             # Create legends from custom artists
             artists = [
                 pyplot.Line2D((0,1),(0,0), color= setting["col"],
@@ -2039,7 +2037,7 @@ class AllMetricsBySampleSizeFigure(Figure):
     datasetClass = MetricsBySampleSizeDataset
     name = "all_metrics_by_sample_size"
     error_bars=True
-    
+
     def plot(self):
         df = self.dataset.data
         lengths = df.length.unique()
@@ -2078,7 +2076,7 @@ class AllMetricsBySampleSizeFigure(Figure):
                             [m['mu'] for m in mean_sem],
                             [m['mean'][TSINFER + "_" + metric] for m in mean_sem],
                             yerr=[m['sem'][TSINFER + "_" + metric] for m in mean_sem] \
-                                if getattr(self, 'error_bars', None) else None, 
+                                if getattr(self, 'error_bars', None) else None,
                             color=col,
                             linestyle=inferred_linestyles[shared_breakpoint][shared_length],
                             marker="o", fillstyle='none',
@@ -2385,7 +2383,7 @@ class TracebackDebugFigure(Figure):
         fig, (ax1) = pyplot.subplots(1, 1, figsize=(6, 6), sharey=True)
         ax1.set_title("{} samples, seq length = {}Mb, rho = {}".format(
             ",".join("{}".format(x) for x in df.sample_size.unique()),
-            ",".join("{:.1f}".format(x) for x in df.length.unique()/1e6), 
+            ",".join("{:.1f}".format(x) for x in df.length.unique()/1e6),
             ",".join("{}".format(x) for x in df.recombination_rate.unique())))
         ax1.set_xlabel("Mutation rate per bp")
         ax1.set_ylabel(self.y_axis_label)
