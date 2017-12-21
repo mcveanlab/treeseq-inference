@@ -50,11 +50,11 @@ import msprime_RentPlus
 import ARG_metrics
 
 
-fastARG_executable = os.path.join(curr_dir,'..','fastARG','fastARG')
-ARGweaver_executable = os.path.join(curr_dir,'..','argweaver','bin','arg-sample')
-smc2arg_executable = os.path.join(curr_dir,'..','argweaver','bin','smc2arg')
-RentPlus_executable = os.path.join(curr_dir,'..','RentPlus','RentPlus.jar')
-tsinfer_executable = os.path.join(curr_dir,'run_tsinfer.py')
+fastARG_executable = os.path.join(sys.path[0],'..','fastARG','fastARG')
+ARGweaver_executable = os.path.join(sys.path[0],'..','argweaver','bin','arg-sample')
+smc2arg_executable = os.path.join(sys.path[0],'..','argweaver','bin','smc2arg')
+RentPlus_executable = os.path.join(sys.path[0],'..','RentPlus','RentPlus.jar')
+tsinfer_executable = os.path.join(sys.path[0],'run_tsinfer.py')
 
 #monkey-patch write.nexus into msprime
 msprime.TreeSequence.write_nexus_trees = msprime_extras.write_nexus_trees
@@ -905,7 +905,7 @@ class Dataset(object):
     #
     # Utilities for running simulations and saving files.
     #
-    def single_simulation(self, n, Ne, l, rho, mu, seed, mut_seed=None):
+    def single_simulation(self, n, Ne, l, rho, mu, seed, mut_seed=None, **kwargs):
         """
         The standard way to run one msprime simulation for a set of parameter
         values. Saves the output to an .hdf5 file, and also saves variant files
@@ -934,12 +934,12 @@ class Dataset(object):
         if mut_seed is None:
             ts = msprime.simulate(
                 n, Ne, recombination_map=recombination_map, mutation_rate=mu,
-                random_seed=sim_seed)
+                random_seed=sim_seed, **kwargs)
         else:
             #run with no mutations (should give same result regardless of mutation rate)
             ts = msprime.simulate(
                 n, Ne, recombination_map=recombination_map, mutation_rate=0,
-                random_seed=sim_seed)
+                random_seed=sim_seed, **kwargs)
             #now add the mutations
             rng2 = msprime.RandomGenerator(mut_seed)
             nodes = msprime.NodeTable()
@@ -1059,7 +1059,7 @@ class MetricsByMutationRateDataset(Dataset):
     """
     name = "metrics_by_mutation_rate"
 
-    default_replicates = 10
+    default_replicates = 40
     default_seed = 123
     compute_tree_metrics = METRICS_ON #| METRICS_RANDOMLY_BREAK_POLYTOMIES
 
@@ -1074,7 +1074,7 @@ class MetricsByMutationRateDataset(Dataset):
             seed = self.default_seed
         rng = random.Random(seed)
         # Variable parameters
-        mutation_rates = np.logspace(-8, -5, num=6)[:-1] * 1.5
+        mutation_rates = np.logspace(-8, -5, num=8)[:-1] * 1.5
         error_rates = [0, 0.01, 0.1]
         sample_sizes = [10, 20]
 
@@ -1357,12 +1357,12 @@ class TsinferPerformance(Dataset):
     """
     name = "tsinfer_performance"
     compute_tree_metrics = METRICS_OFF
-    default_replicates = 10
+    default_replicates = 20
     default_seed = 123
     tools = [TSINFER]
     fixed_length = 5 * 10**6
     fixed_sample_size = 5000
-    mutation_rate = 1e-10
+    mutation_rate = 1e-8
 
     def run_simulations(self, user_specified_replicates, seed, show_progress, num_processes=1):
         # TODO abstract some of this functionality up into the superclass.
@@ -1378,6 +1378,7 @@ class TsinferPerformance(Dataset):
         sample_sizes = np.linspace(10, 2 * self.fixed_sample_size, num_points).astype(int)
         lengths = np.linspace(self.fixed_length / 10, 2 * self.fixed_length, num_points).astype(int)
         recombination_rates = np.array([1/4,1,4]) * self.mutation_rate 
+        recombination_rates = np.array([1]) * self.mutation_rate 
         #parameters that are iterated over within a single simulation
         self.error_rates = [0]
         self.shared_breakpoint_params = [True]#, False]
@@ -1801,8 +1802,8 @@ class AllMetricsByMutationRateFigure(Figure):
         df = self.dataset.data
         error_rates = df[ERROR_COLNAME].unique()
         sample_sizes = df.sample_size.unique()
-
         metrics = ARG_metrics.get_metric_names()
+        
         topology_only_metrics = [m for m in metrics if not m.startswith('w')]
         fig, axes = pyplot.subplots(len(topology_only_metrics),
             len(error_rates), figsize=(6*len(error_rates), 20))
@@ -1838,6 +1839,11 @@ class AllMetricsByMutationRateFigure(Figure):
         axes[0][-1].legend(
             artists, ["Sample size = {}".format(n) for n in sample_sizes],
             loc="upper right")
+        fig.suptitle("Tree comparisons for neutral simulation with" +
+            " Ne = " + ",".join(["{}".format(x) for x in df.Ne.unique()]) +
+            " rho = "+ ",".join(["{}".format(x) for x in df.recombination_rate.unique()]) +
+            " l = "  + ",".join(["{:.1f}kb".format(x/1e3) for x in df.length.unique()])
+            )
         self.savefig(fig)
 
 
@@ -2283,21 +2289,89 @@ class PerformanceFigure(Figure):
 
 
 class EdgesPerformanceFigure(PerformanceFigure):
-    name = "edges_performance"
+    name = "tsinfer_edges_by_length"
     plotted_column = "metric"
     y_axis_label = "inferred_edges / real_edges"
     def plot(self):
         self.dataset.data[self.plotted_column] = self.dataset.data["tsinfer_edges"] / self.dataset.data["edges"]
         PerformanceFigure.plot(self)
 
+
 class FileSizePerformanceFigure(PerformanceFigure):
-    name = "filesize_performance"
+    name = "tsinfer_filesize_by_length"
     plotted_column = "metric"
     y_axis_label = "inferred_filesize / real_filesize"
     y_axis_label = "File size relative to original"
     def plot(self):
         self.dataset.data[self.plotted_column] = self.dataset.data["tsinfer_ts_filesize"] / self.dataset.data["ts_filesize"]
         PerformanceFigure.plot(self)
+
+class PerformanceFigure2(Figure):
+    """
+    Class for the performance metrics against sites as well as length
+    (the first is the same as the LHS PerformanceFigure, but the second is the
+    same using sites instead)
+    """
+    name="tsinfer_edges_by_sites"
+    datasetClass = TsinferPerformance
+    plotted_column = None
+    y_axis_label = None
+
+    def plot(self):
+        df = self.dataset.data
+        self.dataset.data[self.plotted_column] = self.dataset.data["tsinfer_edges"] / self.dataset.data["edges"]
+        # Rescale the length to MB
+        df.length /= 10**6
+        # Set statistics to the ratio of observed over expected
+        source_colour = "red"
+        inferred_colour = "blue"
+        inferred_linestyles = {False:{False:':',True:'-.'},True:{False:'-',True:'--'}}
+        #inferred_markers =    {False:{False:':',True:'-.'},True:{False:'--',True:'-'}}
+        fig, (ax1, ax2) = pyplot.subplots(1, 2, figsize=(12, 6), sharey=True)
+        ax1.set_title("Fixed number of chromosomes ({})".format(self.datasetClass.fixed_sample_size))
+        ax1.set_xlabel("Sequence length (MB)")
+        ax1.set_ylabel(self.y_axis_label)
+        for shared_breakpoint in df.tsinfer_srb.unique():
+            for shared_length in df.tsinfer_sl.unique():
+                dfp = df[np.logical_and.reduce((
+                    df.sample_size == self.datasetClass.fixed_sample_size,
+                    df.tsinfer_srb == shared_breakpoint,
+                    df.tsinfer_sl == shared_length))]
+                group = dfp.groupby(["length"])
+                    #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
+                mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
+                if getattr(self, 'error_bars', None):
+                    yerr=[m['sem'] for m in mean_sem]
+                else:
+                    yerr = None
+                ax1.errorbar(
+                    [m['mu'] for m in mean_sem],
+                    [m['mean'][self.plotted_column] for m in mean_sem],
+                    yerr=yerr,
+                    linestyle=inferred_linestyles[shared_breakpoint][shared_length],
+                    color=inferred_colour,
+                    #marker=self.tools_format[tool]["mark"],
+                    elinewidth=1)
+
+        ax2.set_title("Fixed number of chromosomes ({})".format(self.datasetClass.fixed_sample_size))
+        ax2.set_xlabel("Number of variable sites")
+        ax2.set_ylabel(self.y_axis_label)
+        for shared_breakpoint in df.tsinfer_srb.unique():
+            for shared_length in df.tsinfer_sl.unique():
+                dfp = df[np.logical_and.reduce((
+                    df.length == self.datasetClass.fixed_length / 10**6,
+                    df.tsinfer_srb == shared_breakpoint,
+                    df.tsinfer_sl == shared_length))]
+                ax2.plot(
+                    dfp['sites'],
+                    dfp[self.plotted_column],
+                    color=inferred_colour,
+                    #marker=self.tools_format[tool]["mark"],
+                    elinewidth=1)
+
+        pyplot.suptitle('Tsinfer performance for mu={}'.format(self.datasetClass.mutation_rate))
+        self.savefig(fig)
+
 
 class TracebackDebugFigure(Figure):
     """
