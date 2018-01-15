@@ -1048,7 +1048,7 @@ class MetricsByMutationRateDataset(Dataset):
     """
     name = "metrics_by_mutation_rate"
 
-    default_replicates = 50
+    default_replicates = 10
     default_seed = 123
     compute_tree_metrics = METRICS_ON #| METRICS_RANDOMLY_BREAK_POLYTOMIES
 
