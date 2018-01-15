@@ -7,9 +7,7 @@ When run as a script, takes an msprime simulation in hdf5 format, saves to
 ARGweaver input format (haplotype sequences), runs ARGweaver inference on it to
 make .smc files, converts the .smc ARGweaver output files to msprime input
 files, reads these into msprime, and checks that the trees from msprime are the
-same/. Dues to a bug in smc2arg
-(https://github.com/mdrasmus/argweaver/issues/20) these are *NOT* the same, but
-this tests tree balance statistics (which are tip-label agnostic) and (if
+same/. We also test tree balance statistics (which are tip-label agnostic) and (if
 sample <= 5) looks at all possible tip permutations to see if the trees are
 essentially the same but with the labels lost.
 
@@ -27,7 +25,7 @@ import gzip
 import csv
 import numpy as np
 import os.path
-sys.path.insert(1,os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','msprime')) # use the local copy of msprime in preference to the global one
+sys.path.insert(1,os.path.join(sys.path[0],'..','msprime')) # use the local copy of msprime in preference to the global one
 import msprime
 
 class CyclicalARGError(Exception):
@@ -106,8 +104,8 @@ def variant_matrix_to_ARGweaver_in(var_matrix, var_positions, seq_length, ARGwea
     upwards to the nearest int, ANDing the results if 2 or more variants end up at the same
     integer position.
 
-    Note that ARGweaver uses position coordinates (1,N) - i.e. [0,N).
-    That compares to msprime which uses (0..N-1) - i.e. (0,N].
+    Note that ARGweaver uses position coordinates (1,N) - i.e. (0,N].
+    That compares to msprime which uses (0..N-1) - i.e. [0,N).
     """
     n_variants, n_samples = var_matrix.shape
     assert len(var_matrix)==n_variants
@@ -150,7 +148,7 @@ def ARGweaver_smc_to_msprime_txts(smc2bin_executable, prefix, nodes_fh, edges_fh
 
 def ARGweaver_arg_to_msprime_txts(ARGweaver_arg_filehandle, nodes_fh, edges_fh):
     """
-    convert the ARGweaver arg representation to coalescence records format
+    convert the ARGweaver arg representation to msprime format
 
     We need to split ARGweaver records that extend over the whole genome into sections
     that cover just that coalescence point.
@@ -203,7 +201,8 @@ def ARGweaver_arg_to_msprime_txts(ARGweaver_arg_filehandle, nodes_fh, edges_fh):
                 ARG_nodes[fields['parents']][fields['name']]=[start,end]
 
                 if fields['event']=='gene':
-                    node_names[fields['name']] = len(node_names)
+                    #we should trust the labels from 
+                    node_names[fields['name']] = int(fields['name'])
                     tips.add(fields['name'])
     #now relabel the internal nodes
     for key in ARG_nodes:
@@ -265,25 +264,29 @@ def ARGweaver_arg_to_msprime_txts(ARGweaver_arg_filehandle, nodes_fh, edges_fh):
             assert node_name in tips, (
                 "The node {} is not a parent of any other node, but is not a tip "
                 "either".format(node_name))
+    nodes_fh.flush()
+    nodes_fh.seek(0)
+    edges_fh.flush()
+    edges_fh.seek(0)
     return node_names
 
-def ARGweaver_smc_to_nexus(smc_filename, outfilehandle, zero_based_tip_numbers=True):
+def ARGweaver_smc_to_nexus(smc_filename, outfilehandle):
     """
-    setting zero_based_tip_numbers=False changes the tip labelling to be more like the
-    standard NEXUS format, with tips labelled from 1..N not 0..(N-1)
+    ARGweaver always exports smc trees with tips labelled from 0..N-1. 
+    Whereas Nexus format expects 1..N, so we must always relabel 
+    them. The true labels should be on the NAMES line
     """
-    increment = 0 if zero_based_tip_numbers else 1
     with (gzip.open(smc_filename, 'rt+') if smc_filename.endswith(".gz") else open(smc_filename, 'rt+')) as smc:
         print("#NEXUS\nBEGIN TREES;", file = outfilehandle)
         for line in smc:
             if line.startswith("NAMES"):
+                names = [n for n in line.split() if n != "NAMES"]
                 print("TRANSLATE\n{};".format(",\n".join([
-                    "{} {}".format(int(i)+increment,int(i)+increment)
-                    for i in line.split() if i != "NAMES"])), file=outfilehandle)
+                    "{} {}".format(int(i+1),n)
+                    for i,n in enumerate(names)])), file=outfilehandle)
             elif line.startswith("TREE"):
-                if not zero_based_tip_numbers:
-                    #hack the labels in the tree, by looking for digits precceded by '(' ')' or ','
-                    line = re.sub(r'(?<=[(,)])(\d+)',lambda m: str(int(m.group(1))+1), line)
+                #hack the labels in the tree to increment each by 1, by looking for digits preceeded by '(' ')' or ','
+                line = re.sub(r'(?<=[(,)])(\d+)',lambda m: str(int(m.group(1))+1), line)
                 #rightmost sequence position (X) is correct ( < X )
                 print(
                     re.sub(
@@ -298,7 +301,8 @@ def main(args):
     import os
     import itertools
     import subprocess
-    from dendropy import TreeList, calculate
+    from dendropy import TreeList
+    from dendropy.calculate import treecompare
     import msprime_extras
     def msprime_txts_to_hdf5(msprime_nodes, msprime_edges, hdf5_outname=None):
         import shutil
@@ -340,11 +344,12 @@ def main(args):
         assert os.stat(aw_in.name).st_size > 0,  "Initial .sites file is empty"
         logging.debug("running '{}'".format(" ".join(cmd)))
         subprocess.call(cmd)
+        #now check that the smc file produced can be converted to nodes
         smc = full_prefix + "." + str(iterations) + ".smc.gz"
         assert os.path.isfile(smc),  "No output file names {}".format(smc)
         smc_nex = smc.replace(".smc.gz", ".nex")
         with open(smc_nex, "w+") as smc_nex_out:
-            ARGweaver_smc_to_nexus(smc, smc_nex_out, zero_based_tip_numbers=False)
+            ARGweaver_smc_to_nexus(smc, smc_nex_out)
         arg_nex=smc.replace(".smc.gz", ".msp_nex")
         with open(smc.replace(".smc.gz", ".TSnodes"), "w+") as nodes, \
             open(smc.replace(".smc.gz", ".TSedges"), "w+") as edges, \
@@ -352,13 +357,13 @@ def main(args):
             ARGweaver_smc_to_msprime_txts(
                 os.path.join(args.ARGweaver_executable_dir, args.ARGweaver_smc2arg_executable),
                 smc.replace(".smc.gz", ""),
-                nodes, edges,
-                override_assertions=True)
+                nodes, edges)
 
             ts = msprime_txts_to_hdf5(nodes, edges)
-            ts.write_nexus_trees(msp_nex, zero_based_tip_numbers=False)
+            ts.write_nexus_trees(msp_nex)
+        
         smc_trees = TreeList.get(path=smc_nex, schema="nexus")
-        arg_trees = TreeList.get(path=arg_nex, schema='nexus')
+        arg_trees = TreeList.get(path=arg_nex, schema="nexus", taxon_namespace= smc_trees[0].taxon_namespace)
         #zero_based_tip_numbers assumed False)
         #Check the smc trees against the msprime-imported equivalents
         #NB, the ARGweaver output does not specify where mutations occur on the ARG, so we cannot
@@ -367,30 +372,19 @@ def main(args):
 
         assert len(smc_trees)==len(arg_trees)
         assert [int(float(t.label)) for t in smc_trees] == [int(float(t.label)) for t in arg_trees]
-        tot=0
-        for (smc_tree, arg_tree) in zip(smc_trees, arg_trees):
-            tot+=abs(calculate.treemeasure.colless_tree_imbalance(smc_tree, None)-
-                calculate.treemeasure.colless_tree_imbalance(arg_tree, None))
-        print("sum of tree balance differences is {} (should be 0) over {} trees of {} tips".format(
-            tot, len(smc_trees), len(smc_trees.taxon_namespace)))
-
-        if ts.get_sample_size() <= 5:
-            stats={}
-            print("Testing all permutations of tips")
-            for i, perm in enumerate(itertools.permutations(range(1, ts.get_sample_size()+1))):
-                arg_trees = TreeList.get(path=arg_nex, schema='nexus')
-                for taxon in arg_trees.taxon_namespace:
-                    taxon.label = perm[int(taxon.label)-1]
-                test_trees = arg_trees.migrate_taxon_namespace(smc_trees.taxon_namespace)
-                tot=0
-                for (smc_tree, arg_tree) in zip(smc_trees, arg_trees):
-                    tot+=calculate.treecompare.symmetric_difference(smc_tree, arg_tree)
-                stats[i] = tot, perm
-
-            for i in sorted(stats, key=stats.get, reverse=True):
-                print("Permutation {}, sum stat = {} over {} trees".format(
-                    (i, stats[i][1]) if stats[i][0]==0 else i, stats[i][0], len(smc_trees)))
-
+        for i, (smc_tree, arg_tree) in enumerate(zip(smc_trees, arg_trees)):
+            assert treecompare.symmetric_difference(smc_tree, arg_tree) == 0, \
+                "Tree {} differs\n".format(i+1) + \
+                smc_tree.label + " (smc) = " + smc_tree.as_string(schema="newick", 
+                    suppress_edge_lengths=True, 
+                    suppress_internal_node_labels = True, 
+                    suppress_rooting = True) + \
+                arg_tree.label + " (arg) = " + arg_tree.as_string(schema="newick", 
+                    suppress_edge_lengths=True, 
+                    suppress_internal_node_labels = True,
+                    suppress_rooting = True)
+                
+            
 if __name__ == "__main__":
     import argparse
     import filecmp

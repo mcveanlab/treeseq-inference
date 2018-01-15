@@ -12,6 +12,7 @@ import _msprime
 def sparse_tree_to_newick(st, precision, Ne):
     """
     Converts the specified sparse tree to an ms-compatible Newick tree.
+    Also increments the node numbers by 1, to account for nexus format
     """
     branch_lengths = {}
     root = st.get_root()
@@ -98,7 +99,7 @@ def discretise_mutations(ts):
 
 
 def write_nexus_trees(
-        ts, treefile, tree_labels_between_variants=False, zero_based_tip_numbers=True):
+        ts, treefile, tree_labels_between_variants=False):
     """
     Writes out all the trees in this tree sequence to a single nexus file.
     The names of each tree in the treefile are meaningful. They give the
@@ -124,14 +125,12 @@ def write_nexus_trees(
     occur at the position of a variant on the subsampled trees
     """
     print("#NEXUS\nBEGIN TREES;", file=treefile)
-    increment = 0 if zero_based_tip_numbers else 1
     tip_map = [
-        "{} {}".format(i + increment, i + increment)
+        "{} {}".format(i + 1, i) #convert back to 0-based tip labels
         for i in range(ts.get_sample_size())]
     print("TRANSLATE\n{};".format(",\n".join(tip_map)), file=treefile)
     variant_index = 0
 
-    assert not zero_based_tip_numbers, 'At the moment, we can only output 1-based tip labels'
     if tree_labels_between_variants:
         variant_pos = np.array([m.position for m in ts.mutations()])
         pos_between_vars = np.concatenate([[0],np.diff(variant_pos)/2+variant_pos[:-1],
