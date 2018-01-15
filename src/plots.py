@@ -538,21 +538,17 @@ class InferenceRunner(object):
                     with open(base + ".nex", "w+") as out:
                         msprime_ARGweaver.ARGweaver_smc_to_nexus(base+".smc.gz", out)
                 try:
-                    #if we want to record number of edges we need
-                    #to convert the ARGweaver output to msprime, which is buggy
                     with open(base+".TSnodes", "w+") as msprime_nodes, \
                             open(base+".TSedges", "w+") as msprime_edges:
                         msprime_ARGweaver.ARGweaver_smc_to_msprime_txts(
                             smc2arg_executable, base, msprime_nodes, msprime_edges)
-                        msprime_nodes.seek(0)
-                        msprime_edges.seek(0)
                         inferred_ts = msprime.load_text(
                             nodes=msprime_nodes, edges=msprime_edges).simplify()
                         inferred_ts.dump(base + ".hdf5")
                         filesizes.append(os.path.getsize(base + ".hdf5"))
                         edges.append(inferred_ts.num_edges)
                 except msprime_ARGweaver.CyclicalARGError as e:
-                    logging.info("Exception caught converting {}: {}".format(
+                    logging.warning("Exception caught converting {}: {}".format(
                         base + ".msp", e))
         if skip_infer:
             return {}
@@ -636,7 +632,7 @@ class InferenceRunner(object):
             MSMC_samples, sample_step, burnin_iterations, ntimes, verbose=False):
         """
         this produces a whole load of .smc files labelled <path_prefix>i.0.smc,
-        <path_prefix>i.10.smc, etc.
+        <path_prefix>i.10.smc, etc, which we then convert into sts format
 
         Returns the iteration numbers ('0', '10', '20' etc), the name of the
         statistics file, the total CPU time, and the max memory usage.
@@ -1089,8 +1085,12 @@ class MetricsByMutationRateDataset(Dataset):
                         # Run the simulation
                         ts, fn = self.single_simulation(sample_size, Ne, length,
                             recombination_rate, mutation_rate, replicate_seed)
-                        # Reject this instances if we got no mutations.
-                        done = ts.get_num_mutations() > 0
+                        #Only accept this instance if we got at least one mutation that 
+                        # is not a singleton and is not fixed
+                        for v in ts.variants():
+                            if 1 < np.sum(v.genotypes) < ts.num_samples:
+                                done = True
+                                break
                     with open(fn +".nex", "w+") as out:
                         ts.write_nexus_trees(out)
                     self.save_positions(ts, fn)
@@ -1167,8 +1167,12 @@ class MetricsBySampleSizeDataset(Dataset):
                     # Run the simulation
                     base_ts, unused_fn = self.single_simulation(max(sample_sizes), Ne, length,
                         recombination_rate, mutation_rate, replicate_seed)
-                    # Reject this instances if we got no mutations.
-                    done = base_ts.get_num_mutations() > 0
+                    #Only accept this instance if we got at least one mutation that 
+                    # is not a singleton and is not fixed
+                    for v in ts.variants():
+                        if 1 < np.sum(v.genotypes) < ts.num_samples:
+                            done = True
+                            break
                 #Take the same base simulation and sample down to get comparable test sets
                 for sample_size in sample_sizes:
                     ts = base_ts.simplify(list(range(sample_size)))
@@ -1300,10 +1304,11 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
                     self.stop_at, replicate_seed):
                     # Reject this entire set if we got no mutations at any point, or all mutations are fixed
                     done = False
-                    for v in ts.variants(as_bytes=False):
-                        if np.any(v.genotypes) and not np.all(v.genotypes):
-                            #at least one variable site, so we are OK
-                            done=True
+                    #Only accept this instance if we got at least one mutation that 
+                    # is not a singleton and is not fixed
+                    for v in ts.variants():
+                        if 1 < np.sum(v.genotypes) < ts.num_samples:
+                            done = True
                             break
                     if done == False:
                         #we must reject the entire set
@@ -1709,8 +1714,12 @@ class ARGweaverParamChanges(Dataset):
                         ts, fn = self.single_simulation(
                             sample_size, Ne, length, recombination_rate, mutation_rate,
                             replicate_seed, replicate_seed)
-                        # Reject this instances if we got no mutations.
-                        done = ts.get_num_mutations() > 0
+                        #Only accept this instance if we got at least one mutation that 
+                        # is not a singleton and is not fixed
+                        for v in ts.variants():
+                            if 1 < np.sum(v.genotypes) < ts.num_samples:
+                                done = True
+                                break
                     with open(fn +".nex", "w+") as out:
                         ts.write_nexus_trees(out)
                     # Add the rows for each of the error rates in this replicate
