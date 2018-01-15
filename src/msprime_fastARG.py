@@ -17,27 +17,16 @@ sys.path.insert(1,os.path.join(sys.path[0],'..','msprime')) # use the local copy
 import msprime
 
 def msprime_to_fastARG_in(ts, fastARG_filehandle):
-    #temporary hack until https://github.com/jeromekelleher/msprime/issues/169 is solved
-    hack_around_variants = True
-    if hack_around_variants:
-        import numpy as np
-        #store in a single huge list of strings
-        out_arr = np.empty(ts.get_sample_size(), dtype=np.dtype((bytes, ts.num_sites)))
-        for i, s in enumerate(ts.haplotypes()):
-            out_arr[i]=s
-        #convert to 2d array of chars
-        out_arr = out_arr.view('S1').reshape((out_arr.size, -1))
-        for j, m in enumerate(ts.sites()):
-            genotypes = out_arr[:,j]
-            if (b'0' in genotypes) and (b'1' in genotypes):
-                print(m.position, b"".join(genotypes.view("S1")).decode("utf-8") , sep="\t", file=fastARG_filehandle)
-        fastARG_filehandle.flush()
-        return
-
-    for v in ts.variants(as_bytes=False):
+    for v in ts.variants(as_bytes=True):
         #do not print out non-variable sites
-        if np.any(v.genotypes) and not np.all(v.genotypes):
-            print(v.position, b"".join(v.genotypes.view("S1")).decode("utf-8"), sep="\t", file=fastARG_filehandle)
+        if len(v.alleles) > 1:
+            print(
+                v.site.position, v.genotypes.decode(), sep="\t",
+                file=fastARG_filehandle, end="")
+            # There is an odd intermittent bug in FastARG which fails unpredictably
+            # when there is a trailing newline in the file.
+            if v.site.index < ts.num_sites - 1:
+                print(file=fastARG_filehandle)
     fastARG_filehandle.flush()
 
 def variant_matrix_to_fastARG_in(var_matrix, var_positions, fastARG_filehandle):
@@ -218,27 +207,6 @@ def fastARG_out_to_msprime(fastARG_out_filehandle, variant_positions, seq_len=No
         ts = msprime.load_text(nodes=nodes, edges=edges, sites=sites, mutations=mutations).simplify()
         return ts
 
-def compare_fastARG_haplotypes(fastARG_fn_in, ts_in, save=False):
-    """
-    check that the fn_in (a haplotype list) is the same as the
-    equivalent haplotype file when output from the treesequence ts_in
-    """
-    import filecmp
-    import shutil
-    with tempfile.NamedTemporaryFile("w+") as fastARG_from_ts:
-        msprime_to_fastARG_in(ts_in, fastARG_from_ts)
-        fastARG_from_ts.flush()
-        files_identical = filecmp.cmp(fastARG_fn_in, fastARG_from_ts.name, shallow=False)
-        if save and files_identical==False:
-            debug_hap_file = os.path.join(os.path.dirname(fastARG_from_ts.name), "bad.hap")
-            shutil.copyfile(fastARG_from_ts.name, debug_hap_file)
-            debug_ts_file = os.path.join(os.path.dirname(fastARG_from_ts.name), "bad.ts")
-            ts_in.dump(debug_ts_file)
-            logging.warning("File '{}' differs from '{}'"
-                "(haplotype file copied to '{}' and ts saved in {} for debugging)"
-                .format(fastARG_from_ts.name, fastARG_fn_in, debug_hap_file, debug_ts_file))
-        return files_identical
-
 
 def main(ts, fastARG_executable, fa_in, fa_out, nodes_fh, edges_fh, sites_fh, muts_fh):
     """
@@ -263,12 +231,6 @@ def main(ts, fastARG_executable, fa_in, fa_out, nodes_fh, edges_fh, sites_fh, mu
     logging.debug(
         "Initial num records = {}, fastARG (simplified) = {}, fastARG (unsimplified) = {}".format(
         ts.get_num_records(), simple_ts.get_num_records(), new_ts.get_num_records()))
-
-    if compare_fastARG_haplotypes(fa_in.name, simple_ts):
-        print("All input and output haplotypes are the same. Hurrah")
-    else:
-        raise ValueError("Initial fastARG input file differs from processed fastARG file")
-    # check the haplotype files (in fastARG input format) are the same
 
 
 if __name__ == "__main__":
