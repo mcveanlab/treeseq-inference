@@ -80,9 +80,6 @@ METRICS_ON  = 2**0
 METRICS_AT_VARIANT_SITES = 2**1 #should we calculate over all bases, or at variant sites only
 METRICS_RANDOMLY_BREAK_POLYTOMIES = 2**2
 
-#R tree metrics assume tips are numbered from 1 not 0
-tree_tip_labels_start_at_0 = False
-
 if sys.version_info[0] < 3:
     raise Exception("Python 3 only")
 
@@ -440,7 +437,6 @@ class InferenceRunner(object):
             fs = os.path.getsize(out_fn + ".inferred.hdf5")
             if self.compute_tree_metrics:
                 with open(self.inferred_filenames[0] + ".nex", "w+") as out:
-                    #tree metrics assume tips are numbered from 1 not 0
                     #For subsampled trees, the locations of trees along the
                     #genome (the breakpoints) may not correspond to variant positions
                     #on the subsampled trees: indeed , there may be multiple trees
@@ -448,8 +444,7 @@ class InferenceRunner(object):
                     #between the nearest left and right variant positions
                     tree_labels_between_variants=(True if subsample_size is None else False)
                     inferred_ts.write_nexus_trees(
-                        out, tree_labels_between_variants=tree_labels_between_variants,
-                        zero_based_tip_numbers=tree_tip_labels_start_at_0)
+                        out, tree_labels_between_variants=tree_labels_between_variants)
             unique, counts = np.unique(np.array([e.parent for e in inferred_ts.edges()], dtype="u8"), return_counts=True)
         return  {
             save_stats['cpu']: time,
@@ -476,8 +471,7 @@ class InferenceRunner(object):
         if self.compute_tree_metrics:
             for fn in self.inferred_filenames:
                 with open(fn + ".nex", "w+") as out:
-                    inferred_ts.write_nexus_trees(
-                        out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+                    inferred_ts.write_nexus_trees(out)
         return {
             save_stats['cpu']: time,
             save_stats['mem']: memory,
@@ -496,9 +490,7 @@ class InferenceRunner(object):
         if self.compute_tree_metrics:
             for fn in self.inferred_filenames:
                 with open(fn + ".nex", "w+") as out:
-                    msprime_RentPlus.RentPlus_trees_to_nexus(
-                        treefile, out, self.row.length, num_tips,
-                        zero_based_tip_numbers=tree_tip_labels_start_at_0)
+                    msprime_RentPlus.RentPlus_trees_to_nexus(treefile, out, self.row.length, num_tips)
         return {
             save_stats['cpu']: time,
             save_stats['mem']: memory,
@@ -544,8 +536,7 @@ class InferenceRunner(object):
             if skip_infer==False:
                 if self.compute_tree_metrics:
                     with open(base + ".nex", "w+") as out:
-                        msprime_ARGweaver.ARGweaver_smc_to_nexus(
-                            base+".smc.gz", out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+                        msprime_ARGweaver.ARGweaver_smc_to_nexus(base+".smc.gz", out)
                 try:
                     #if we want to record number of edges we need
                     #to convert the ARGweaver output to msprime, which is buggy
@@ -1097,8 +1088,7 @@ class MetricsByMutationRateDataset(Dataset):
                         # Reject this instances if we got no mutations.
                         done = ts.get_num_mutations() > 0
                     with open(fn +".nex", "w+") as out:
-                        ts.write_nexus_trees(
-                            out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+                        ts.write_nexus_trees(out)
                     self.save_positions(ts, fn)
 
                     # Add the rows for each of the error rates in this replicate
@@ -1184,8 +1174,7 @@ class MetricsBySampleSizeDataset(Dataset):
                     subsampled_fn=add_subsample_param_to_name(fn, subsample_size)
                     subsampled_ts = ts.simplify(list(range(subsample_size)))
                     with open(subsampled_fn +".nex", "w+") as out:
-                        subsampled_ts.write_nexus_trees(
-                            out, zero_based_tip_numbers= tree_tip_labels_start_at_0)
+                        subsampled_ts.write_nexus_trees(out)
                     self.save_positions(subsampled_ts, subsampled_fn)
                     # Add the rows for each of the error rates in this replicate
                     for tsinfer_srb in shared_breakpoint_params:
@@ -1318,8 +1307,7 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
                         replicate_seed += 1 #must change the seed, so we get a different result
                         break
                     with open(fn +".nex", "w+") as out:
-                        ts.write_nexus_trees(
-                            out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+                        ts.write_nexus_trees(out)
                     for error_rate in self.error_rates:
                         row = return_value[row_id] = {}
                         row_id += 1
@@ -1422,7 +1410,7 @@ class TsinferPerformance(Dataset):
         base_row_id = i * self.num_rows//self.num_sims
         return_value = {}
         ts, fn = self.single_simulation(sample_size, self.Ne, length,
-            recombination_rate, self.mutation_rate, replicate_seed)
+            recombination_rate, self.mutation_rate, replicate_seed, model="smc_prime")
         assert ts.get_num_mutations() > 0
         # Tsinfer should be robust to this, but it currently isn't. Fail
         # noisily now rather than obscurely later. This will only ever happen
@@ -1720,8 +1708,7 @@ class ARGweaverParamChanges(Dataset):
                         # Reject this instances if we got no mutations.
                         done = ts.get_num_mutations() > 0
                     with open(fn +".nex", "w+") as out:
-                        ts.write_nexus_trees(
-                            out, zero_based_tip_numbers=tree_tip_labels_start_at_0)
+                        ts.write_nexus_trees(out)
                     # Add the rows for each of the error rates in this replicate
                     for error_rate in error_rates:
                         only_run_ARGweaver_inference = 0

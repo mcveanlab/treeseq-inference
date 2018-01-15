@@ -67,23 +67,17 @@ def variant_matrix_to_RentPlus_in(var_matrix, var_positions, seq_length, RentPlu
     RentPlus_filehandle.seek(0)
         
     
-def RentPlus_trees_to_nexus(trees_filename, outfilehandle, seq_length, num_tips, zero_based_tip_numbers=True):
+def RentPlus_trees_to_nexus(trees_filename, outfilehandle, seq_length, num_tips):
     """
     RentPlus outputs a tree for every position, so there is a lot of duplication. We can merge duplicate lines
     in this file as long as we keep track of which variants correspond to which tree, and take the average 
     of the variant positions in the file
-    
-    We generally treat the tree numbers as 
-    setting zero_based_tip_numbers=True is not supported
     """
-    #by default, RentPlus produces 1-based tip numbers - if we want 0-base, we need to convert them
-    def tip_subtract_1(tree):
-        import re
-        return re.sub(r'(?<=[(,)])(\d+)',lambda m: str(int(m.group(1))-1), tree)
-    increment = 0 if zero_based_tip_numbers else 1
     with open(trees_filename, 'rt+') as RentPlusTrees:
         print("#NEXUS\nBEGIN TREES;", file = outfilehandle)
-        print("TRANSLATE\n{};".format(",\n".join(["{} {}".format(i+increment,i+increment) for i in range(num_tips)])), 
+        #RentPlus creates 1-based tip numbers from a set of sequences, so we convert back to 0-based
+        #by using the Nexus TRANSLATE functionality
+        print("TRANSLATE\n{};".format(",\n".join(["{} {}".format(i+1,i) for i in range(num_tips)])), 
             file = outfilehandle)
         oldline = 0,''
         for line in RentPlusTrees:
@@ -92,16 +86,13 @@ def RentPlus_trees_to_nexus(trees_filename, outfilehandle, seq_length, num_tips,
                 #RentPlus has many repeated tree lines. We only need to print out 1
                 if tree != oldline[1]:
                     if oldline[1]:
-                        print("TREE", str((float(oldline[0])+float(pos))/2), "=",
-                            (tip_subtract_1(tree) if zero_based_tip_numbers else tree),
+                        print("TREE", str((float(oldline[0])+float(pos))/2), "=", tree,
                             sep=" ",
                             end = "\n" if tree.endswith(';') else ";\n", 
                             file = outfilehandle)
                     oldline = pos, tree
         if oldline[1]:
-            print("TREE", str(seq_length), "=",
-                (tip_subtract_1(tree) if zero_based_tip_numbers else tree), 
-                end = "\n" if tree.endswith(';') else ";\n", 
+            print("TREE", str(seq_length), "=", tree, end = "\n" if tree.endswith(';') else ";\n", 
                 file = outfilehandle)
         print("END;", file = outfilehandle)
     outfilehandle.flush()
