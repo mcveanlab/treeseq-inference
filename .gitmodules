@@ -6,7 +6,7 @@
 	url = https://github.com/jeromekelleher/msprime
 [submodule "argweaver"]
 	path = argweaver
-	url = https://github.com/mdrasmus/argweaver
+	url = https://github.com/mjhubisz/argweaver
 [submodule "RentPlus"]
 	path = RentPlus
 	url = https://github.com/SajadMirzaei/RentPlus
