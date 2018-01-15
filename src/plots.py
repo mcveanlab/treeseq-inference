@@ -1356,8 +1356,8 @@ class TsinferPerformance(Dataset):
     default_seed = 123
     tools = [TSINFER]
     fixed_length = 5 * 10**6
-    fixed_sample_size = 5000
-    mutation_rate = 1e-8
+    fixed_sample_size = 20
+    mutation_rate = 5e-9
 
     def run_simulations(self, user_specified_replicates, seed, show_progress, num_processes=1):
         # TODO abstract some of this functionality up into the superclass.
@@ -1801,7 +1801,6 @@ class AllMetricsByMutationRateFigure(Figure):
         error_rates = df[ERROR_COLNAME].unique()
         sample_sizes = df.sample_size.unique()
         metrics = ARG_metrics.get_metric_names()
-
         topology_only_metrics = [m for m in metrics if not m.startswith('w')]
         fig, axes = pyplot.subplots(len(topology_only_metrics),
             len(error_rates), figsize=(6*len(error_rates), 20))
