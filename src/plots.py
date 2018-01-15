@@ -585,7 +585,7 @@ class InferenceRunner(object):
         except ValueError as e:
             # temporary hack around tsinfer bug
             if "time[parent] must be greater than time[child]" in str(e):
-                logging.warning("Hit tsinfer bug. Skipping")
+                logging.warning("Hit tsinfer bug for {}. Skipping".format(sample_fn))
                 return None, None, None
             else:
                 raise
@@ -697,10 +697,14 @@ class InferenceRunner(object):
             return saved_iterations, new_stats_file_name, sum(cpu_time), max(memory_use)
         except ValueError as e:
             if 'src/argweaver/sample_thread.cpp:517:' in str(e):
-                logging.warning("Hit argweaver bug https://github.com/mcveanlab/treeseq-inference/issues/25. Skipping")
+                logging.warning("Hit argweaver bug " \
+                "https://github.com/mcveanlab/treeseq-inference/issues/25" \
+                " for {}. Skipping".format(path_prefix))
                 return [], "NA", None, None
             elif "Assertion `trans[path[i]] != 0.0' failed" in str(e):
-                logging.warning("Hit argweaver bug https://github.com/mcveanlab/treeseq-inference/issues/42. Skipping")
+                logging.warning("Hit argweaver bug " \
+                "https://github.com/mcveanlab/treeseq-inference/issues/42" \
+                " for {}. Skipping".format(path_prefix))
                 return [], "NA", None, None
             else:
                 raise
