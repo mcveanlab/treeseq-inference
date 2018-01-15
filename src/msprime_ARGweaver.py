@@ -363,7 +363,8 @@ def main(args):
             ts.write_nexus_trees(msp_nex)
         
         smc_trees = TreeList.get(path=smc_nex, schema="nexus")
-        arg_trees = TreeList.get(path=arg_nex, schema="nexus", taxon_namespace= smc_trees[0].taxon_namespace)
+        arg_trees = TreeList.get(path=arg_nex, schema="nexus", 
+            taxon_namespace=smc_trees[0].taxon_namespace)
         #zero_based_tip_numbers assumed False)
         #Check the smc trees against the msprime-imported equivalents
         #NB, the ARGweaver output does not specify where mutations occur on the ARG, so we cannot
@@ -373,16 +374,19 @@ def main(args):
         assert len(smc_trees)==len(arg_trees)
         assert [int(float(t.label)) for t in smc_trees] == [int(float(t.label)) for t in arg_trees]
         for i, (smc_tree, arg_tree) in enumerate(zip(smc_trees, arg_trees)):
-            assert treecompare.symmetric_difference(smc_tree, arg_tree) == 0, \
-                "Tree {} differs\n".format(i+1) + \
-                smc_tree.label + " (smc) = " + smc_tree.as_string(schema="newick", 
-                    suppress_edge_lengths=True, 
-                    suppress_internal_node_labels = True, 
-                    suppress_rooting = True) + \
-                arg_tree.label + " (arg) = " + arg_tree.as_string(schema="newick", 
-                    suppress_edge_lengths=True, 
-                    suppress_internal_node_labels = True,
-                    suppress_rooting = True)
+            if treecompare.symmetric_difference(smc_tree, arg_tree) == 0:
+                print("✓ Tree " + str(i+1) + 
+                    " in AW SMC file is identical to that produced by SMC->ARG->STS")
+            else:
+                raise Exception("Tree {} differs\n".format(i+1) + \
+                    smc_tree.label + " (smc) = " + smc_tree.as_string(schema="newick", 
+                        suppress_edge_lengths=True, 
+                        suppress_internal_node_labels = True, 
+                        suppress_rooting = True) + \
+                    arg_tree.label + " (arg) = " + arg_tree.as_string(schema="newick", 
+                        suppress_edge_lengths=True, 
+                        suppress_internal_node_labels = True,
+                        suppress_rooting = True))
                 
             
 if __name__ == "__main__":
