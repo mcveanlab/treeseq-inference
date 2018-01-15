@@ -585,7 +585,7 @@ class InferenceRunner(object):
         except ValueError as e:
             # temporary hack around tsinfer bug
             if "time[parent] must be greater than time[child]" in str(e):
-                logging.info("Hit tsinfer bug. Skipping")
+                logging.warning("Hit tsinfer bug. Skipping")
                 return None, None, None
             else:
                 raise
@@ -697,10 +697,10 @@ class InferenceRunner(object):
             return saved_iterations, new_stats_file_name, sum(cpu_time), max(memory_use)
         except ValueError as e:
             if 'src/argweaver/sample_thread.cpp:517:' in str(e):
-                logging.info("Hit argweaver bug https://github.com/mcveanlab/treeseq-inference/issues/25. Skipping")
+                logging.warning("Hit argweaver bug https://github.com/mcveanlab/treeseq-inference/issues/25. Skipping")
                 return [], "NA", None, None
             elif "Assertion `trans[path[i]] != 0.0' failed" in str(e):
-                logging.info("Hit argweaver bug https://github.com/mcveanlab/treeseq-inference/issues/42. Skipping")
+                logging.warning("Hit argweaver bug https://github.com/mcveanlab/treeseq-inference/issues/42. Skipping")
                 return [], "NA", None, None
             else:
                 raise
@@ -1117,7 +1117,7 @@ class MetricsBySampleSizeDataset(Dataset):
     """
     name = "metrics_by_sample_size"
     tools = [TSINFER]
-    default_replicates = 100
+    default_replicates = 10
     default_seed = 123
     #to make this a fair comparison, we need to calculate only at the specific variant sites
     #because different sample sizes will be based on different original variant positions
