@@ -30,12 +30,17 @@ def msprime_to_fastARG_in(ts, fastARG_filehandle):
     fastARG_filehandle.flush()
 
 def variant_matrix_to_fastARG_in(var_matrix, var_positions, fastARG_filehandle):
+    # There is an odd intermittent bug in FastARG which fails unpredictably when there
+    # is a trailing newline in the file, so print newlines *before* all but 1st line
+    line_prefix = ""
     assert len(var_matrix)==len(var_positions)
     for pos, row in zip(var_positions, var_matrix):
         #do not print out non-variable sites
         if np.any(row) and not np.all(row):
             s = (row + ord('0')).tobytes().decode()
-            print(str(pos), s, sep= "\t", file=fastARG_filehandle)
+            print(
+                line_prefix + str(pos), s, 
+                sep= "\t", end="", file=fastARG_filehandle)
     fastARG_filehandle.flush()
 
 def get_cmd(executable, fastARG_in, seed):
