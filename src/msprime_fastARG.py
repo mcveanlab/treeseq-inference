@@ -41,6 +41,7 @@ def variant_matrix_to_fastARG_in(var_matrix, var_positions, fastARG_filehandle):
             print(
                 line_prefix + str(pos), s, 
                 sep= "\t", end="", file=fastARG_filehandle)
+            line_prefix = "\n"
     fastARG_filehandle.flush()
 
 def get_cmd(executable, fastARG_in, seed):
