@@ -17,16 +17,16 @@ sys.path.insert(1,os.path.join(sys.path[0],'..','msprime')) # use the local copy
 import msprime
 
 def msprime_to_fastARG_in(ts, fastARG_filehandle):
+    # There is an odd intermittent bug in FastARG which fails unpredictably when there
+    # is a trailing newline in the file, so print newlines *before* all but 1st line
+    line_prefix = ""
     for v in ts.variants(as_bytes=True):
         #do not print out non-variable sites
         if len(v.alleles) > 1:
             print(
-                v.site.position, v.genotypes.decode(), sep="\t",
-                file=fastARG_filehandle, end="")
-            # There is an odd intermittent bug in FastARG which fails unpredictably
-            # when there is a trailing newline in the file.
-            if v.site.index < ts.num_sites - 1:
-                print(file=fastARG_filehandle)
+                line_prefix + v.site.position, v.genotypes.decode(), 
+                sep="\t", end="", file=fastARG_filehandle)
+            line_prefix = "\n"
     fastARG_filehandle.flush()
 
 def variant_matrix_to_fastARG_in(var_matrix, var_positions, fastARG_filehandle):
