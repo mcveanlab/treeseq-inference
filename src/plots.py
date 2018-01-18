@@ -548,7 +548,7 @@ class InferenceRunner(object):
                         filesizes.append(os.path.getsize(base + ".hdf5"))
                         edges.append(inferred_ts.num_edges)
                 except msprime_ARGweaver.CyclicalARGError as e:
-                    logging.warning("Exception caught converting {}: {}".format(
+                    logging.warning("Cyclical ARG Exception when converting {}: {}".format(
                         base + ".msp", e))
         if skip_infer:
             return {}
