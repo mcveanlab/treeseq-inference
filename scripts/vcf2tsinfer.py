@@ -116,7 +116,7 @@ for j, variant in enumerate(vcf_in.fetch()):
                 position.get(actual_position, previous_position), {variant.id:variant.alleles}))
             if actual_position in position:
                 previous_position, prev_data = position.popitem()
-                print("Deleting original at postion {} as well as duplicates.".format(previous_position))
+                print("Deleting original at position {} as well as duplicates.".format(previous_position))
         else:
             sites_by_samples[len(position),:]=locus_data
             position[actual_position]={variant.id: variant.alleles}
