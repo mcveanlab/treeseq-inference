@@ -1,13 +1,14 @@
 """
-Extra functionality for msprime which we need here.
+Extra functionality for msprime which we need here. 
+Most if not all of this file can be removed once 
+https://github.com/jeromekelleher/msprime/issues/354
+is addressed
 """
 import logging
 
 import numpy as np
 
 import msprime
-# TMP - remove once proper creation API is in place
-import _msprime
 
 def sparse_tree_to_newick(st, precision, Ne):
     """
@@ -139,7 +140,7 @@ def write_nexus_trees(
             # index by the average position between the two nearest variants
             av_upper_pos = pos_between_vars[np.searchsorted(variant_pos,t.get_interval()[1])]
             assert av_upper_pos <= t.get_interval()[1]
-            print("TREE " + str(av_upper_pos) + " = " + newick, file=treefile)
+            print("TREE " + str(av_upper_pos) + " = [&R] " + newick, file=treefile)
     else:
         for t, (_, newick) in zip(ts.trees(), newick_trees(ts)):
             # index by rightmost genome position
