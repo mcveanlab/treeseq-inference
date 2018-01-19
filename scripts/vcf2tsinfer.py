@@ -81,9 +81,7 @@ def process_variant(rec, rows, max_ploidy):
                         #print("allele {} (pos {}, sample {}, ancestral state {}, alleles {})".format( \
                         #    rec.alleles[i], rec.pos, label+suffix, rec.info["AA"], rec.alleles))
                         if samp.alleles[i] not in rec.alleles:
-                            print("@ position {}{}, sample allele {} is not in {} - could be missing data. Omitting this site".format(
-                                rec.pos, "+{}".format(allele_start) if allele_start else "", samp.alleles[i], rec.alleles))
-                            return None
+                            continue
                         suffix = string.ascii_lowercase[i]
                         site_data[rows[label+suffix]] = samp.alleles[i][allele_start:]!=rec.info["AA"][allele_start:]
                 return rec.chrom, pos, site_data
@@ -134,6 +132,8 @@ for j, variant in enumerate(vcf_in.fetch()):
                 chromosomes[c]['previous_position'], prev_data = chromosomes[c]['position'].popitem()
                 print("Deleting original at position {} as well as duplicates.".format(
                     chromosomes[c]['previous_position']))
+        elif position < chromosomes[c]['previous_position']:
+            print("A position is out of order. We require a vcf file with all positions in strictly increasing order")
         else:
             chromosomes[c]['sites_by_samples'][len(chromosomes[c]['position']),:]=locus_data
             chromosomes[c]['position'][position]={variant.id: variant.alleles}
@@ -148,29 +148,44 @@ for j, variant in enumerate(vcf_in.fetch()):
 #Finished reading
 
 for c, dat in chromosomes.items():
-    #check for unused rows (e.g. if haploid)
+    print("Processing chromosome {}".format(c))
+
+    #check for samples with entirely missing data (e.g. if haploid)
     use_samples = np.ones((dat['sites_by_samples'].shape[1],), np.bool)
     for colnum in range(dat['sites_by_samples'].shape[1]):
         if np.all(dat['sites_by_samples'][:,colnum]==-1):
             use_samples[colnum]=False
-
     sites_by_samples = dat['sites_by_samples'][:,use_samples]
-    reduced_rows = {name:order for name,order in rows.items() if use_samples[order]}
+    reduced_rows = [name for i,name in enumerate(sorted(rows, key=rows.get)) if use_samples[i]]
     #simplify the names for haploids (remove e.g. terminal 'a' from the key 'XXXXa'
     # if there is not an XXXXb in the list)
-    reduced_rows = {n:o if any((n[:-1]+suffix) in reduced_rows for suffix in suffixes if suffix != n[-1]) else n[:-1] for n,o in reduced_rows.items()}
+    reduced_rows = [n if any((n[:-1]+suffix) in reduced_rows for suffix in suffixes if suffix != n[-1]) else n[:-1] for n in reduced_rows]
+    print(" removed {}/{} unused sample slots (if this is haploid, half should be removed)".format(
+        sum(~use_samples), use_samples.shape[0]))
 
-    #check for missing data (-1's)
+    #check for missing data (all -1's for a site)
     use_sites = np.zeros((sites_by_samples.shape[0],), np.bool)
     for rownum in range(len(dat['position'])):
-        if np.all(sites_by_samples[rownum]!=-1):
+        if np.any(sites_by_samples[rownum]):
             use_sites[rownum] = True
     sites_by_samples = sites_by_samples[use_sites,:]
+    print("Pruned down to {} sites".format(sites_by_samples.shape[0]))
+    
+    #check for samples with partial missing data
+    use_samples = np.ones((sites_by_samples.shape[1],), np.bool)
+    for colnum in range(sites_by_samples.shape[1]):
+        if np.any(sites_by_samples[:,colnum]==-1):
+            use_samples[colnum]=False
+    sites_by_samples = sites_by_samples[:,use_samples]
+    reduced_rows = [name for i,name in enumerate(reduced_rows) if use_samples[i]]
+    print("Removed {}/{} samples which have incomplete data".format(
+        sum(~use_samples), use_samples.shape[0]))
+
 
     outfile = args.outfile + str(c) + '.hdf5'
     with h5py.File(outfile, "w") as f:
         g = f.create_group("data")
         g.create_dataset("position", data=list(dat['position'].keys()))
-        g.create_dataset("samples", data=[s.encode() for s in sorted(reduced_rows, key=reduced_rows.get)])
+        g.create_dataset("samples", data=[s.encode() for s in reduced_rows])
         g.create_dataset("variants", data=np.transpose(sites_by_samples), compression='gzip', compression_opts=9)
     print("Saved {} biallelic loci for {} samples into {}".format(len(dat['position']), len(reduced_rows), outfile))
