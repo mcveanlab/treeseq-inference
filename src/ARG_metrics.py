@@ -37,17 +37,34 @@ def get_metric_names():
 def get_metrics(true_nexus_fn, inferred_nexus_fns, variant_positions = None, randomly_resolve_inferred=False):
     """
     Returns a dictionary of metrics for the specified pair of nexus files.
+    :param str true_nexus_fn: The path to the file to write the SVG. If None, do not
+        write to file.
+    :param str (or array of str) inferred_nexus_fns: Other filenames.
+    :param list variant_positions: The height of the image in pixels.
+    :param int randomly_resolve_inferred: If Falsey do not randomly resolve polytomies.
+    :return: A dictionary giving the average tree stats, whose keys are the method
+        names as returned by get_metric_names().
+    :rtype: dict
+
     """
     logging.debug("get_ARG_metrics() is comparing {} against {}{}".format(
         true_nexus_fn, inferred_nexus_fns,
-        ' randomly breaking polytomies before comparison' if randomly_resolve_inferred else ''))
+        ' randomly breaking {} polytomies before comparison'.format(
+        randomly_resolve_inferred if isinstance(randomly_resolve_inferred, (int,)) else ""
+        ) if randomly_resolve_inferred else ''))
     if variant_positions is None:
         variant_positions  = rinterface.NULL
-    # load the true_nexus into the R session (but don't convert it to a python obj)
-    orig_tree = ape.read_nexus(true_nexus_fn, force_multi=True)
-    m = ARGmetrics.genome_trees_dist_multi(
-            orig_tree, inferred_nexus_fns, variant_positions=variant_positions, 
-            weights=1, randomly_resolve_multi = randomly_resolve_inferred)
+    if isinstance(inferred_nexus_fns, str):
+        orig_tree = ape.read_nexus(true_nexus_fn, force_multi=True)
+        inferred_tree = ape.read_nexus(inferred_nexus_fns, force_multi=True)
+        m = ARGmetrics.genome_trees_dist(
+            orig_tree, inferred_tree, variant_positions=variant_positions)
+    else:
+        # load the true_nexus into the R session (but don't convert it to a python obj)
+        orig_tree = ape.read_nexus(true_nexus_fn, force_multi=True)
+        m = ARGmetrics.genome_trees_dist_multi(
+                orig_tree, inferred_nexus_fns, variant_positions=variant_positions, 
+                weights=1, randomly_resolve_multi = randomly_resolve_inferred)
     return dict(m.items())
 
 def get_full_metrics(true_nexus_fn, inferred_nexus_fn, variant_positions = rinterface.NULL):
