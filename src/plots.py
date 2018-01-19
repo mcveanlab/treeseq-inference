@@ -965,7 +965,7 @@ class Dataset(object):
             "Neutral simulation done; {} sites, {} trees".format(ts.num_sites, ts.num_trees))
         if remove_singletons:
             ts = ts.remove_singletons()
-            logging.info("singletons removed")
+            logging.info("singletons removed: reduced to {} sites".format(ts.num_sites))
         sim_fn = mk_sim_name(n, Ne, l, rho, mu, seed, mut_seed, self.simulations_dir)
         logging.debug("writing {}.hdf5".format(sim_fn))
         ts.dump(sim_fn+".hdf5")
