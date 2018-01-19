@@ -86,8 +86,8 @@ def process_variant(rec, rows, max_ploidy):
                             return None
                         suffix = string.ascii_lowercase[i]
                         site_data[rows[label+suffix]] = samp.alleles[i][allele_start:]!=rec.info["AA"][allele_start:]
-                return pos, site_data
-    return None, None
+                return rec.chrom, pos, site_data
+    return rec.chrom, None, None
 
 allele_count = {}
 rows, row = {}, 0
@@ -101,9 +101,8 @@ for sample_name in vcf_in.header.samples:
     for suffix in suffixes:
         rows[sample_name+suffix]=row
         row+=1
-position = collections.OrderedDict()
 extend_amount = 10000 #numpy storage array will be extended by this much at a time
-sites_by_samples = -np.ones((extend_amount, len(rows)), dtype="i1")
+chromosomes = {} #most data stored here
 output_freq_variants = 1e3 #output status after multiples of this many variants read
 
 
@@ -112,55 +111,66 @@ for j, variant in enumerate(vcf_in.fetch()):
         break
     #keep track of allele numbers
     allele_count[len(variant.alleles)] = allele_count.get(len(variant.alleles),0) + 1
-    #check if we now need more storage
-    if sites_by_samples.shape[0] <= len(position):
-        sites_by_samples = np.append(sites_by_samples, np.zeros((extend_amount, len(rows)), dtype="i1"), axis=0)
 
-    previous_position = -1
-    actual_position, locus_data = process_variant(variant, rows, max_ploidy)
-    if actual_position is not None:
-        if actual_position in position or actual_position == previous_position:
-            print("Trying to store more than one set of variants at position {}. ".format(actual_position))
+    c, position, locus_data = process_variant(variant, rows, max_ploidy)
+    #have we stored this chromosome yet
+    if c not in chromosomes:
+        chromosomes[c] = {
+            'position':collections.OrderedDict(),
+            'previous_position': None,
+            'sites_by_samples': -np.ones((extend_amount, len(rows)), dtype="i1")}
+    #check if we now need more storage
+    if chromosomes[c]['sites_by_samples'].shape[0] <= len(chromosomes[c]['position']):
+        chromosomes[c]['sites_by_samples'] = np.append(chromosomes[c]['sites_by_samples'],
+            -np.ones((extend_amount, len(rows)), dtype="i1"), axis=0)
+    chromosomes[c]['previous_position'] = -1
+    if position is not None:
+        if position in chromosomes[c]['position'] or position == chromosomes[c]['previous_position']:
+            print("Trying to store more than one set of variants at position {} of chr {}. ".format(
+                position, c))
             print("Previous was {}, this is {}.".format(
-                position.get(actual_position, previous_position), {variant.id:variant.alleles}))
-            if actual_position in position:
-                previous_position, prev_data = position.popitem()
-                print("Deleting original at position {} as well as duplicates.".format(previous_position))
+                position.get(position, chromosomes[c]['previous_position']), {variant.id:variant.alleles}))
+            if position in chromosomes[c]['position']:
+                chromosomes[c]['previous_position'], prev_data = chromosomes[c]['position'].popitem()
+                print("Deleting original at position {} as well as duplicates.".format(
+                    chromosomes[c]['previous_position']))
         else:
-            sites_by_samples[len(position),:]=locus_data
-            position[actual_position]={variant.id: variant.alleles}
-            previous_postition=actual_position
+            chromosomes[c]['sites_by_samples'][len(chromosomes[c]['position']),:]=locus_data
+            chromosomes[c]['position'][position]={variant.id: variant.alleles}
+            chromosomes[c]['previous_position']=position
     
     if j % output_freq_variants == 0:
-        print("{} variants read ({} saved). Base position {} Mb (alleles per site: {})".format(
-            j+1, len(position), variant.pos/1e6, [(k, allele_count[k]) for k in sorted(allele_count.keys())]), 
+        print("{} variants read ({} saved). Base position {} Mb chr {} (alleles per site: {})".format(
+            j+1, len(chromosomes[c]['position']), variant.pos/1e6, c, 
+            [(k, allele_count[k]) for k in sorted(allele_count.keys())]), 
             flush=True)
 
 #Finished reading
 
-#check for unused rows (e.g. if haploid)
-use_samples = np.ones((sites_by_samples.shape[1],), np.bool)
-for colnum in range(sites_by_samples.shape[1]):
-    if np.all(sites_by_samples[:,colnum]==-1):
-        use_samples[colnum]=False
+for c, dat in chromosomes.items():
+    #check for unused rows (e.g. if haploid)
+    use_samples = np.ones((dat['sites_by_samples'].shape[1],), np.bool)
+    for colnum in range(dat['sites_by_samples'].shape[1]):
+        if np.all(dat['sites_by_samples'][:,colnum]==-1):
+            use_samples[colnum]=False
 
-sites_by_samples = sites_by_samples[:,use_samples]
-rows = {name:order for name,order in rows.items() if use_samples[order]}
-#simplify the names for haploids (remove e.g. terminal 'a' from the key 'XXXXa'
-# if there is not an XXXXb in the list)
-rows = {n:o if any((n[:-1]+suffix) in rows for suffix in suffixes if suffix != n[-1]) else n[:-1] for n,o in rows.items()}
+    sites_by_samples = dat['sites_by_samples'][:,use_samples]
+    reduced_rows = {name:order for name,order in rows.items() if use_samples[order]}
+    #simplify the names for haploids (remove e.g. terminal 'a' from the key 'XXXXa'
+    # if there is not an XXXXb in the list)
+    reduced_rows = {n:o if any((n[:-1]+suffix) in reduced_rows for suffix in suffixes if suffix != n[-1]) else n[:-1] for n,o in reduced_rows.items()}
 
-#check for missing data (-1's)
-use_sites = np.zeros((sites_by_samples.shape[0],), np.bool)
-for rownum in range(len(position)):
-    if np.all(sites_by_samples[rownum]!=-1):
-        use_sites[rownum] = True
-sites_by_samples = sites_by_samples[use_sites,:]
+    #check for missing data (-1's)
+    use_sites = np.zeros((sites_by_samples.shape[0],), np.bool)
+    for rownum in range(len(dat['position'])):
+        if np.all(sites_by_samples[rownum]!=-1):
+            use_sites[rownum] = True
+    sites_by_samples = sites_by_samples[use_sites,:]
 
-
-with h5py.File(args.outfile + '.hdf5', "w") as f:
-    g = f.create_group("data")
-    g.create_dataset("position", data=list(position.keys()))
-    g.create_dataset("samples", data=[s.encode() for s in sorted(rows, key=rows.get)])
-    g.create_dataset("variants", data=np.transpose(sites_by_samples), compression='gzip', compression_opts=9)
-print("Saved {} biallelic loci for {} samples into {}".format(len(position), len(rows), args.outfile))
+    outfile = args.outfile + str(c) + '.hdf5'
+    with h5py.File(outfile, "w") as f:
+        g = f.create_group("data")
+        g.create_dataset("position", data=list(dat['position'].keys()))
+        g.create_dataset("samples", data=[s.encode() for s in sorted(reduced_rows, key=reduced_rows.get)])
+        g.create_dataset("variants", data=np.transpose(sites_by_samples), compression='gzip', compression_opts=9)
+    print("Saved {} biallelic loci for {} samples into {}".format(len(dat['position']), len(reduced_rows), outfile))
