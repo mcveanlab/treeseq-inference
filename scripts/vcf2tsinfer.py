@@ -21,7 +21,8 @@ import numpy as np
 import h5py
 import pysam
 
-parser = argparse.ArgumentParser(description='Take an .hdf5 file from vcf2tsinfer.py and run tsinfer on it.')
+parser = argparse.ArgumentParser(description='Take a vcf file with ancestral states' \
+    ' and save it into a format suitable for run_vcf.py')
 parser.add_argument('infile', 
                     help='a vcf or vcf.gz file')
 parser.add_argument('outfile',
