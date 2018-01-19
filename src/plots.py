@@ -337,6 +337,26 @@ def ARGmetric_params_from_row(row):
     """
     return {'make_bin_seed':row.seed, 'reps':row.tsinfer_biforce_reps}
 
+
+def ts_remove_singletons(ts):
+    sites = msprime.SiteTable()
+    mutations = msprime.MutationTable()
+    for variant in ts.variants():
+        if np.sum(variant.genotypes) > 1:
+            site_id = sites.add_row(
+                position=variant.site.position,
+                ancestral_state=variant.site.ancestral_state)
+            for mutation in variant.site.mutations:
+                assert mutation.parent == -1  # No back mutations
+                mutations.add_row(
+                    site=site_id, node=mutation.node, derived_state=mutation.derived_state)
+    
+    tables = ts.dump_tables()
+    return msprime.load_tables(
+        nodes=tables.nodes, edges=tables.edges, sites=sites, mutations=mutations)
+msprime.TreeSequence.remove_singletons = ts_remove_singletons
+
+
 class InferenceRunner(object):
     """
     Class responsible for running a single inference tool and returning results for
@@ -894,7 +914,7 @@ class Dataset(object):
     #
     # Utilities for running simulations and saving files.
     #
-    def single_simulation(self, n, Ne, l, rho, mu, seed, mut_seed=None, **kwargs):
+    def single_simulation(self, n, Ne, l, rho, mu, seed, mut_seed=None, remove_singletons=True, **kwargs):
         """
         The standard way to run one msprime simulation for a set of parameter
         values. Saves the output to an .hdf5 file, and also saves variant files
@@ -941,6 +961,8 @@ class Dataset(object):
             msprime.sort_tables(nodes=nodes, edges=edges, sites=sites, mutations=muts)
             ts = msprime.load_tables(nodes=nodes, edges=edges, sites=sites, mutations=muts)
 
+        if remove_singletons:
+            ts = ts.remove_singletons()
         logging.info(
             "Neutral simulation done; {} sites, {} trees".format(ts.num_sites, ts.num_trees))
         sim_fn = mk_sim_name(n, Ne, l, rho, mu, seed, mut_seed, self.simulations_dir)
@@ -1453,6 +1475,8 @@ class TsinferPerformance(Dataset):
 
 class TsinferTracebackDebug(Dataset):
     """
+    This class can be deleted once the issue below is addressed
+
     As discussed between Yan and Jerome on 4th Dec, running the current
     implementation of tsinfer in real data is not giving good enough performance
     in terms of the number of inferred vs real edges. Jerome thinks this is because
@@ -1475,7 +1499,7 @@ class TsinferTracebackDebug(Dataset):
     cranking up the mutation rate, which we hope will allow better resolution of the
     trees (hopefully by reducing the number of L=1 paths). We can then try to spot
     features of the correct L=1 paths that will help us pick a method to choose
-    between euqally likely paths under lower mutation rates.
+    between equally likely paths under lower mutation rates.
 
     We run the simulations with different mutation rates using the same TS, to
     reduce one source of variation
@@ -1580,6 +1604,7 @@ class TsinferTracebackDebug(Dataset):
                     row['ts_filesize'] = os.path.getsize(fn + ".hdf5")
                     self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
         return return_value
+
 
 class ProgramComparison(Dataset):
     """
