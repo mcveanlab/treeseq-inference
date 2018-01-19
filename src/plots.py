@@ -961,10 +961,11 @@ class Dataset(object):
             msprime.sort_tables(nodes=nodes, edges=edges, sites=sites, mutations=muts)
             ts = msprime.load_tables(nodes=nodes, edges=edges, sites=sites, mutations=muts)
 
-        if remove_singletons:
-            ts = ts.remove_singletons()
         logging.info(
             "Neutral simulation done; {} sites, {} trees".format(ts.num_sites, ts.num_trees))
+        if remove_singletons:
+            ts = ts.remove_singletons()
+            logging.info("singletons removed")
         sim_fn = mk_sim_name(n, Ne, l, rho, mu, seed, mut_seed, self.simulations_dir)
         logging.debug("writing {}.hdf5".format(sim_fn))
         ts.dump(sim_fn+".hdf5")
