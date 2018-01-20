@@ -1,12 +1,21 @@
 #!/usr/bin/env python3
-"""
-Take a vcf file with ancestral information (e.g. from 1000 genomes phase 1, such as
+description="""
+Take a vcf file with ancestral allele information (e.g. from 1000 genomes phase 1, such as
 ALL.chr22.phase1_release_v3.20101123.snps_indels_svs.genotypes.vcf.gz
-and convert it to the huge samples X sites array used in tsinfer. Store this
-in the hdf5 output file, and also store the variant positions and the sample names.
+and convert it to the huge samples _times_ sites array used in tsinfer. Store this
+together with the variant positions and the sample names in hdf5 output files, one per
+chromosome.
 
-vcf2tsinfer.py 1000G_chr22.vcf.gz outputarray
+This script deals with samples with different ploidies (assuming the data is phased) by
+adding '#a', '#b' etc to the sample names. For haploid samples, the '#x' suffix is removed.
 
+Since we require complete data, we need to prune out mising values. At the moment we do
+this by pruning samples with missing values, but we could equally do so by pruning sites
+instead, or perhaps optimally remove both sites and samples (see 
+https://stackoverflow.com/questions/48355644/optimally-remove-rows-or-columns-in-numpy-to-remove-missing-data)
+"""
+
+"""
 NB - a slightly odd observation: all the alleles for which the ancestral state is not present in the dataset are SNPs
 
 read using
@@ -21,8 +30,7 @@ import numpy as np
 import h5py
 import pysam
 
-parser = argparse.ArgumentParser(description='Take a vcf file with ancestral states' \
-    ' and save it into a format suitable for run_vcf.py')
+parser = argparse.ArgumentParser(description=description)
 parser.add_argument('infile', 
                     help='a vcf or vcf.gz file')
 parser.add_argument('outfile',
@@ -83,7 +91,7 @@ def process_variant(rec, rows, max_ploidy):
                         if samp.alleles[i] not in rec.alleles:
                             continue
                         suffix = string.ascii_lowercase[i]
-                        site_data[rows[label+suffix]] = samp.alleles[i][allele_start:]!=rec.info["AA"][allele_start:]
+                        site_data[rows[label+'#'+suffix]] = samp.alleles[i][allele_start:]!=rec.info["AA"][allele_start:]
                 return rec.chrom, pos, site_data
     return rec.chrom, None, None
 
@@ -97,7 +105,7 @@ for sample_name in vcf_in.header.samples:
     #i.e. max is diploid. For haploid samples, we just use the suffix 'a'
     #and hack to remove it afterwards
     for suffix in suffixes:
-        rows[sample_name+suffix]=row
+        rows[sample_name+'#'+suffix]=row
         row+=1
 extend_amount = 10000 #numpy storage array will be extended by this much at a time
 chromosomes = {} #most data stored here
@@ -159,7 +167,7 @@ for c, dat in chromosomes.items():
     reduced_rows = [name for i,name in enumerate(sorted(rows, key=rows.get)) if use_samples[i]]
     #simplify the names for haploids (remove e.g. terminal 'a' from the key 'XXXXa'
     # if there is not an XXXXb in the list)
-    reduced_rows = [n if any((n[:-1]+suffix) in reduced_rows for suffix in suffixes if suffix != n[-1]) else n[:-1] for n in reduced_rows]
+    reduced_rows = [n if any((n[:-1]+suffix) in reduced_rows for suffix in suffixes if suffix != n[-1]) else n[:-2] for n in reduced_rows]
     print(" removed {}/{} unused sample slots (if this is haploid, half should be removed)".format(
         sum(~use_samples), use_samples.shape[0]))
 
