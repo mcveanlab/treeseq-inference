@@ -140,11 +140,11 @@ def write_nexus_trees(
             # index by the average position between the two nearest variants
             av_upper_pos = pos_between_vars[np.searchsorted(variant_pos,t.get_interval()[1])]
             assert av_upper_pos <= t.get_interval()[1]
-            print("TREE " + str(av_upper_pos) + " = [&R] " + newick, file=treefile)
+            print("TREE " + str(av_upper_pos) + " = [&R] " + newick[:-1] + ":0;", file=treefile)
     else:
         for t, (_, newick) in zip(ts.trees(), newick_trees(ts)):
             # index by rightmost genome position
-            print("TREE " + str(t.get_interval()[1]) + " = " + newick, file=treefile)
+            print("TREE " + str(t.get_interval()[1]) + " = [&R] " + newick[:-1] + ":0;", file=treefile)
     print("END;", file=treefile)
 
 def calculate_polytomies(ts):
