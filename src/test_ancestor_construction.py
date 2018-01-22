@@ -45,9 +45,9 @@ def main(verbosity):
     if not print_trees:
         print("seed", "trees","sites","edges:", "tsinfer_norm", "known_anc_orig", 
             "known_anc_jerome", "known_anc_yan", sep="\t")
-    for i in range(1):
+    for i in range(100):
         r_int = rng1.randint(1, 100000)
-        r_int = 5190
+        #r_int = 5190
         ts, full_inferred_ts, orig_anc_ts, jk_anc_ts, hyw_anc_ts = \
             single_real_ancestor_injection(method, path_compression, r_int, simplify=True)
 

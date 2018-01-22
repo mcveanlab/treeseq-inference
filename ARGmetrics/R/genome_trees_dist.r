@@ -25,7 +25,7 @@
 genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FALSE, acceptable.length.diff.pct = 0.1, variant.positions=NULL, randomly.resolve.a=FALSE, randomly.resolve.b=FALSE, force.rooted=TRUE) { 
     require(phangorn)
     has.KC.metric=require(treespace)
-    results=data.frame(lft=numeric(), rgt=numeric(), RFrooted=numeric(), RFunrooted=numeric(),
+    results=data.frame(unchanged.tree=numeric(), lft=numeric(), rgt=numeric(), RFrooted=numeric(), RFunrooted=numeric(),
         wRFrooted=numeric(), wRFunrooted=numeric(), SPRunrooted=numeric(), pathunrooted=numeric(), KCrooted=numeric())
     
     if (is.na(treeseq.a) || is.na(treeseq.b)) {
@@ -95,9 +95,10 @@ genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FA
         if ((max(brk.a) * (100+ acceptable.length.diff.pct)/100 < max(brk.b)) || 
             (max(brk.b) * (100+ acceptable.length.diff.pct)/100 < max(brk.a)))
             warning("The sequence lengths of the two trees files differ markedly: ", max(brk.a), " vs. ", max(brk.b), immediate. = TRUE)
-        breaks.table <- stack(list('a'=brk.a,'b'=brk.b))
+        breaks.table <- stack(list('1'=brk.a,'2'=brk.b)) #set a:index=1 and b:index=2
+        breaks.table$ind <- as.numeric(as.character(breaks.table$ind)) #convert to numeric
         breaks.table <- by(breaks.table, breaks.table$values, function(x) x) #put identical breakpoints together
-        tree.index.ctr=c(a=1, b=1) 
+        tree.index.ctr=c(1, 1)
         lft <- 0
         for (o in order(as.numeric(names(breaks.table)))) {
             brk = breaks.table[[o]]
@@ -105,24 +106,24 @@ genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FA
                 warning("Reached the end of the trees with ", max(brk.a, brk.b)-lft, " left to go")
                 break
             }
-            rgt <- brk$values[0:1]
+            rgt <- brk$values[0:1];
             RFrooted <- RFunrooted <- wRFrooted <- wRFunrooted <- SPRunrooted  <- pathunrooted <- KCrooted  <- NA
-            catchTreeDistErrors({RFrooted <- RF.dist(a[[tree.index.ctr['a']]], b[[tree.index.ctr['b']]], rooted=TRUE)},
+            catchTreeDistErrors({RFrooted <- RF.dist(a[[tree.index.ctr[1]]], b[[tree.index.ctr[2]]], rooted=TRUE)},
                 'RF', rooted=TRUE)
-            catchTreeDistErrors({RFunrooted <- RF.dist(a[[tree.index.ctr['a']]], b[[tree.index.ctr['b']]], rooted=FALSE)},
+            catchTreeDistErrors({RFunrooted <- RF.dist(a[[tree.index.ctr[1]]], b[[tree.index.ctr[2]]], rooted=FALSE)},
                 'RF')
-            catchTreeDistErrors({wRFrooted <- wRF.dist(a[[tree.index.ctr['a']]], b[[tree.index.ctr['b']]], rooted=TRUE)},
+            catchTreeDistErrors({wRFrooted <- wRF.dist(a[[tree.index.ctr[1]]], b[[tree.index.ctr[2]]], rooted=TRUE)},
                 'weighted RF', rooted=TRUE)
-            catchTreeDistErrors({wRFunrooted <- wRF.dist(a[[tree.index.ctr['a']]], b[[tree.index.ctr['b']]], rooted=FALSE)},
+            catchTreeDistErrors({wRFunrooted <- wRF.dist(a[[tree.index.ctr[1]]], b[[tree.index.ctr[2]]], rooted=FALSE)},
                 'weighted RF')
-            catchTreeDistErrors({SPRunrooted <- SPR.dist(a[[tree.index.ctr['a']]], b[[tree.index.ctr['b']]])},
+            catchTreeDistErrors({SPRunrooted <- SPR.dist(a[[tree.index.ctr[1]]], b[[tree.index.ctr[2]]])},
                 'subtree prune & regraft')
-            catchTreeDistErrors({pathunrooted <- path.dist(a[[tree.index.ctr['a']]], b[[tree.index.ctr['b']]])},
+            catchTreeDistErrors({pathunrooted <- path.dist(a[[tree.index.ctr[1]]], b[[tree.index.ctr[2]]])},
                 'path distance')
             if (has.KC.metric)
-                catchTreeDistErrors({KCrooted <- treeDist(a[[tree.index.ctr['a']]], b[[tree.index.ctr['b']]])},
+                catchTreeDistErrors({KCrooted <- treeDist(a[[tree.index.ctr[1]]], b[[tree.index.ctr[2]]])},
                     'Kendall-Colijn', rooted=TRUE)
-            results[nrow(results)+1,] <- c(lft,rgt,RFrooted, RFunrooted, wRFrooted, wRFunrooted, SPRunrooted, pathunrooted, KCrooted)
+            results[nrow(results)+1,] <- c(ifelse(length(brk$ind)>1,NA,setdiff(1:2,brk$ind)),lft,rgt,RFrooted, RFunrooted, wRFrooted, wRFunrooted, SPRunrooted, pathunrooted, KCrooted)
             lft <- rgt
             tree.index.ctr[brk$ind] <- tree.index.ctr[brk$ind] + 1 #NB, brk$ind is a factor with levels (m1,m2), so we hope that m1==1 and m2==2
         }
