@@ -449,7 +449,9 @@ class InferenceRunner(object):
         scaled_recombination_rate = 4 * self.row.recombination_rate * self.row.Ne
         inferred_ts, time, memory = self.run_tsinfer(
             samples_fn, positions_fn, self.row.length, scaled_recombination_rate,
-            self.row.error_rate, shared_recombinations, shared_lengths, self.num_threads)
+            self.row.error_rate, shared_recombinations, shared_lengths, self.num_threads
+            inject_real_ancestors_from_ts_fn = self.base_fn
+            )
         if inferred_ts:
             if subsample_size is not None:
                 inferred_ts = inferred_ts.simplify(list(range(subsample_size)))
@@ -583,7 +585,7 @@ class InferenceRunner(object):
 
     @staticmethod
     def run_tsinfer(sample_fn, positions_fn, length, rho, error_probability,
-        shared_recombinations, shared_lengths, num_threads=1):
+        shared_recombinations, shared_lengths, num_threads=1, inject_real_ancestors_from_ts_fn=None):
         try:
             with tempfile.NamedTemporaryFile("w+") as ts_out:
                 cmd = [
@@ -591,6 +593,8 @@ class InferenceRunner(object):
                     "--length", str(int(length)), "--recombination-rate", str(rho),
                     "--error-probability", str(error_probability),
                     "--threads", str(num_threads), ts_out.name]
+                if inject_real_ancestors_from_ts_fn:
+                    cmd.extend(["--inject-real_ancestors-from-ts", inject_real_ancestors_from_ts_fn])
                 if shared_recombinations:
                     cmd.append("--shared-recombinations")
                 if shared_lengths:
@@ -965,7 +969,7 @@ class Dataset(object):
             "Neutral simulation done; {} sites, {} trees".format(ts.num_sites, ts.num_trees))
         if remove_singletons:
             ts = ts.remove_singletons()
-            logging.info("singletons removed: reduced to {} sites".format(ts.num_sites))
+            logging.info(" singletons removed: reduced to {} sites".format(ts.num_sites))
         sim_fn = mk_sim_name(n, Ne, l, rho, mu, seed, mut_seed, self.simulations_dir)
         logging.debug("writing {}.hdf5".format(sim_fn))
         ts.dump(sim_fn+".hdf5")
@@ -1606,6 +1610,123 @@ class TsinferTracebackDebug(Dataset):
                     self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
         return return_value
 
+class TsinferAncestorReconstructionDebug(Dataset):
+    """
+    This class can be deleted once the issue below is addressed
+
+    As discussed between Yan and Jerome on 18th Jan 2018, some of the issues with
+    bad fitting may be caused by the wrong ancestors being reconstructed, and
+    we have the possibility to do better by looking at ancestral states between 
+    two matching variants. In other words, cases like this:
+    
+    pos 012345
+    
+    A   011110
+    B   110011
+    C   001000
+    D   111111
+
+    where the variant at position 1 spans the section across to position 4, but includes
+    a variant at 2 which conflicts (fails the four gamete test)
+
+
+    We can try to get a handle on this problem by taking the relative number of edges in
+    a simulation where we should be able to find all of them (at least one mutation per edge)
+    and plotting the relative number of edges against the number of 4-gamete failures
+    """
+    name = "tsinfer_traceback_debug"
+    compute_tree_metrics = METRICS_OFF
+    default_replicates = 10
+    default_seed = 123
+    tools = [TSINFER]
+
+    def run_simulations(self, replicates, seed, show_progress, num_processes=1):
+        # TODO abstract some of this functionality up into the superclass.
+        # There is quite a lot shared with the other dataset.
+        self.replicates = replicates if replicates else self.default_replicates
+        self.seed = seed if seed else self.default_seed
+        rng = random.Random(self.seed)
+        # Variable parameters
+        self.mutation_rates = (np.logspace(-8, -5, num=6)[:-1] * 1.5)
+        self.shared_breakpoint_params = [True]#, False]
+        self.shared_length_params = [False]#, True]
+        self.error_rates = [0]
+        # Fixed parameters
+        self.Ne = 5000
+        self.sample_size = 1000
+        self.length = 10**6
+        self.recombination_rate = 2e-8
+        self.num_sims = self.replicates * len(self.mutation_rates)
+        self.num_rows = self.num_sims * len(self.error_rates) * \
+            len(self.shared_breakpoint_params) * len(self.shared_length_params)
+        cols = self.sim_cols + [MUTATION_SEED_COLNAME, "ts_filesize", "tsinfer_srb", "tsinfer_sl"]
+        data = pd.DataFrame(index=np.arange(0, self.num_rows), columns=cols)
+        progress = tqdm.tqdm(total=self.num_rows) if show_progress else None
+
+        def save_result(data, values_by_row, progress):
+            for i,d in values_by_row.items():
+                for colname, val in d.items():
+                    data.iloc[i][colname]=val
+                if progress is not None:
+                    progress.update()
+
+        logging.info("Setting up using {} processes".format(num_processes))
+        replicate_seeds = [rng.randint(1, 2**31) for i in range(self.replicates)]
+        mutation_seeds = [rng.randint(1, 2**31) for i in range(self.num_sims)]
+        variable_iterator = itertools.product(
+            replicate_seeds, self.mutation_rates)
+
+        combined_iterator = enumerate(itertools.zip_longest(mutation_seeds, variable_iterator))
+
+        if num_processes > 1:
+            with multiprocessing.Pool(processes=num_processes, maxtasksperchild=2) as pool:
+                for result in pool.imap_unordered(self.single_sim, combined_iterator):
+                    save_result(data, result, progress)
+        else:
+            # When we have only one process it's easier to keep everything in the same
+            # process for debugging.
+            for result in map(self.single_sim, combined_iterator):
+                save_result(data, result, progress)
+        return data
+
+    def single_sim(self, runtime_information):
+        i, (params) = runtime_information
+        assert None not in params #one will be none if the lengths of the iterators are different
+        mutation_seed, (replicate_seed, mutation_rate) = params
+        base_row_id = i * self.num_rows//self.num_sims
+        return_value = {}
+        ts, fn = self.single_simulation(self.sample_size, self.Ne, self.length,
+            self.recombination_rate, mutation_rate, replicate_seed, mutation_seed)
+        assert ts.get_num_mutations() > 0
+        # Tsinfer should be robust to this, but it currently isn't. Fail
+        # noisily now rather than obscurely later. This will only ever happen
+        # in trivially small data sets, so it doesn't matter.
+        non_singletons = False
+        for v in ts.variants():
+            if np.sum(v.genotypes) > 1:
+                non_singletons = True
+        if not non_singletons:
+            raise ValueError("No non-single mutations present")
+        row_id = base_row_id
+        for error_rate in self.error_rates:
+            for tsinfer_srb in self.shared_breakpoint_params:
+                for tsinfer_sl in self.shared_length_params:
+                    row = return_value[row_id] = {}
+                    row_id += 1
+                    row['sample_size'] = self.sample_size
+                    row['recombination_rate'] = self.recombination_rate
+                    row['mutation_rate'] = mutation_rate
+                    row['length'] = self.length
+                    row['Ne'] = self.Ne
+                    row['seed'] = replicate_seed
+                    row[MUTATION_SEED_COLNAME] = mutation_seed
+                    row[ERROR_COLNAME] = error_rate
+                    row['edges'] = ts.num_edges
+                    row['tsinfer_srb'] = tsinfer_srb
+                    row['tsinfer_sl'] = tsinfer_sl
+                    row['ts_filesize'] = os.path.getsize(fn + ".hdf5")
+                    self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
+        return return_value
 
 class ProgramComparison(Dataset):
     """

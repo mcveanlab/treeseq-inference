@@ -50,6 +50,13 @@ def main():
     parser.add_argument(
         "-t", "--threads", default=1, type=int,
         help="The number of worker threads to use")
+    parser.add_argument(
+        "-m", "--method", default="C", choices=['C','P'],
+        help="Which implementation to use, [C] (faster) or [P]ython (more debuggable)")
+    parser.add_argument(
+        "--inject-real-ancestors-from-ts",
+        help="Instead of inferring ancestors, construct known ones from this tree sequence")
+    
 
     args = parser.parse_args()
     S = np.load(args.samples)
@@ -58,11 +65,29 @@ def main():
         logging.warning("The current version of tsinfer always uses shared recombinations ('edge compression')")
     # We need to transpose this now as
     genotypes = S.astype(np.uint8).T
-    ts = tsinfer.infer(
-        genotypes, pos, args.length,
-        args.recombination_rate,
-        args.error_probability,
-        num_threads=args.threads)
+    if args.inject_real_ancestors_from_ts:
+        orig_ts = msprime.load(args.inject_real_ancestors_from_ts)
+        input_root = zarr.group()
+        tsinfer.InputFile.build(
+            input_root, genotypes=genotypes,
+            position=pos,
+            recombination_rate=args.recombination_rate, 
+            sequence_length=ts.sequence_length,
+            compress=False)
+        ancestors_root = zarr.group()
+        tsinfer.build_simulated_ancestors(input_root, ancestors_root, ts, guess_unknown=True)
+        ancestors_ts = tsinfer.match_ancestors(
+            input_root, ancestors_root, method=method, path_compression=path_compression)
+        ts = tsinfer.match_samples(
+            input_root, ancestors_ts, method=method, path_compression=path_compression,
+            simplify=simplify)
+    else:
+        ts = tsinfer.infer(
+            genotypes, pos, args.length,
+            args.recombination_rate,
+            args.error_probability,
+            num_threads=args.threads,
+            method=method)
     ts.dump(args.output)
 
     # # TODO add command line arg here for when we're comparing run time performance.
