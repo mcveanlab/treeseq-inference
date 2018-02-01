@@ -33,43 +33,57 @@ def print_treeseq(ts, positions):
         print("\n".join([" "*(pos) + line for line in tree.splitlines()]))
 
 
-def main(verbosity):
+def main(verbosity, only_one_method):
     #monkey patch a nexus-writing routine in here, so we can test tree metrics
     msprime.TreeSequence.write_nexus_trees = msprime_extras.write_nexus_trees
+    method_range = slice(0,4) if only_one_method==None else slice(only_one_method, only_one_method+1)
 
     method = "C"
     print_trees=True if verbosity else False
     path_compression = True
-    rng1 = random.Random(1234)
+    n_samples = 5
+    r_int, rng1 = None, random.Random(123)
     rng2 = random.Random(12)
     if not print_trees:
-        print("seed", "trees","sites","edges:", "tsinfer_norm", "known_anc_orig", 
-            "known_anc_jerome", "known_anc_yan", sep="\t")
-    for i in range(100):
-        r_int = rng1.randint(1, 100000)
-        #r_int = 5190
+        print("seed", "trees","sites","edges:", sep="\t", end="\t")
+        print("\t".join(["tsinfer_norm", "known_anc_orig", "known_anc_jerome", "known_anc_yan"][method_range]))
+
+    #r_int,n_samples = 58547, 6
+    r_int,n_samples = 23900, 5
+
+    reps = 10000 if r_int is None else 1
+    for i in range(reps):
+        if r_int is None or i>0:
+            r_int = rng1.randint(1, 100000)
         ts, full_inferred_ts, orig_anc_ts, jk_anc_ts, hyw_anc_ts = \
-            single_real_ancestor_injection(method, path_compression, r_int, simplify=True)
+            single_real_ancestor_injection(method, path_compression, n_samples, r_int, simplify=False)
+        #for e in ts.edges():
+        #    print(e)
+        #for m in ts.mutations():
+        #    print(m)
 
         #print(ts.num_trees, ts.num_sites, ts.num_edges, sep="\t", end="\t")
         positions = [v.position for v in ts.variants()]
 
         if print_trees:
+            print(list(enumerate(positions)))
             for h in ts.haplotypes():
                 print(h)
             print("Real tree sequence")
             print_treeseq(ts, np.array(positions))
         with tempfile.NamedTemporaryFile("w+") as original_nexus:
-            ts.write_nexus_trees(original_nexus, tree_labels_between_variants=True)
+            ts.write_nexus_trees(original_nexus)
             original_nexus.flush()
-            for i, i_ts in enumerate((full_inferred_ts, orig_anc_ts, jk_anc_ts, hyw_anc_ts)):
+            for i, i_ts in list(enumerate((full_inferred_ts, orig_anc_ts, jk_anc_ts, hyw_anc_ts)))[method_range]:
                 with tempfile.NamedTemporaryFile("w+") as inferred_nexus:
-                    i_ts.write_nexus_trees(inferred_nexus, tree_labels_between_variants=True)
+                    i_ts.write_nexus_trees(inferred_nexus)
                     inferred_nexus.flush()
                     metrics = []
                     for polytomy_reps in range(1):
+                        np.set_printoptions(precision=12)
+                        #print(ARG_metrics.get_full_metrics(original_nexus.name, inferred_nexus.name, variant_positions=positions))
                         metrics.append(ARG_metrics.get_metrics(
-                            original_nexus.name, inferred_nexus.name, variant_positions = positions,
+                            original_nexus.name, inferred_nexus.name,
                             #randomly_resolve_inferred = rng2.randint(1, 2**31)
                             ))
                     metrics = pd.DataFrame(metrics).mean().to_dict()
@@ -83,10 +97,12 @@ def main(verbosity):
                         print("_"*80)
         print(r_int, ts.num_trees,ts.num_sites,ts.num_edges, sep="\t", end="\t")
         inferred = np.array([[x.num_edges, x.num_trees, x.treestat] \
-            for x in (full_inferred_ts, orig_anc_ts, jk_anc_ts, hyw_anc_ts)])
-        print("\t".join(["{:>2.0f} {:>2.0f}/{:>2.0f} {:.2f}".format(x[1],x[0], ts.num_edges, x[2]) + \
-            ("*" if x[2]==min(inferred[:,2]) and np.sum(inferred[:,2]==min(inferred[:,2]))==1 else " ")\
+            for x in (full_inferred_ts, orig_anc_ts, jk_anc_ts, hyw_anc_ts)[method_range]])
+        print("\t".join(["{:>2.0f} {:>2.0f}/{:>2.0f} {:.4f}".format(x[1],x[0], ts.num_edges, x[2]) + \
+            ("*" if x[2]==min(inferred[:,2]) and np.sum(np.isclose(inferred[:,2], min(inferred[:,2]), atol=1e-6))==1 else " ")\
             for x in inferred]))
+        #if inferred[0,2] > 0.0005:
+        #    sys.exit()
 
 
         
@@ -95,6 +111,8 @@ if __name__ == "__main__":
     parser = ArgumentParser(description=description, add_help=False)
     parser.add_argument("-v","--verbosity", action="count",
             help="Verbosity level", default=0)    
+    parser.add_argument("-a","--ancestor_method", default=None, type=int, choices=range(4),
+            help="Only try one method of ancestor reconstruction")
     args = parser.parse_args()
 
-    main(args.verbosity)
+    main(args.verbosity, args.ancestor_method)
