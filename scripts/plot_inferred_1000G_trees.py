@@ -21,7 +21,7 @@ script_path = __file__ if "__file__" in locals() else "./dummy.py"
 sys.path.insert(1,os.path.join(os.path.dirname(os.path.abspath(script_path)),'..','msprime')) # use the local copy of msprime in preference to the global one
 import msprime
 
-parser = argparse.ArgumentParser(description='Plot a large set of 1000 genomes trees frome a treeseq.')
+parser = argparse.ArgumentParser(description='Plot a large set of 1000 genomes trees from a treeseq.')
 parser.add_argument('msprime_infile', default="1000G/1000G22_infer2000.hdf5",
                     help='an msprime hdf5 file inferred from 1000 genomes data (phase 1)')
 parser.add_argument('base_file', default="1000G/1000G22.hdf5",
