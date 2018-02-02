@@ -41,22 +41,23 @@ def main(verbosity, only_one_method):
     method = "C"
     print_trees=True if verbosity else False
     path_compression = True
-    n_samples = 5
-    r_int, rng1 = None, random.Random(123)
+    msprime_args = dict(sample_size=4, recombination_rate=0.35, model="smc_prime")
+    rng1 = random.Random(123)
     rng2 = random.Random(12)
     if not print_trees:
         print("seed", "trees","sites","edges:", sep="\t", end="\t")
         print("\t".join(["tsinfer_norm", "known_anc_orig", "known_anc_jerome", "known_anc_yan"][method_range]))
 
-    #r_int,n_samples = 58547, 6
-    r_int,n_samples = 23900, 5
+    #msprime_args.update(dict(random_seed = 58547, sample_size = 6))
+    #msprime_args.update(dict(random_seed = 23900, sample_size = 5))
+    msprime_args.update(dict(random_seed = 58763, sample_size = 4, model="smc_prime"))
 
-    reps = 10000 if r_int is None else 1
+    reps = 1 if 'random_seed' in msprime_args else 10000
     for i in range(reps):
-        if r_int is None or i>0:
-            r_int = rng1.randint(1, 100000)
+        if 'random_seed' not in msprime_args or i>0:
+            msprime_args['random_seed'] = rng1.randint(1, 100000)
         ts, full_inferred_ts, orig_anc_ts, jk_anc_ts, hyw_anc_ts = \
-            single_real_ancestor_injection(method, path_compression, n_samples, r_int, simplify=False)
+            single_real_ancestor_injection(method, path_compression, simplify=True, **msprime_args)
         #for e in ts.edges():
         #    print(e)
         #for m in ts.mutations():
@@ -84,7 +85,8 @@ def main(verbosity, only_one_method):
                         #print(ARG_metrics.get_full_metrics(original_nexus.name, inferred_nexus.name, variant_positions=positions))
                         metrics.append(ARG_metrics.get_metrics(
                             original_nexus.name, inferred_nexus.name,
-                            #randomly_resolve_inferred = rng2.randint(1, 2**31)
+                            #randomly_resolve_inferred = rng2.randint(1, 2**31),
+                            variant_positions=positions,
                             ))
                     metrics = pd.DataFrame(metrics).mean().to_dict()
                     
@@ -95,14 +97,14 @@ def main(verbosity, only_one_method):
                         print("Ancestor construction method " + str(i), metrics)
                         print_treeseq(i_ts, np.array(positions))
                         print("_"*80)
-        print(r_int, ts.num_trees,ts.num_sites,ts.num_edges, sep="\t", end="\t")
+        print(msprime_args['random_seed'], ts.num_trees,ts.num_sites,ts.num_edges, sep="\t", end="\t")
         inferred = np.array([[x.num_edges, x.num_trees, x.treestat] \
             for x in (full_inferred_ts, orig_anc_ts, jk_anc_ts, hyw_anc_ts)[method_range]])
         print("\t".join(["{:>2.0f} {:>2.0f}/{:>2.0f} {:.4f}".format(x[1],x[0], ts.num_edges, x[2]) + \
             ("*" if x[2]==min(inferred[:,2]) and np.sum(np.isclose(inferred[:,2], min(inferred[:,2]), atol=1e-6))==1 else " ")\
             for x in inferred]))
-        #if inferred[0,2] > 0.0005:
-        #    sys.exit()
+        if hyw_anc_ts.treestat > 0.0005 and hyw_anc_ts.num_trees < 5:
+            sys.exit()
 
 
         
