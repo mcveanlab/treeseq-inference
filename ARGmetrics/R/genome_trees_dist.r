@@ -33,7 +33,7 @@ genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FA
         if (output.full.table)
             return(results)
         else
-            return(results[-1:-2])
+            return(results[-1:-3])
     } else {
         require(ape)
         require(phangorn) #to use the various treedist metrics
