@@ -68,6 +68,7 @@ TSINFER = "tsinfer"
 ERROR_COLNAME = 'error_rate'
 SUBSAMPLE_COLNAME = 'subsample_size'
 SIMTOOL_COLNAME = 'sim_tool' #if column does not exist, default simulation tool = 'msprime'
+METRIC_PER_BP = '' #if column does not exist
 MUTATION_SEED_COLNAME = 'mut_seed'
 SELECTION_COEFF_COLNAME = 'selection_coefficient'
 DOMINANCE_COEFF_COLNAME = 'dominance_coefficient'
@@ -381,8 +382,8 @@ class InferenceRunner(object):
         #but not subsample size (as subsampling happens *after* inference, when comparing trees)
         self.base_fn = mk_sim_name_from_row(
             row, simulations_dir, subsample_col = None)
-        #source tree data must use the subsampled version, if present, but not error
-        self.source_trees_fn = mk_sim_name_from_row(
+        #original simulation files (e.g. the TS and nex files) must use the subsampled version, if present, but not error
+        self.orig_sim_fn = mk_sim_name_from_row(
             row, simulations_dir, error_col=None)
         # This should be set by the run_inference methods. Append ".nex" to
         # get the nexus files, or ".hdf5" to get the TS files
@@ -405,10 +406,10 @@ class InferenceRunner(object):
             #rather than an average over multiple inferred nexus files, and do the averaging in python
             if self.inferred_filenames is not None:
                 if (self.compute_tree_metrics & METRICS_AT_VARIANT_SITES):
-                    positions = np.load(self.source_trees_fn + ".pos.npy").tolist()
+                    positions = np.load(self.orig_sim_fn + ".pos.npy").tolist()
                 else:
                     positions = None
-                source_nexus_file = self.source_trees_fn + ".nex"
+                source_nexus_file = self.orig_sim_fn + ".nex"
                 inferred_nexus_files = [fn + ".nex" for fn in self.inferred_filenames]
                 if self.compute_tree_metrics & METRICS_RANDOMLY_BREAK_POLYTOMIES:
                     metrics = []
@@ -449,8 +450,8 @@ class InferenceRunner(object):
         scaled_recombination_rate = 4 * self.row.recombination_rate * self.row.Ne
         inferred_ts, time, memory = self.run_tsinfer(
             samples_fn, positions_fn, self.row.length, scaled_recombination_rate,
-            self.row.error_rate, shared_recombinations, shared_lengths, self.num_threads
-            inject_real_ancestors_from_ts_fn = self.base_fn
+            self.row.error_rate, shared_recombinations, shared_lengths, self.num_threads,
+            #inject_real_ancestors_from_ts_fn = self.orig_sim_fn + ".hdf5", #uncomment to inject real ancestors
             )
         if inferred_ts:
             if subsample_size is not None:
@@ -594,7 +595,9 @@ class InferenceRunner(object):
                     "--error-probability", str(error_probability),
                     "--threads", str(num_threads), ts_out.name]
                 if inject_real_ancestors_from_ts_fn:
-                    cmd.extend(["--inject-real_ancestors-from-ts", inject_real_ancestors_from_ts_fn])
+                    logging.debug("Injecting real ancestors constructed from {}".format(
+                        inject_real_ancestors_from_ts_fn))
+                    cmd.extend(["--inject-real-ancestors-from-ts", inject_real_ancestors_from_ts_fn])
                 if shared_recombinations:
                     cmd.append("--shared-recombinations")
                 if shared_lengths:
@@ -1091,13 +1094,13 @@ class MetricsByMutationRateDataset(Dataset):
         rng = random.Random(seed)
         # Variable parameters
         mutation_rates = np.logspace(-8, -5, num=8)[:-1] * 1.5
-        error_rates = [0, 0.01, 0.1]
-        sample_sizes = [10, 20]
+        error_rates = [0, 0.001, 0.01]
+        sample_sizes = [15]
 
         # Fixed parameters
         Ne = 5000
-        length = 10000
-        recombination_rate = 2.5e-8
+        length = 100000 #should be enough for ~ 50 trees
+        recombination_rate = 1e-8
         num_rows = replicates * len(mutation_rates) * len(error_rates) * len(sample_sizes)
         data = pd.DataFrame(index=np.arange(0, num_rows), columns=self.sim_cols)
         row_id = 0
@@ -1966,8 +1969,9 @@ class AllMetricsByMutationRateFigure(Figure):
                     group = df_s.groupby(["mutation_rate"])
                     group_mean = group.mean()
                     for tool, setting in self.tools_format.items():
-                        ax.semilogx(
-                            group_mean[tool + "_" + metric], linestyle, color=setting["col"])
+                        colname = tool + "_" + metric
+                        if colname in df.columns:
+                            ax.semilogx(group_mean[colname], linestyle, color=setting["col"])
         artists = [
             pyplot.Line2D((0,1),(0,0), color= setting["col"],
                 marker= setting["mark"], linestyle='')
