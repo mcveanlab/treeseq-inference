@@ -1253,7 +1253,7 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
 
     name = "metrics_by_mutation_rate_with_selective_sweep"
 
-    default_replicates = 40
+    default_replicates = 50
     default_seed = 123
     compute_tree_metrics = METRICS_ON #| METRICS_RANDOMLY_BREAK_POLYTOMIES
 
@@ -1266,16 +1266,16 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
         ## Variable parameters
         # parameters unique to each simulation
         self.mutation_rates = (np.logspace(-8, -5, num=6)[:-1] * 1.5)
-        self.sample_sizes = [50, 20, 10]
+        self.sample_sizes = [15]
         # parameters across a single simulation
-        self.error_rates = [0, 0.01]
+        self.error_rates = [0, 0.001, 0.01]
         self.stop_at = ['0.2', '0.5', '0.8', '1.0', ('1.0', 200), ('1.0', 1000)] #frequencies to output a file.
         #NB - these are strings because they are output as part of the filename
 
         ## Fixed parameters
         self.Ne = 5000
-        self.length = 10000
-        self.recombination_rate = 1e-7
+        self.length = 100000
+        self.recombination_rate = 1e-8
         self.selection_coefficient = 0.1
         self.dominance_coefficient = 0.5
 
