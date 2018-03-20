@@ -28,6 +28,8 @@ import statistics
 import subprocess
 import tempfile
 import time
+import gzip
+
 
 import numpy as np
 import matplotlib
@@ -350,7 +352,7 @@ def ts_remove_singletons(ts):
                 assert mutation.parent == -1  # No back mutations
                 mutations.add_row(
                     site=site_id, node=mutation.node, derived_state=mutation.derived_state)
-    
+
     tables = ts.dump_tables()
     return msprime.load_tables(
         nodes=tables.nodes, edges=tables.edges, sites=sites, mutations=mutations)
@@ -1108,7 +1110,7 @@ class MetricsByMutationRateDataset(Dataset):
                         # Run the simulation
                         ts, fn = self.single_simulation(sample_size, Ne, length,
                             recombination_rate, mutation_rate, replicate_seed)
-                        #Only accept this instance if we got at least one mutation that 
+                        #Only accept this instance if we got at least one mutation that
                         # is not a singleton and is not fixed
                         for v in ts.variants():
                             if 1 < np.sum(v.genotypes) < ts.num_samples:
@@ -1190,7 +1192,7 @@ class MetricsBySampleSizeDataset(Dataset):
                     # Run the simulation
                     base_ts, unused_fn = self.single_simulation(max(sample_sizes), Ne, length,
                         recombination_rate, mutation_rate, replicate_seed)
-                    #Only accept this instance if we got at least one mutation that 
+                    #Only accept this instance if we got at least one mutation that
                     # is not a singleton and is not fixed
                     for v in ts.variants():
                         if 1 < np.sum(v.genotypes) < ts.num_samples:
@@ -1327,7 +1329,7 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
                     self.stop_at, replicate_seed):
                     # Reject this entire set if we got no mutations at any point, or all mutations are fixed
                     done = False
-                    #Only accept this instance if we got at least one mutation that 
+                    #Only accept this instance if we got at least one mutation that
                     # is not a singleton and is not fixed
                     for v in ts.variants():
                         if 1 < np.sum(v.genotypes) < ts.num_samples:
@@ -1378,8 +1380,8 @@ class TsinferPerformance(Dataset):
     default_replicates = 20
     default_seed = 123
     tools = [TSINFER]
-    fixed_length = 5 * 10**6
-    fixed_sample_size = 20
+    fixed_length = 20 * 10**6
+    fixed_sample_size = 5000
     mutation_rate = 5e-9
 
     def run_simulations(self, user_specified_replicates, seed, show_progress, num_processes=1):
@@ -1394,18 +1396,16 @@ class TsinferPerformance(Dataset):
         # Variable parameters
         num_points = 20
         sample_sizes = np.linspace(10, 2 * self.fixed_sample_size, num_points).astype(int)
+        # Ensure sample sizes are even so we can output diploid VCF.
+        sample_sizes[sample_sizes % 2 != 0] += 1
         lengths = np.linspace(self.fixed_length / 10, 2 * self.fixed_length, num_points).astype(int)
-        recombination_rates = np.array([1/4,1,4]) * self.mutation_rate
         recombination_rates = np.array([1]) * self.mutation_rate
         #parameters that are iterated over within a single simulation
         self.error_rates = [0]
-        self.shared_breakpoint_params = [True]#, False]
-        self.shared_length_params = [False]#, True]
 
         self.num_sims = (len(sample_sizes) + len(lengths)) * len(recombination_rates) * replicates
-        self.num_rows = self.num_sims * len(self.error_rates) * \
-            len(self.shared_breakpoint_params) * len(self.shared_length_params)
-        cols = self.sim_cols + ["sites", "ts_filesize", "tsinfer_srb", "tsinfer_sl"]
+        self.num_rows = self.num_sims * len(self.error_rates)
+        cols = self.sim_cols + ["sites", "ts_filesize", "vcf_filesize", "vcfgz_filesize"]
         data = pd.DataFrame(index=np.arange(0, self.num_rows), columns=cols)
         progress = tqdm.tqdm(total=self.num_rows) if show_progress else None
 
@@ -1441,37 +1441,35 @@ class TsinferPerformance(Dataset):
         replicate_seed, ((sample_size, length), recombination_rate, _) = params
         base_row_id = i * self.num_rows//self.num_sims
         return_value = {}
-        ts, fn = self.single_simulation(sample_size, self.Ne, length,
-            recombination_rate, self.mutation_rate, replicate_seed, model="smc_prime")
-        assert ts.get_num_mutations() > 0
-        # Tsinfer should be robust to this, but it currently isn't. Fail
-        # noisily now rather than obscurely later. This will only ever happen
-        # in trivially small data sets, so it doesn't matter.
+        ts, fn = self.single_simulation(
+            sample_size, self.Ne, length, recombination_rate, self.mutation_rate,
+            replicate_seed)
+        vcf_filename = fn + ".vcf"
+        with open(vcf_filename, "w") as vcf_file:
+            ts.write_vcf(vcf_file, 2)
+        vcfgz_filename = vcf_filename + ".gz"
+        vcf_filesize = os.path.getsize(vcf_filename)
+        # gzip removes the original by default, so might as well save some space.
+        subprocess.check_call(["gzip", vcf_filename])
+
+        assert ts.num_sites > 0
         row_id = base_row_id
-        non_singletons = False
-        for v in ts.variants():
-            if np.sum(v.genotypes) > 1:
-                non_singletons = True
-        if not non_singletons:
-            raise ValueError("No non-single mutations present")
-        for tsinfer_srb in self.shared_breakpoint_params:
-            for tsinfer_sl in self.shared_length_params:
-                for error_rate in self.error_rates:
-                    row = return_value[row_id] = {}
-                    row_id += 1
-                    row['sample_size'] = sample_size
-                    row['recombination_rate'] = recombination_rate
-                    row['mutation_rate'] = self.mutation_rate
-                    row['length'] = length
-                    row['Ne'] = self.Ne
-                    row['seed'] = replicate_seed
-                    row[ERROR_COLNAME] = error_rate
-                    row['edges'] = ts.num_edges
-                    row['sites'] = ts.num_sites
-                    row['tsinfer_srb'] = tsinfer_srb
-                    row['tsinfer_sl'] = tsinfer_sl
-                    row['ts_filesize'] = os.path.getsize(fn + ".hdf5")
-                    self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
+        for error_rate in self.error_rates:
+            row = return_value[row_id] = {}
+            row_id += 1
+            row['sample_size'] = sample_size
+            row['recombination_rate'] = recombination_rate
+            row['mutation_rate'] = self.mutation_rate
+            row['length'] = length
+            row['Ne'] = self.Ne
+            row['seed'] = replicate_seed
+            row[ERROR_COLNAME] = error_rate
+            row['edges'] = ts.num_edges
+            row['sites'] = ts.num_sites
+            row['ts_filesize'] = os.path.getsize(fn + ".hdf5")
+            row['vcf_filesize'] = vcf_filesize
+            row['vcfgz_filesize'] = os.path.getsize(vcfgz_filename)
+            self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
         return return_value
 
 class TsinferTracebackDebug(Dataset):
@@ -1740,7 +1738,7 @@ class ARGweaverParamChanges(Dataset):
                         ts, fn = self.single_simulation(
                             sample_size, Ne, length, recombination_rate, mutation_rate,
                             replicate_seed, replicate_seed)
-                        #Only accept this instance if we got at least one mutation that 
+                        #Only accept this instance if we got at least one mutation that
                         # is not a singleton and is not fixed
                         for v in ts.variants():
                             if 1 < np.sum(v.genotypes) < ts.num_samples:
@@ -2225,58 +2223,49 @@ class PerformanceFigure(Figure):
         # Set statistics to the ratio of observed over expected
         source_colour = "red"
         inferred_colour = "blue"
-        inferred_linestyles = {False:{False:':',True:'-.'},True:{False:'-',True:'--'}}
+        # inferred_linestyles = {False:{False:':',True:'-.'},True:{False:'-',True:'--'}}
         #inferred_markers =    {False:{False:':',True:'-.'},True:{False:'--',True:'-'}}
         fig, (ax1, ax2) = pyplot.subplots(1, 2, figsize=(12, 6), sharey=True)
         ax1.set_title("Fixed number of chromosomes ({})".format(self.datasetClass.fixed_sample_size))
         ax1.set_xlabel("Sequence length (MB)")
         ax1.set_ylabel(self.y_axis_label)
-        for shared_breakpoint in df.tsinfer_srb.unique():
-            for shared_length in df.tsinfer_sl.unique():
-                dfp = df[np.logical_and.reduce((
-                    df.sample_size == self.datasetClass.fixed_sample_size,
-                    df.tsinfer_srb == shared_breakpoint,
-                    df.tsinfer_sl == shared_length))]
-                group = dfp.groupby(["length"])
-                    #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
-                mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-                if getattr(self, 'error_bars', None):
-                    yerr=[m['sem'] for m in mean_sem]
-                else:
-                    yerr = None
-                ax1.errorbar(
-                    [m['mu'] for m in mean_sem],
-                    [m['mean'][self.plotted_column] for m in mean_sem],
-                    yerr=yerr,
-                    linestyle=inferred_linestyles[shared_breakpoint][shared_length],
-                    color=inferred_colour,
-                    #marker=self.tools_format[tool]["mark"],
-                    elinewidth=1)
+
+        dfp = df[df.sample_size == self.datasetClass.fixed_sample_size]
+        group = dfp.groupby(["length"])
+            #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
+        mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
+        if getattr(self, 'error_bars', None):
+            yerr=[m['sem'] for m in mean_sem]
+        else:
+            yerr = None
+        ax1.errorbar(
+            [m['mu'] for m in mean_sem],
+            [m['mean'][self.plotted_column] for m in mean_sem],
+            yerr=yerr,
+            # linestyle=inferred_linestyles[shared_breakpoint][shared_length],
+            color=inferred_colour,
+            #marker=self.tools_format[tool]["mark"],
+            elinewidth=1)
 
         ax2.set_title("Fixed sequence length ({:.2f} Mb)".format(self.datasetClass.fixed_length / 10**6))
         ax2.set_xlabel("Sample size")
         ax2.set_ylabel(self.y_axis_label)
-        for shared_breakpoint in df.tsinfer_srb.unique():
-            for shared_length in df.tsinfer_sl.unique():
-                dfp = df[np.logical_and.reduce((
-                    df.length == self.datasetClass.fixed_length / 10**6,
-                    df.tsinfer_srb == shared_breakpoint,
-                    df.tsinfer_sl == shared_length))]
-                group = dfp.groupby(["sample_size"])
-                    #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
-                mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-                if getattr(self, 'error_bars', None):
-                    yerr=[m['sem'] for m in mean_sem]
-                else:
-                    yerr = None
-                ax2.errorbar(
-                    [m['mu'] for m in mean_sem],
-                    [m['mean'][self.plotted_column] for m in mean_sem],
-                    yerr=yerr,
-                    linestyle=inferred_linestyles[shared_breakpoint][shared_length],
-                    color=inferred_colour,
-                    #marker=self.tools_format[tool]["mark"],
-                    elinewidth=1)
+        dfp = df[df.length == self.datasetClass.fixed_length / 10**6]
+        group = dfp.groupby(["sample_size"])
+        #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
+        mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
+        if getattr(self, 'error_bars', None):
+            yerr=[m['sem'] for m in mean_sem]
+        else:
+            yerr = None
+        ax2.errorbar(
+            [m['mu'] for m in mean_sem],
+            [m['mean'][self.plotted_column] for m in mean_sem],
+            yerr=yerr,
+            # linestyle=inferred_linestyles[shared_breakpoint][shared_length],
+            color=inferred_colour,
+            #marker=self.tools_format[tool]["mark"],
+            elinewidth=1)
 
         # ax1.plot(group_mean[self.plotted_column],
         #         color=source_colour, linestyle="-", label="Source")
@@ -2290,23 +2279,25 @@ class PerformanceFigure(Figure):
         # ax1.set_ylim(-5, 250)
         # ax2.set_xlim(-5, 105)
 
-        if len(df.tsinfer_srb.unique())>1 or len(df.tsinfer_sl.unique())>1:
-            params = [
-                pyplot.Line2D(
-                    (0,0),(0,0), color= inferred_colour,
-                    linestyle=inferred_linestyles[shared_breakpoint][shared_length], linewidth=2)
-                for shared_breakpoint, linestyles2 in inferred_linestyles.items()
-                for shared_length, linestyle in linestyles2.items()]
-            ax1.legend(
-                params, ["breakpoints={}, lengths={}".format(srb, sl)
-                    for srb, linestyles2 in inferred_linestyles.items()
-                    for sl, linestyle in  linestyles2.items()],
-                loc="lower right", fontsize=10, title="Polytomy resolution")
+        # if len(df.tsinfer_srb.unique())>1 or len(df.tsinfer_sl.unique())>1:
+        #     params = [
+        #         pyplot.Line2D(
+        #             (0,0),(0,0), color= inferred_colour,
+        #             linestyle=inferred_linestyles[shared_breakpoint][shared_length], linewidth=2)
+        #         for shared_breakpoint, linestyles2 in inferred_linestyles.items()
+        #         for shared_length, linestyle in linestyles2.items()]
+        #     ax1.legend(
+        #         params, ["breakpoints={}, lengths={}".format(srb, sl)
+        #             for srb, linestyles2 in inferred_linestyles.items()
+        #             for sl, linestyle in  linestyles2.items()],
+        #         loc="lower right", fontsize=10, title="Polytomy resolution")
 
         # fig.text(0.19, 0.97, "Sample size = 1000")
         # fig.text(0.60, 0.97, "Sequence length = 50Mb")
         # pyplot.savefig("plots/simulators.pdf")
-        pyplot.suptitle('Tsinfer large dataset performance for mu={}'.format(self.datasetClass.mutation_rate))
+        pyplot.suptitle(
+            'Tsinfer large dataset performance for mu={}'.format(
+                self.datasetClass.mutation_rate))
         self.savefig(fig)
 
 
@@ -2316,7 +2307,8 @@ class EdgesPerformanceFigure(PerformanceFigure):
     plotted_column = "metric"
     y_axis_label = "inferred_edges / real_edges"
     def plot(self):
-        self.dataset.data[self.plotted_column] = self.dataset.data["tsinfer_edges"] / self.dataset.data["edges"]
+        self.dataset.data[self.plotted_column] = (
+            self.dataset.data["tsinfer_edges"] / self.dataset.data["edges"])
         PerformanceFigure.plot(self)
 
 
@@ -2326,8 +2318,21 @@ class FileSizePerformanceFigure(PerformanceFigure):
     y_axis_label = "inferred_filesize / real_filesize"
     y_axis_label = "File size relative to original"
     def plot(self):
-        self.dataset.data[self.plotted_column] = self.dataset.data["tsinfer_ts_filesize"] / self.dataset.data["ts_filesize"]
+        self.dataset.data[self.plotted_column] = (
+            self.dataset.data["tsinfer_ts_filesize"] / self.dataset.data["ts_filesize"])
         PerformanceFigure.plot(self)
+
+
+class CompressionPerformanceFigure(PerformanceFigure):
+    name = "tsinfer_compression_by_length"
+    plotted_column = "metric"
+    y_axis_label = "inferred_filesize / real_filesize"
+    y_axis_label = "Compression factor relative to vcf.gz"
+    def plot(self):
+        self.dataset.data[self.plotted_column] = (
+             self.dataset.data["vcfgz_filesize"] / self.dataset.data["tsinfer_ts_filesize"])
+        PerformanceFigure.plot(self)
+
 
 class PerformanceFigure2(Figure):
     """
@@ -2560,6 +2565,7 @@ def main():
         RFRootedMetricByARGweaverParametersFigure,
         EdgesPerformanceFigure,
         FileSizePerformanceFigure,
+        CompressionPerformanceFigure,
         PerformanceFigure2,
         TracebackDebugEdgesFigure,
         ProgramComparisonTimeFigure,
