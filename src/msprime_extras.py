@@ -5,99 +5,7 @@ https://github.com/jeromekelleher/msprime/issues/354
 is addressed
 """
 import logging
-
 import numpy as np
-
-import msprime
-
-def sparse_tree_to_newick(st, precision, Ne):
-    """
-    Converts the specified sparse tree to an ms-compatible Newick tree.
-    Also increments the node numbers by 1, to account for nexus format
-    """
-    branch_lengths = {}
-    root = st.get_root()
-    stack = [root]
-    while len(stack) > 0:
-        node = stack.pop()
-        if st.is_internal(node):
-            for child in st.get_children(node):
-                stack.append(child)
-                length = (st.get_time(node) - st.get_time(child)) / (4 * Ne)
-                s = "{0:.{1}f}".format(length, precision)
-                branch_lengths[child] = s
-    return _build_newick(root, root, st, branch_lengths)
-
-
-def _build_newick(node, root, tree, branch_lengths):
-    if tree.is_leaf(node):
-        s = "{0}:{1}".format(node + 1, branch_lengths[node])
-    else:
-        subtrees = []
-        for c in tree.get_children(node):
-            s = _build_newick(c, root, tree, branch_lengths)
-            subtrees.append(s)
-        if node == root:
-            # The root node is treated differently
-            s = "({});".format(",".join(subtrees))
-        else:
-            s = "({}):{}".format(",".join(subtrees), branch_lengths[node])
-    return s
-
-
-def newick_trees(ts, precision=3, Ne=1):
-    """
-    Returns an iterator over the trees in the specified tree sequence.
-
-    This is the same as the equivalent function in the msprime library,
-    except it handles non binary trees and is much slower.
-    """
-    for t in ts.trees():
-        l, r = t.interval
-        yield r - l, sparse_tree_to_newick(t, precision, Ne)
-
-
-def discretise_mutations(ts):
-    """
-    Takes the specified tree sequence returns a new tree sequence which discretises
-    the mutations such that all positions are integers.
-
-    Raises a ValueError if this is not possible without violating the underlying
-    topology.
-    """
-    logging.warning("The current implementation of the discretise_mutations() function" +
-        " creates sequences which do not fit the standard evolutionary model well." +
-        " That causes inference problems for probabalistic inference programs" +
-        " such as ARGweaver.\n" + "It is not recommended to test ARGweaver inference" +
-        " on this dataset, especially for high mutation rates")
-    breakpoints = sorted(set([r.left for r in ts.records()] + [ts.sequence_length]))
-    old_mutations = list(ts.mutations())
-    positions = []
-    new_mutations = msprime.MutationTable()
-    k = 0
-    for j in range(len(breakpoints) - 1):
-        left, right = breakpoints[j], breakpoints[j + 1]
-        interval_mutations = []
-        while k < ts.num_mutations and old_mutations[k].position < right:
-            interval_mutations.append(old_mutations[k])
-            k += 1
-        if len(interval_mutations) > right - left:
-            raise ValueError(
-                "Cannot discretise {} mutations in interval ({}, {})".format(
-                    len(interval_mutations), left, right))
-        # Start the new mutations at the beginning of the interval and place them
-        # one by one at unit intervals. This will lead to very strange looking
-        # spatial patterns, but will do until we implement a proper finite sites
-        # mutation model in msprime.
-        x = left
-        for mut in interval_mutations:
-            new_mutations.add_row(position=x, nodes=mut.nodes)
-            x += 1
-    nodes = msprime.NodeTable()
-    edges = msprime.EdgeTable()
-    ts.dump_tables(nodes=nodes, edges=edges)
-    return msprime.load_tables(nodes=nodes, edges=edges, mutations=new_mutations)
-
 
 def write_nexus_trees(
         ts, treefile, tree_labels_between_variants=False):
@@ -136,19 +44,19 @@ def write_nexus_trees(
         variant_pos = np.array([m.position for m in ts.mutations()])
         pos_between_vars = np.concatenate([[0],np.diff(variant_pos)/2+variant_pos[:-1],
                                           [ts.get_sequence_length()]])
-        for t, (_, newick) in zip(ts.trees(), newick_trees(ts)):
+        for t in ts.trees():
             # index by the average position between the two nearest variants
             av_upper_pos = pos_between_vars[np.searchsorted(variant_pos,t.get_interval()[1])]
             assert av_upper_pos <= t.get_interval()[1]
-            print("TREE " + str(av_upper_pos) + " = [&R] " + newick[:-1] + ":0;", file=treefile)
+            assert t.num_roots == 1, \
+                "Couldn't write Nexus to {} as Newick at interval {} has more than one root".format(
+                treefile.name, t.get_interval())
+            print("TREE " + str(av_upper_pos) + " = [&R] " + t.newick(precision=14,time_scale=(1/4))[:-1] + ":0;", file=treefile)
     else:
-        for t, (_, newick) in zip(ts.trees(), newick_trees(ts)):
+        for t in ts.trees():
             # index by rightmost genome position
-            print("TREE " + str(t.get_interval()[1]) + " = [&R] " + newick[:-1] + ":0;", file=treefile)
+            assert t.num_roots == 1, \
+                "Couldn't write Nexus to {} as Newick at interval {} has more than one root".format(
+                treefile.name, t.get_interval())
+            print("TREE " + str(t.get_interval()[1]) + " = [&R] " + t.newick(precision=14,time_scale=(1/4))[:-1] + ":0;", file=treefile)
     print("END;", file=treefile)
-
-def calculate_polytomies(ts):
-    """
-    Given a treeseq, work out the distribution of polytomies, i.e. the number of edges from each node once edges without mutations have been collapsed.
-    """
-    pass
