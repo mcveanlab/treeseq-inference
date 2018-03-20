@@ -381,8 +381,8 @@ class InferenceRunner(object):
         #but not subsample size (as subsampling happens *after* inference, when comparing trees)
         self.base_fn = mk_sim_name_from_row(
             row, simulations_dir, subsample_col = None)
-        #source tree data must use the subsampled version, if present, but not error
-        self.source_trees_fn = mk_sim_name_from_row(
+        #original simulation files (e.g. the TS and nex files) must use the subsampled version, if present, but not error
+        self.orig_sim_fn = mk_sim_name_from_row(
             row, simulations_dir, error_col=None)
         # This should be set by the run_inference methods. Append ".nex" to
         # get the nexus files, or ".hdf5" to get the TS files
@@ -405,10 +405,10 @@ class InferenceRunner(object):
             #rather than an average over multiple inferred nexus files, and do the averaging in python
             if self.inferred_filenames is not None:
                 if (self.compute_tree_metrics & METRICS_AT_VARIANT_SITES):
-                    positions = np.load(self.source_trees_fn + ".pos.npy").tolist()
+                    positions = np.load(self.orig_sim_fn + ".pos.npy").tolist()
                 else:
                     positions = None
-                source_nexus_file = self.source_trees_fn + ".nex"
+                source_nexus_file = self.orig_sim_fn + ".nex"
                 inferred_nexus_files = [fn + ".nex" for fn in self.inferred_filenames]
                 if self.compute_tree_metrics & METRICS_RANDOMLY_BREAK_POLYTOMIES:
                     metrics = []
@@ -429,7 +429,7 @@ class InferenceRunner(object):
         return ret
 
     def __run_tsinfer(self, skip_infer=False):
-        #default to no srb & no length breaking if nothing specified in the file
+        #default to using srb & but not length breaking if nothing specified in the file
         shared_recombinations = bool(getattr(self.row,'tsinfer_srb', True))
         shared_lengths = bool(getattr(self.row,'tsinfer_sl', False))
         #default to no subsampling
@@ -449,7 +449,9 @@ class InferenceRunner(object):
         scaled_recombination_rate = 4 * self.row.recombination_rate * self.row.Ne
         inferred_ts, time, memory = self.run_tsinfer(
             samples_fn, positions_fn, self.row.length, scaled_recombination_rate,
-            self.row.error_rate, shared_recombinations, shared_lengths, self.num_threads)
+            self.row.error_rate, shared_recombinations, shared_lengths, self.num_threads,
+            #inject_real_ancestors_from_ts_fn = self.orig_sim_fn + ".hdf5", #uncomment to inject real ancestors
+            )
         if inferred_ts:
             if subsample_size is not None:
                 inferred_ts = inferred_ts.simplify(list(range(subsample_size)))
@@ -583,7 +585,7 @@ class InferenceRunner(object):
 
     @staticmethod
     def run_tsinfer(sample_fn, positions_fn, length, rho, error_probability,
-        shared_recombinations, shared_lengths, num_threads=1):
+        shared_recombinations, shared_lengths, num_threads=1, inject_real_ancestors_from_ts_fn=None):
         try:
             with tempfile.NamedTemporaryFile("w+") as ts_out:
                 cmd = [
@@ -591,6 +593,10 @@ class InferenceRunner(object):
                     "--length", str(int(length)), "--recombination-rate", str(rho),
                     "--error-probability", str(error_probability),
                     "--threads", str(num_threads), ts_out.name]
+                if inject_real_ancestors_from_ts_fn:
+                    logging.debug("Injecting real ancestors constructed from {}".format(
+                        inject_real_ancestors_from_ts_fn))
+                    cmd.extend(["--inject-real-ancestors-from-ts", inject_real_ancestors_from_ts_fn])
                 if shared_recombinations:
                     cmd.append("--shared-recombinations")
                 if shared_lengths:
@@ -965,7 +971,7 @@ class Dataset(object):
             "Neutral simulation done; {} sites, {} trees".format(ts.num_sites, ts.num_trees))
         if remove_singletons:
             ts = ts.remove_singletons()
-            logging.info("singletons removed: reduced to {} sites".format(ts.num_sites))
+            logging.info(" singletons removed: reduced to {} sites".format(ts.num_sites))
         sim_fn = mk_sim_name(n, Ne, l, rho, mu, seed, mut_seed, self.simulations_dir)
         logging.debug("writing {}.hdf5".format(sim_fn))
         ts.dump(sim_fn+".hdf5")
@@ -1087,13 +1093,13 @@ class MetricsByMutationRateDataset(Dataset):
         rng = random.Random(seed)
         # Variable parameters
         mutation_rates = np.logspace(-8, -5, num=8)[:-1] * 1.5
-        error_rates = [0, 0.01, 0.1]
-        sample_sizes = [10, 20]
+        error_rates = [0, 0.001, 0.01]
+        sample_sizes = [15]
 
         # Fixed parameters
         Ne = 5000
-        length = 10000
-        recombination_rate = 2.5e-8
+        length = 100000 #should be enough for ~ 50 trees
+        recombination_rate = 1e-8
         num_rows = replicates * len(mutation_rates) * len(error_rates) * len(sample_sizes)
         data = pd.DataFrame(index=np.arange(0, num_rows), columns=self.sim_cols)
         row_id = 0
@@ -1606,7 +1612,6 @@ class TsinferTracebackDebug(Dataset):
                     self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
         return return_value
 
-
 class ProgramComparison(Dataset):
     """
     The performance of the various programs in terms of running time and memory usage
@@ -1845,8 +1850,9 @@ class AllMetricsByMutationRateFigure(Figure):
                     group = df_s.groupby(["mutation_rate"])
                     group_mean = group.mean()
                     for tool, setting in self.tools_format.items():
-                        ax.semilogx(
-                            group_mean[tool + "_" + metric], linestyle, color=setting["col"])
+                        colname = tool + "_" + metric
+                        if colname in df.columns:
+                            ax.semilogx(group_mean[colname], linestyle, color=setting["col"])
         artists = [
             pyplot.Line2D((0,1),(0,0), color= setting["col"],
                 marker= setting["mark"], linestyle='')
@@ -1855,13 +1861,14 @@ class AllMetricsByMutationRateFigure(Figure):
             artists, self.tools_format.keys(), numpoints=3, loc="upper right")
             # bbox_to_anchor=(0.0, 0.1))
         # ax = pyplot.gca().add_artist(first_legend)
-        artists = [
-            pyplot.Line2D(
-                (0,0),(0,0), color="black", linestyle=linestyle, linewidth=2)
-            for linestyle in linestyles]
-        axes[0][-1].legend(
-            artists, ["Sample size = {}".format(n) for n in sample_sizes],
-            loc="upper right")
+        if len(sample_sizes)>1:
+            artists = [
+                pyplot.Line2D(
+                    (0,0),(0,0), color="black", linestyle=linestyle, linewidth=2)
+                for linestyle in linestyles]
+            axes[0][-1].legend(
+                artists, ["Sample size = {}".format(n) for n in sample_sizes],
+                loc="upper right")
         fig.suptitle("Tree comparisons for neutral simulation" +
             " over "  + ",".join(["{:.1f}kb".format(x/1e3) for x in df.length.unique()]) +
             " (Ne=" + ",".join(["{}".format(x) for x in df.Ne.unique()]) +
@@ -1922,13 +1929,14 @@ class MetricByMutationRateFigure(Figure):
             artists, self.tools_format.keys(), numpoints=3, loc="upper center")
             # bbox_to_anchor=(0.0, 0.1))
         # ax = pyplot.gca().add_artist(first_legend)
-        artists = [
-            pyplot.Line2D(
-                (0,0),(0,0), color="black", linestyle=linestyle, linewidth=2)
-            for linestyle in linestyles]
-        axes[-1].legend(
-            artists, ["Sample size = {}".format(n) for n in sample_sizes],
-            loc="upper center")
+        if len(sample_sizes)>1:
+            artists = [
+                pyplot.Line2D(
+                    (0,0),(0,0), color="black", linestyle=linestyle, linewidth=2)
+                for linestyle in linestyles]
+            axes[-1].legend(
+                artists, ["Sample size = {}".format(n) for n in sample_sizes],
+                loc="upper center")
         self.savefig(fig)
 
 
