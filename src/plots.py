@@ -987,7 +987,8 @@ class Dataset(object):
         if ts.get_num_mutations() == 0:
             raise ValueError("No mutations present")
         if ts_has_non_singleton_variants(ts) == False:
-            raise ValueError("No non-singleton variants present")
+            raise ValueError("No non-singleton variants present ({} singletons)".format(
+                sum([np.sum(v)==1 for v in ts.variants()])))
         
         return ts, sim_fn
 
@@ -1131,14 +1132,16 @@ class Dataset(object):
             assert fn.endswith(expected_suffix)
             ts = msprime.load(fn)
             logging.info(
-                "Selective simulation from '{}'; {} sites, {} trees".format(
-                    fn, ts.num_sites, ts.num_trees))
+                "Selective simulation from '{}'; {} sites ({} mutations), {} trees".format(
+                    fn, ts.num_sites,ts.get_num_mutations(), ts.num_trees))
             # Make sure that there is *some* information in this simulation that can be used
             # to infer a ts, otherwise it's pointless
+            
             if ts.get_num_mutations() == 0:
                 raise ValueError("No mutations present")
             if ts_has_non_singleton_variants(ts) == False:
-                raise ValueError("No non-singleton variants present")
+                raise ValueError("No non-singleton variants present ({} singletons) for output at {}".format(
+                    sum([np.sum(v)==1 for v in ts.variants()]), outfreq))
             yield ts, fn[:-len(expected_suffix)], outfreq
 
 
@@ -1201,7 +1204,7 @@ class MetricsByMutationRateDataset(Dataset):
             seed = self.default_seed
         rng = random.Random(seed)
         # Variable parameters
-        mutation_rates = np.logspace(-9, -5, num=8)[:-1] * 1.5
+        mutation_rates = np.logspace(-8.5, -5, num=8)[:-1] * 1.5
         error_rates = [0, 0.001, 0.01]
         sample_sizes = [15]
 
@@ -1561,7 +1564,7 @@ class MetricsByMutationRateWithDemographyDataset(Dataset):
         rng = random.Random(seed if seed else self.default_seed)
         ## Variable parameters
         # parameters unique to each simulation
-        self.mutation_rates = (np.logspace(-9, -5, num=6)[:-1] * 1.5)
+        self.mutation_rates = (np.logspace(-8.5, -5, num=6)[:-1] * 1.5)
         self.sample_sizes = [15] #will be split across the 3 human sub pops
         # parameters across a single simulation
         self.error_rates = [0, 0.001, 0.01]
@@ -1660,7 +1663,7 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
         rng = random.Random(seed if seed else self.default_seed)
         ## Variable parameters
         # parameters unique to each simulation
-        self.mutation_rates = (np.logspace(-9, -5, num=6)[:-1] * 1.5)
+        self.mutation_rates = (np.logspace(-8.5, -5, num=6)[:-1] * 1.5)
         self.sample_sizes = [15]
         # parameters across a single simulation
         self.error_rates = [0, 0.001, 0.01]
@@ -1717,7 +1720,7 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
         while True:
             replicate_seed = rng.randint(1, 2**31)
             logging.info("Running simulation {} of {} in process {} using " \
-                "n={}, Ne={}, L={}, rho={}, mu={}, s={}, h={}" \
+                "n={}, Ne={}, L={}, rho={}, mu={}, s={}, h={} " \
                 "stopping at frequencies {}, and with seed {}".format(
                 i, self.num_sims, os.getpid(), sample_size, self.Ne, self.length,
                 self.recombination_rate, mutation_rate, self.selection_coefficient,
