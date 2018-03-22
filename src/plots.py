@@ -526,6 +526,10 @@ class InferenceRunner(object):
         default_ARGweaver_burnin=1000
         default_ARGweaver_ntimes=20
 
+        #this is a hack when we specify a complex model which does not have an explicit Ne
+        #just set the Ne to something likely (HACK!!)
+        ARGweaver_Ne = 10000 if isinstance(self.row.Ne, str) else str(self.row.Ne)
+        
         inference_seed = self.row.seed  # TODO do we need to specify this separately?
         burnin = getattr(self.row,'ARGweaver_burnin', default_ARGweaver_burnin)
         n_timesteps = getattr(self.row,'ARGweaver_ntimes', default_ARGweaver_ntimes)
@@ -544,7 +548,7 @@ class InferenceRunner(object):
             stats_file = None
             logging.debug("reading: {} for ARGweaver inference".format(infile))
             iteration_ids, stats_file, time, memory = self.run_argweaver(
-                infile, self.row.Ne, self.row.recombination_rate, self.row.mutation_rate,
+                infile, ARGweaver_Ne, self.row.recombination_rate, self.row.mutation_rate,
                 out_fn, inference_seed, n_out_samples, sample_step, burnin, n_timesteps,
                 verbose = logging.getLogger().isEnabledFor(logging.DEBUG))
         for it in iteration_ids:
