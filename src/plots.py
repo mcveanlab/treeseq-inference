@@ -1587,7 +1587,7 @@ class MetricsByMutationRateWithDemographyDataset(Dataset):
             replicate_seed = rng.randint(1, 2**31)
             try:
                 # Run the simulation until we get an acceptable one
-                base_ts, unused_fn = self.single_simulation_with_human_demography(max(sample_sizes), Ne, length,
+                base_ts, unused_fn = self.single_simulation_with_human_demography(sample_size, Ne, length,
                     recombination_rate, mutation_rate, replicate_seed)
                 break
             except ValueError as e: #No non-singleton variants
