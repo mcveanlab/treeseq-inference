@@ -1141,7 +1141,7 @@ class Dataset(object):
                 raise ValueError("No mutations present")
             if ts_has_non_singleton_variants(ts) == False:
                 raise ValueError("No non-singleton variants present ({} singletons) for output at {}".format(
-                    sum([np.sum(v)==1 for v in ts.variants()]), outfreq))
+                    sum([np.sum(v.genotypes)==1 for v in ts.variants()]), outfreq))
             yield ts, fn[:-len(expected_suffix)], outfreq
 
 
