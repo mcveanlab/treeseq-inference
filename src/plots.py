@@ -443,9 +443,8 @@ class InferenceRunner(object):
         time = memory = fs = counts = None
         logging.debug("reading: variant matrix {} & positions {} for msprime inference".format(
             samples_fn, positions_fn))
-        scaled_recombination_rate = 4 * self.row.recombination_rate * self.row.Ne
         inferred_ts, time, memory = self.run_tsinfer(
-            samples_fn, positions_fn, self.row.length, scaled_recombination_rate,
+            samples_fn, positions_fn, self.row.length, self.row.recombination_rate,
             self.row.error_rate, shared_recombinations, shared_lengths, self.num_threads,
             #inject_real_ancestors_from_ts_fn = self.orig_sim_fn + ".hdf5", #uncomment to inject real ancestors
             )
