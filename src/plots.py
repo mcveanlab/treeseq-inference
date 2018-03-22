@@ -165,7 +165,7 @@ def mk_sim_name(n, Ne, l, rho, mu, genealogy_seed, mut_seed=None, directory=None
     # trailing zeroes. 12 dp should be ample for these rates
     rho = "{:.12f}".format(float(rho)).rstrip('0')
     mu = "{:.12f}".format(float(mu)).rstrip('0')
-    file = "{}-n{}_Ne{}_l{}_rho{}_mu{}-gs{}".format(tool, int(n), float(Ne), int(l),\
+    file = "{}-n{}_Ne{}_l{}_rho{}_mu{}-gs{}".format(tool, int(n), Ne, int(l),\
         rho, mu, int(genealogy_seed))
     if mut_seed is not None:
         file += "_ms{}".format(int(mut_seed))
@@ -932,6 +932,10 @@ class Dataset(object):
         mutation_rates). If None, then different vaues of mu will create different
         simulations.
 
+        If Ne is a string, it is an identified used for the population model
+        which will be saved into the filename & results file, while the simulation
+        will be called with Ne=1, and the 
+
         Returns a tuple of treesequence, filename (without file type extension)
         """
         logging.info(
@@ -943,14 +947,20 @@ class Dataset(object):
         recombination_map = msprime.RecombinationMap.uniform_map(l, rho, l)
         rng1 = random.Random(seed)
         sim_seed = rng1.randint(1, 2**31)
+        if "population_configurations" in kwargs:
+            Ne_used = 1
+            n_used = None
+        else:
+            Ne_used = Ne
+            n_used = n
         if mut_seed is None:
             ts = msprime.simulate(
-                n, Ne, recombination_map=recombination_map, mutation_rate=mu,
+                n_used, Ne_used, recombination_map=recombination_map, mutation_rate=mu,
                 random_seed=sim_seed, **kwargs)
         else:
             #run with no mutations (should give same result regardless of mutation rate)
             ts = msprime.simulate(
-                n, Ne, recombination_map=recombination_map, mutation_rate=0,
+                n_used, Ne_used, recombination_map=recombination_map, mutation_rate=0,
                 random_seed=sim_seed, **kwargs)
             #now add the mutations
             rng2 = msprime.RandomGenerator(mut_seed)
@@ -979,17 +989,21 @@ class Dataset(object):
         
         return ts, sim_fn
 
-    def single_simulation_with_human_demography(self, n, Ne, l, rho, mu, seed, mut_seed=None, **kwargs):
+    def single_simulation_with_human_demography(self, n, l, rho, mu, seed, mut_seed=None, **kwargs):
         """
         Run an msprime simulation with a rough approximation of recent human demography
         using the  Gutenkunst et al., (2009) model used by a number of other simulators 
         (e.g. msms), which is an elaboration of https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1310645/
         
         (see http://msprime.readthedocs.io/en/stable/tutorial.html#demography)
+        
+        the sample_size, n, is divided into 3 roughly equal-sized groups from africa, europe, & china
+        (YRI, CEU, and CHB)
         """
-        def out_of_africa():
+        def out_of_africa(nYRI, nCEU, nCHB):
             """
-            Straight from the msprime docs, but return the 
+            Straight from the msprime docs, but return the setup params for passing to the
+            simulate() function
             """
             # First we set out the maximum likelihood values of the various parameters
             # given in Table 1.
@@ -1019,11 +1033,11 @@ class Dataset(object):
             # initially.
             population_configurations = [
                 msprime.PopulationConfiguration(
-                    sample_size=0, initial_size=N_AF),
+                    sample_size= nYRI, initial_size=N_AF),
                 msprime.PopulationConfiguration(
-                    sample_size=1, initial_size=N_EU, growth_rate=r_EU),
+                    sample_size= nCEU, initial_size=N_EU, growth_rate=r_EU),
                 msprime.PopulationConfiguration(
-                    sample_size=1, initial_size=N_AS, growth_rate=r_AS)
+                    sample_size= nCHB, initial_size=N_AS, growth_rate=r_AS)
             ]
             migration_matrix = [
                 [      0, m_AF_EU, m_AF_AS],
@@ -1054,9 +1068,15 @@ class Dataset(object):
                 migration_matrix=migration_matrix,
                 demographic_events=demographic_events
                 )
-                
-        kwargs.update(out_of_africa())
-        self.single_simulation(n, Ne, l, rho, mu, seed, mut_seed, **kwargs)        
+        
+        asian_samples = n//3
+        afro_european_samples = n - asian_samples
+        european_samples = afro_european_samples//2
+        african_samples = afro_european_samples - european_samples
+        assert african_samples + european_samples + asian_samples
+        
+        kwargs.update(out_of_africa(african_samples, european_samples, asian_samples))
+        return self.single_simulation(n, "Gutenkunst.out.of.africa", l, rho, mu, seed, mut_seed, **kwargs)        
 
     def single_simulation_with_selective_sweep(self, n, Ne, l, rho, mu, s, h, stop_freqs,
         seed, mut_seed=None):
@@ -1536,12 +1556,11 @@ class MetricsByMutationRateWithDemographyDataset(Dataset):
         ## Variable parameters
         # parameters unique to each simulation
         self.mutation_rates = (np.logspace(-8, -5, num=6)[:-1] * 1.5)
-        self.sample_sizes = [15]
+        self.sample_sizes = [15] #will be split across the 3 human sub pops
         # parameters across a single simulation
         self.error_rates = [0, 0.001, 0.01]
 
         ## Fixed parameters
-        self.Ne = 5000
         self.length = 100000
         self.recombination_rate = 1e-8
 
@@ -1587,7 +1606,7 @@ class MetricsByMutationRateWithDemographyDataset(Dataset):
             replicate_seed = rng.randint(1, 2**31)
             try:
                 # Run the simulation until we get an acceptable one
-                base_ts, unused_fn = self.single_simulation_with_human_demography(sample_size, self.Ne, self.length,
+                base_ts, fn = self.single_simulation_with_human_demography(sample_size, self.length,
                     self.recombination_rate, mutation_rate, replicate_seed)
                 break
             except ValueError as e: #No non-singleton variants
