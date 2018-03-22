@@ -989,7 +989,7 @@ class Dataset(object):
         
         return ts, sim_fn
 
-    def single_simulation_with_human_demography(self, n, l, rho, mu, seed, mut_seed=None, **kwargs):
+    def single_simulation_with_human_demography(self, n, sim_name, l, rho, mu, seed, mut_seed=None, **kwargs):
         """
         Run an msprime simulation with a rough approximation of recent human demography
         using the  Gutenkunst et al., (2009) model used by a number of other simulators 
@@ -1076,7 +1076,7 @@ class Dataset(object):
         assert african_samples + european_samples + asian_samples
         
         kwargs.update(out_of_africa(african_samples, european_samples, asian_samples))
-        return self.single_simulation(n, "Gutenkunst.out.of.africa", l, rho, mu, seed, mut_seed, **kwargs)        
+        return self.single_simulation(n, sim_name, l, rho, mu, seed, mut_seed, **kwargs)        
 
     def single_simulation_with_selective_sweep(self, n, Ne, l, rho, mu, s, h, stop_freqs,
         seed, mut_seed=None):
@@ -1570,7 +1570,6 @@ class MetricsByMutationRateWithDemographyDataset(Dataset):
         data = pd.DataFrame(index=np.arange(0, self.num_rows), columns=self.sim_cols)
         progress = tqdm.tqdm(total=self.num_rows) if show_progress else None
 
-
         def save_result(data, values_by_row, progress):
             for i,d in values_by_row.items():
                 for colname, val in d.items():
@@ -1596,6 +1595,7 @@ class MetricsByMutationRateWithDemographyDataset(Dataset):
         return data
 
     def single_sim(self, runtime_information):
+        sim_name = "Gutenkunst.out.of.africa"
         i, (params) = runtime_information
         assert None not in params #one will be none if the lengths of the iterators are different
         rng_seed, (replicate, mutation_rate, sample_size) = params
@@ -1606,25 +1606,26 @@ class MetricsByMutationRateWithDemographyDataset(Dataset):
             replicate_seed = rng.randint(1, 2**31)
             try:
                 # Run the simulation until we get an acceptable one
-                base_ts, fn = self.single_simulation_with_human_demography(sample_size, self.length,
+                ts, fn = self.single_simulation_with_human_demography(
+                    sample_size, sim_name, self.length,
                     self.recombination_rate, mutation_rate, replicate_seed)
                 break
             except ValueError as e: #No non-singleton variants
                 logging.warning(e)
-            with open(fn +".nex", "w+") as out:
-                ts.write_nexus_trees(out)
-            for error_rate in self.error_rates:
-                row = return_value[row_id] = {}
-                row_id += 1
-                row['sample_size'] = sample_size
-                row['recombination_rate'] = self.recombination_rate
-                row['mutation_rate'] = mutation_rate
-                row['length'] = self.length
-                row['Ne'] = self.Ne
-                row['seed'] = replicate_seed
-                row[ERROR_COLNAME] = error_rate
-                row['edges'] = ts.num_edges
-                self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
+        with open(fn +".nex", "w+") as out:
+            ts.write_nexus_trees(out)
+        for error_rate in self.error_rates:
+            row = return_value[row_id] = {}
+            row_id += 1
+            row['sample_size'] = sample_size
+            row['recombination_rate'] = self.recombination_rate
+            row['mutation_rate'] = mutation_rate
+            row['length'] = self.length
+            row['Ne'] = sim_name
+            row['seed'] = replicate_seed
+            row[ERROR_COLNAME] = error_rate
+            row['edges'] = ts.num_edges
+            self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
         return return_value
 
 class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
