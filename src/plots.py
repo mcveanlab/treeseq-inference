@@ -164,8 +164,8 @@ def mk_sim_name(n, Ne, l, rho, mu, genealogy_seed, mut_seed=None, directory=None
     # trailing zeroes. 12 dp should be ample for these rates
     rho = "{:.12f}".format(float(rho)).rstrip('0')
     mu = "{:.12f}".format(float(mu)).rstrip('0')
-    file = "{}-n{}_Ne{}_l{}_rho{}_mu{}-gs{}".format(tool, int(n), Ne, int(l),\
-        rho, mu, int(genealogy_seed))
+    file = "{}-n{}_Ne{}_l{}_rho{}_mu{}-gs{}".format(tool, int(n), \
+        Ne if isinstance(Ne, str) else float(Ne), int(l), rho, mu, int(genealogy_seed))
     if mut_seed is not None:
         file += "_ms{}".format(int(mut_seed))
     if s is not None:
