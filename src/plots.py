@@ -1056,7 +1056,7 @@ class Dataset(object):
                 )
                 
         kwargs.update(out_of_africa())
-        single_simulation(self, n, Ne, l, rho, mu, seed, mut_seed, **kwargs)        
+        self.single_simulation(self, n, Ne, l, rho, mu, seed, mut_seed, **kwargs)        
 
     def single_simulation_with_selective_sweep(self, n, Ne, l, rho, mu, s, h, stop_freqs,
         seed, mut_seed=None):
