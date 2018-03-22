@@ -110,8 +110,7 @@ def ts_has_non_singleton_variants(ts):
     (required for meaningful inference)
     """
     for v in ts.variants():
-        prevalence = np.sum(v.genotypes)
-        if prevalence > 1 and prevalence < len(v.genotypes):
+        if 1 < np.sum(v.genotypes) < ts.num_samples:
             return True
     return False
 
@@ -858,7 +857,7 @@ class Dataset(object):
                 # of if --force is specified.
                 if metrics_only and not row[tool + "_completed"]:
                     logging.info(
-                        "Data row {} has not completed {} inference: skipping".format(
+                        "Data row {} has not completed {} inference: skipping metric calculations".format(
                             row_id, tool))
                 elif not metrics_only and not force and row[tool + "_completed"]:
                     logging.info(
