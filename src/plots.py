@@ -28,6 +28,7 @@ import statistics
 import subprocess
 import tempfile
 import time
+import math
 import gzip
 
 
@@ -338,25 +339,6 @@ def ARGmetric_params_from_row(row):
     hence needs to be 'pickle'able :(
     """
     return {'make_bin_seed':row.seed, 'reps':row.tsinfer_biforce_reps}
-
-
-def ts_remove_singletons(ts):
-    sites = msprime.SiteTable()
-    mutations = msprime.MutationTable()
-    for variant in ts.variants():
-        if np.sum(variant.genotypes) > 1:
-            site_id = sites.add_row(
-                position=variant.site.position,
-                ancestral_state=variant.site.ancestral_state)
-            for mutation in variant.site.mutations:
-                assert mutation.parent == -1  # No back mutations
-                mutations.add_row(
-                    site=site_id, node=mutation.node, derived_state=mutation.derived_state)
-
-    tables = ts.dump_tables()
-    return msprime.load_tables(
-        nodes=tables.nodes, edges=tables.edges, sites=sites, mutations=mutations)
-msprime.TreeSequence.remove_singletons = ts_remove_singletons
 
 
 class InferenceRunner(object):
@@ -922,7 +904,7 @@ class Dataset(object):
     #
     # Utilities for running simulations and saving files.
     #
-    def single_simulation(self, n, Ne, l, rho, mu, seed, mut_seed=None, remove_singletons=True, **kwargs):
+    def single_simulation(self, n, Ne, l, rho, mu, seed, mut_seed=None, **kwargs):
         """
         The standard way to run one msprime simulation for a set of parameter
         values. Saves the output to an .hdf5 file, and also saves variant files
@@ -971,13 +953,89 @@ class Dataset(object):
 
         logging.info(
             "Neutral simulation done; {} sites, {} trees".format(ts.num_sites, ts.num_trees))
-        if remove_singletons:
-            ts = ts.remove_singletons()
-            logging.info(" singletons removed: reduced to {} sites".format(ts.num_sites))
         sim_fn = mk_sim_name(n, Ne, l, rho, mu, seed, mut_seed, self.simulations_dir)
         logging.debug("writing {}.hdf5".format(sim_fn))
         ts.dump(sim_fn+".hdf5")
         return ts, sim_fn
+
+    def single_simulation_with_human_demography(self, n, Ne, l, rho, mu, seed, mut_seed=None, **kwargs):
+        """
+        Run an msprime simulation with a rough approximation of recent human demography
+        using the  Gutenkunst et al., (2009) model used by a number of other simulators 
+        (e.g. msms), which is an elaboration of https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1310645/
+        
+        (see http://msprime.readthedocs.io/en/stable/tutorial.html#demography)
+        """
+        def out_of_africa():
+            """
+            Straight from the msprime docs, but return the 
+            """
+            # First we set out the maximum likelihood values of the various parameters
+            # given in Table 1.
+            N_A = 7300
+            N_B = 2100
+            N_AF = 12300
+            N_EU0 = 1000
+            N_AS0 = 510
+            # Times are provided in years, so we convert into generations.
+            generation_time = 25
+            T_AF = 220e3 / generation_time
+            T_B = 140e3 / generation_time
+            T_EU_AS = 21.2e3 / generation_time
+            # We need to work out the starting (diploid) population sizes based on
+            # the growth rates provided for these two populations
+            r_EU = 0.004
+            r_AS = 0.0055
+            N_EU = N_EU0 / math.exp(-r_EU * T_EU_AS)
+            N_AS = N_AS0 / math.exp(-r_AS * T_EU_AS)
+            # Migration rates during the various epochs.
+            m_AF_B = 25e-5
+            m_AF_EU = 3e-5
+            m_AF_AS = 1.9e-5
+            m_EU_AS = 9.6e-5
+            # Population IDs correspond to their indexes in the population
+            # configuration array. Therefore, we have 0=YRI, 1=CEU and 2=CHB
+            # initially.
+            population_configurations = [
+                msprime.PopulationConfiguration(
+                    sample_size=0, initial_size=N_AF),
+                msprime.PopulationConfiguration(
+                    sample_size=1, initial_size=N_EU, growth_rate=r_EU),
+                msprime.PopulationConfiguration(
+                    sample_size=1, initial_size=N_AS, growth_rate=r_AS)
+            ]
+            migration_matrix = [
+                [      0, m_AF_EU, m_AF_AS],
+                [m_AF_EU,       0, m_EU_AS],
+                [m_AF_AS, m_EU_AS,       0],
+            ]
+            demographic_events = [
+                # CEU and CHB merge into B with rate changes at T_EU_AS
+                msprime.MassMigration(
+                    time=T_EU_AS, source=2, destination=1, proportion=1.0),
+                msprime.MigrationRateChange(time=T_EU_AS, rate=0),
+                msprime.MigrationRateChange(
+                    time=T_EU_AS, rate=m_AF_B, matrix_index=(0, 1)),
+                msprime.MigrationRateChange(
+                    time=T_EU_AS, rate=m_AF_B, matrix_index=(1, 0)),
+                msprime.PopulationParametersChange(
+                    time=T_EU_AS, initial_size=N_B, growth_rate=0, population_id=1),
+                # Population B merges into YRI at T_B
+                msprime.MassMigration(
+                    time=T_B, source=1, destination=0, proportion=1.0),
+                # Size changes to N_A at T_AF
+                msprime.PopulationParametersChange(
+                    time=T_AF, initial_size=N_A, population_id=0)
+            ]        
+        
+            return dict(
+                population_configurations=population_configurations,
+                migration_matrix=migration_matrix,
+                demographic_events=demographic_events
+                )
+                
+        kwargs.update(out_of_africa())
+        single_simulation(self, n, Ne, l, rho, mu, seed, mut_seed, **kwargs)        
 
     def single_simulation_with_selective_sweep(self, n, Ne, l, rho, mu, s, h, stop_freqs,
         seed, mut_seed=None):
@@ -1145,6 +1203,194 @@ class MetricsByMutationRateDataset(Dataset):
                             progress.update()
         return data
 
+
+class TsinferPerformance(Dataset):
+    """
+    The performance of tsinfer in terms of CPU time, memory usage and
+    compression rates for large scale datasets. Contains data for
+    the two main dimensions of sample size and sequence length.
+    """
+    name = "tsinfer_performance"
+    compute_tree_metrics = METRICS_OFF
+    default_replicates = 20
+    default_seed = 123
+    tools = [TSINFER]
+    fixed_length = 20 * 10**6
+    fixed_sample_size = 5000
+    mutation_rate = 5e-9
+
+    def run_simulations(self, user_specified_replicates, seed, show_progress, num_processes=1):
+        # TODO abstract some of this functionality up into the superclass.
+        # There is quite a lot shared with the other dataset.
+        replicates = user_specified_replicates or self.default_replicates
+        rng = random.Random(seed if seed else self.default_seed)
+        # Fixed parameters
+        self.Ne = 5000
+        # TODO we'll want to do this for multiple error rates eventually. For now
+        # just look at perfect data.
+        # Variable parameters
+        num_points = 20
+        sample_sizes = np.linspace(10, 2 * self.fixed_sample_size, num_points).astype(int)
+        # Ensure sample sizes are even so we can output diploid VCF.
+        sample_sizes[sample_sizes % 2 != 0] += 1
+        lengths = np.linspace(self.fixed_length / 10, 2 * self.fixed_length, num_points).astype(int)
+        recombination_rates = np.array([1]) * self.mutation_rate
+        #parameters that are iterated over within a single simulation
+        self.error_rates = [0]
+
+        self.num_sims = (len(sample_sizes) + len(lengths)) * len(recombination_rates) * replicates
+        self.num_rows = self.num_sims * len(self.error_rates)
+        cols = self.sim_cols + ["sites", "ts_filesize", "vcf_filesize", "vcfgz_filesize"]
+        data = pd.DataFrame(index=np.arange(0, self.num_rows), columns=cols)
+        progress = tqdm.tqdm(total=self.num_rows) if show_progress else None
+
+        def save_result(data, values_by_row, progress):
+            for i,d in values_by_row.items():
+                for colname, val in d.items():
+                    data.iloc[i][colname]=val
+                if progress is not None:
+                    progress.update()
+
+        logging.info("Setting up using {} processes".format(num_processes))
+        nl = [(self.fixed_sample_size, l) for l in lengths] + [
+            (n, self.fixed_length) for n in sample_sizes]
+        variable_iterator = itertools.product(nl, recombination_rates, range(replicates))
+        seeds = [rng.randint(1, 2**31) for i in range(self.num_sims)]
+        combined_iterator = enumerate(itertools.zip_longest(seeds, variable_iterator))
+
+        if num_processes > 1:
+            with multiprocessing.Pool(processes=num_processes, maxtasksperchild=2) as pool:
+                for result in pool.imap_unordered(self.single_sim, combined_iterator):
+                    save_result(data, result, progress)
+        else:
+            # When we have only one process it's easier to keep everything in the same
+            # process for debugging.
+            for result in map(self.single_sim, combined_iterator):
+                save_result(data, result, progress)
+        return data
+
+
+    def single_sim(self, runtime_information):
+        i, (params) = runtime_information
+        assert None not in params #one will be none if the lengths of the iterators are different
+        replicate_seed, ((sample_size, length), recombination_rate, _) = params
+        base_row_id = i * self.num_rows//self.num_sims
+        return_value = {}
+        ts, fn = self.single_simulation(
+            sample_size, self.Ne, length, recombination_rate, self.mutation_rate,
+            replicate_seed)
+        vcf_filename = fn + ".vcf"
+        with open(vcf_filename, "w") as vcf_file:
+            ts.write_vcf(vcf_file, 2)
+        vcfgz_filename = vcf_filename + ".gz"
+        vcf_filesize = os.path.getsize(vcf_filename)
+        # gzip removes the original by default, so might as well save some space.
+        subprocess.check_call(["gzip", vcf_filename])
+
+        assert ts.num_sites > 0
+        row_id = base_row_id
+        for error_rate in self.error_rates:
+            row = return_value[row_id] = {}
+            row_id += 1
+            row['sample_size'] = sample_size
+            row['recombination_rate'] = recombination_rate
+            row['mutation_rate'] = self.mutation_rate
+            row['length'] = length
+            row['Ne'] = self.Ne
+            row['seed'] = replicate_seed
+            row[ERROR_COLNAME] = error_rate
+            row['edges'] = ts.num_edges
+            row['sites'] = ts.num_sites
+            row['ts_filesize'] = os.path.getsize(fn + ".hdf5")
+            row['vcf_filesize'] = vcf_filesize
+            row['vcfgz_filesize'] = os.path.getsize(vcfgz_filename)
+            self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
+        return return_value
+
+class ProgramComparison(Dataset):
+    """
+    The performance of the various programs in terms of running time and memory usage
+    """
+    name = "program_comparison"
+    compute_tree_metrics = METRICS_OFF
+    default_replicates = 2
+    default_seed = 1000
+    tools = [FASTARG, TSINFER]
+    fixed_length = 5 * 10**6
+    fixed_sample_size = 10000
+
+    def run_simulations(self, replicates, seed, show_progress, num_processes=1):
+        # TODO abstract some of this functionality up into the superclass.
+        # There is quite a lot shared with the other dataset.
+        if replicates is None:
+            replicates = self.default_replicates
+        if seed is None:
+            seed = self.default_seed
+        rng = random.Random(seed)
+
+        # Variable parameters
+        num_points = 20
+        sample_sizes = np.linspace(10, 2 * self.fixed_sample_size, num_points).astype(int)
+        lengths = np.linspace(self.fixed_length / 10, 2 * self.fixed_length, num_points).astype(int)
+
+        # Fixed parameters
+        Ne = 5000
+        error_rate = 0
+        recombination_rate = 2.5e-8
+        mutation_rate = recombination_rate
+        num_rows = 2 * num_points * replicates
+        cols = self.sim_cols + [tool + pf for tool in self.tools for pf in ("_cputime", "_memory")]
+        data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
+        work = [
+            (self.fixed_sample_size, l) for l in lengths] + [
+            (n, self.fixed_length) for n in sample_sizes]
+        row_id = 0
+        if show_progress:
+            progress = tqdm.tqdm(total=num_rows)
+        for sample_size, length in work:
+            for _ in range(replicates):
+                replicate_seed = rng.randint(1, 2**31)
+                ts, fn = self.single_simulation(sample_size, Ne, length,
+                    recombination_rate, mutation_rate, replicate_seed)
+                assert ts.get_num_mutations() > 0
+                # Tsinfer should be robust to this, but it currently isn't. Fail
+                # noisily now rather than obscurely later. This will only ever happen
+                # in trivially small data sets, so it doesn't matter.
+                non_singletons = False
+                for v in ts.variants():
+                    if np.sum(v.genotypes) > 1:
+                        non_singletons = True
+                if not non_singletons:
+                    raise ValueError("No non-single mutations present")
+                row = data.iloc[row_id]
+                row_id += 1
+                row.sample_size = sample_size
+                row.recombination_rate = recombination_rate
+                row.mutation_rate = mutation_rate
+                row.length = length
+                row.Ne = Ne
+                row.seed = replicate_seed
+                row[ERROR_COLNAME] = 0.0
+                row.edges = ts.num_edges
+                # for tool in self.tools:
+                #     row[tool + "_completed"] = False
+                # # Hack to prevent RentPlus from running when the sizes are too big.
+                # if sample_size == self.fixed_sample_size:
+                #     if length > lengths[0]:
+                #         row.RentPlus_completed = True
+                # else:
+                #     if sample_size > sample_sizes[0]:
+                #         row.RentPlus_completed = True
+
+                self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
+                if show_progress:
+                    progress.update()
+        return data
+        
+### SUPPLEMENTARY MATERIAL
+### The following classes are used for figures in the supplementary material
+###
+
 class MetricsBySampleSizeDataset(Dataset):
     """
     Accuracy of ARG inference of a fixed subset of samples (measured by various statistics)
@@ -1152,7 +1398,7 @@ class MetricsBySampleSizeDataset(Dataset):
     """
     name = "metrics_by_sample_size"
     tools = [TSINFER]
-    default_replicates = 10
+    default_replicates = 50
     default_seed = 123
     #to make this a fair comparison, we need to calculate only at the specific variant sites
     #because different sample sizes will be based on different original variant positions
@@ -1172,7 +1418,7 @@ class MetricsBySampleSizeDataset(Dataset):
 
         # Variable parameters
         lengths = [10000, 100000, 1000000]
-        error_rates = [0]
+        error_rates = [0, 0.001, 0.01]
         sample_sizes = [12, 50, 100, 500, 1000]
         shared_breakpoint_params = [True]#, False]
         shared_length_params = [False]#, True]
@@ -1181,8 +1427,8 @@ class MetricsBySampleSizeDataset(Dataset):
         subsample_size=10
         assert subsample_size <= min(sample_sizes)
         Ne = 5000
-        mutation_rate = 2.5e-8
-        recombination_rate = 2.5e-8
+        mutation_rate = 1e-8
+        recombination_rate = 1e-8
         num_rows = replicates * len(lengths) * len(error_rates) * len(sample_sizes) * \
             len(shared_breakpoint_params) * len(shared_length_params)
         cols = self.sim_cols + ["tsinfer_srb", "tsinfer_sl", "subsample_size"]
@@ -1238,7 +1484,6 @@ class MetricsBySampleSizeDataset(Dataset):
                                 if show_progress:
                                     progress.update()
         return data
-
 
 class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
     """
@@ -1375,45 +1620,53 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
                 raise
         return return_value
 
-class TsinferPerformance(Dataset):
+class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
     """
-    The performance of tsinfer in terms of CPU time, memory usage and
-    compression rates for large scale datasets. Contains data for
-    the two main dimensions of sample size and sequence length.
+    Accuracy of ARG inference (measured by various statistics)
+    tending to fully accurate as mutation rate increases, but with a
+    selective sweep superimposed.
+
+    The time since / post sweep is likely to be a major factor in
+    misfitting the model. We judge this by stopping the sweep at a
+    specific frequency, or at a given number of generations post fixation.
     """
-    name = "tsinfer_performance"
-    compute_tree_metrics = METRICS_OFF
-    default_replicates = 20
+
+    name = "metrics_by_mutation_rate_with_selective_sweep"
+
+    default_replicates = 50
     default_seed = 123
-    tools = [TSINFER]
-    fixed_length = 20 * 10**6
-    fixed_sample_size = 5000
-    mutation_rate = 5e-9
+    compute_tree_metrics = METRICS_ON #| METRICS_RANDOMLY_BREAK_POLYTOMIES
 
-    def run_simulations(self, user_specified_replicates, seed, show_progress, num_processes=1):
-        # TODO abstract some of this functionality up into the superclass.
-        # There is quite a lot shared with the other dataset.
-        replicates = user_specified_replicates or self.default_replicates
+    #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
+    exclude_colnames =[]
+
+    def run_simulations(self, replicates, seed, show_progress, num_processes=1):
+        self.replicates = replicates if replicates else self.default_replicates
         rng = random.Random(seed if seed else self.default_seed)
-        # Fixed parameters
-        self.Ne = 5000
-        # TODO we'll want to do this for multiple error rates eventually. For now
-        # just look at perfect data.
-        # Variable parameters
-        num_points = 20
-        sample_sizes = np.linspace(10, 2 * self.fixed_sample_size, num_points).astype(int)
-        # Ensure sample sizes are even so we can output diploid VCF.
-        sample_sizes[sample_sizes % 2 != 0] += 1
-        lengths = np.linspace(self.fixed_length / 10, 2 * self.fixed_length, num_points).astype(int)
-        recombination_rates = np.array([1]) * self.mutation_rate
-        #parameters that are iterated over within a single simulation
-        self.error_rates = [0]
+        ## Variable parameters
+        # parameters unique to each simulation
+        self.mutation_rates = (np.logspace(-8, -5, num=6)[:-1] * 1.5)
+        self.sample_sizes = [15]
+        # parameters across a single simulation
+        self.error_rates = [0, 0.001, 0.01]
+        self.stop_at = ['0.2', '0.5', '0.8', '1.0', ('1.0', 200), ('1.0', 1000)] #frequencies to output a file.
+        #NB - these are strings because they are output as part of the filename
 
-        self.num_sims = (len(sample_sizes) + len(lengths)) * len(recombination_rates) * replicates
-        self.num_rows = self.num_sims * len(self.error_rates)
-        cols = self.sim_cols + ["sites", "ts_filesize", "vcf_filesize", "vcfgz_filesize"]
+        ## Fixed parameters
+        self.Ne = 5000
+        self.length = 100000
+        self.recombination_rate = 1e-8
+        self.selection_coefficient = 0.1
+        self.dominance_coefficient = 0.5
+
+        self.num_sims = self.replicates * len(self.mutation_rates) * len(self.sample_sizes)
+        self.num_rows = self.num_sims * len(self.error_rates) * len(self.stop_at)
+
+        cols = self.sim_cols + [SIMTOOL_COLNAME, SELECTION_COEFF_COLNAME,
+            DOMINANCE_COEFF_COLNAME, SELECTED_FREQ_COLNAME, SELECTED_POSTGEN_COLNAME]
         data = pd.DataFrame(index=np.arange(0, self.num_rows), columns=cols)
         progress = tqdm.tqdm(total=self.num_rows) if show_progress else None
+
 
         def save_result(data, values_by_row, progress):
             for i,d in values_by_row.items():
@@ -1423,9 +1676,8 @@ class TsinferPerformance(Dataset):
                     progress.update()
 
         logging.info("Setting up using {} processes".format(num_processes))
-        nl = [(self.fixed_sample_size, l) for l in lengths] + [
-            (n, self.fixed_length) for n in sample_sizes]
-        variable_iterator = itertools.product(nl, recombination_rates, range(replicates))
+        variable_iterator = itertools.product(
+            range(self.replicates), self.mutation_rates,  self.sample_sizes)
         seeds = [rng.randint(1, 2**31) for i in range(self.num_sims)]
         combined_iterator = enumerate(itertools.zip_longest(seeds, variable_iterator))
 
@@ -1440,43 +1692,164 @@ class TsinferPerformance(Dataset):
                 save_result(data, result, progress)
         return data
 
-
     def single_sim(self, runtime_information):
         i, (params) = runtime_information
         assert None not in params #one will be none if the lengths of the iterators are different
-        replicate_seed, ((sample_size, length), recombination_rate, _) = params
+        replicate_seed, (replicate, mutation_rate, sample_size) = params
         base_row_id = i * self.num_rows//self.num_sims
         return_value = {}
-        ts, fn = self.single_simulation(
-            sample_size, self.Ne, length, recombination_rate, self.mutation_rate,
-            replicate_seed)
-        vcf_filename = fn + ".vcf"
-        with open(vcf_filename, "w") as vcf_file:
-            ts.write_vcf(vcf_file, 2)
-        vcfgz_filename = vcf_filename + ".gz"
-        vcf_filesize = os.path.getsize(vcf_filename)
-        # gzip removes the original by default, so might as well save some space.
-        subprocess.check_call(["gzip", vcf_filename])
-
-        assert ts.num_sites > 0
-        row_id = base_row_id
-        for error_rate in self.error_rates:
-            row = return_value[row_id] = {}
-            row_id += 1
-            row['sample_size'] = sample_size
-            row['recombination_rate'] = recombination_rate
-            row['mutation_rate'] = self.mutation_rate
-            row['length'] = length
-            row['Ne'] = self.Ne
-            row['seed'] = replicate_seed
-            row[ERROR_COLNAME] = error_rate
-            row['edges'] = ts.num_edges
-            row['sites'] = ts.num_sites
-            row['ts_filesize'] = os.path.getsize(fn + ".hdf5")
-            row['vcf_filesize'] = vcf_filesize
-            row['vcfgz_filesize'] = os.path.getsize(vcfgz_filename)
-            self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
+        done = False
+        while not done:
+            try:
+                logging.info("Running simulation {} of {} in process {} using " \
+                    "n={}, Ne={}, L={}, rho={}, mu={}, s={}, h={}" \
+                    "stopping at frequencies {}, and with seed {}".format(
+                    i, self.num_sims, os.getpid(), sample_size, self.Ne, self.length,
+                    self.recombination_rate, mutation_rate, self.selection_coefficient,
+                    self.dominance_coefficient, self.stop_at, replicate_seed))
+                row_id = base_row_id
+                # Run the simulation, in parallel if necessary - and loop through the returned freqs
+                for ts, fn, output_info in self.single_simulation_with_selective_sweep(
+                    sample_size, self.Ne, self.length, self.recombination_rate,
+                    mutation_rate, self.selection_coefficient, self.dominance_coefficient,
+                    self.stop_at, replicate_seed):
+                    # Reject this entire set if we got no mutations at any point, or all mutations are fixed
+                    done = False
+                    #Only accept this instance if we got at least one mutation that
+                    # is not a singleton and is not fixed
+                    for v in ts.variants():
+                        if 1 < np.sum(v.genotypes) < ts.num_samples:
+                            done = True
+                            break
+                    if done == False:
+                        #we must reject the entire set
+                        logging.info("Rejecting simulation & retrying: at least one output file has no variable sites")
+                        replicate_seed += 1 #must change the seed, so we get a different result
+                        break
+                    with open(fn +".nex", "w+") as out:
+                        ts.write_nexus_trees(out)
+                    for error_rate in self.error_rates:
+                        row = return_value[row_id] = {}
+                        row_id += 1
+                        row['sample_size'] = sample_size
+                        row['recombination_rate'] = self.recombination_rate
+                        row['mutation_rate'] = mutation_rate
+                        row['length'] = self.length
+                        row['Ne'] = self.Ne
+                        row['seed'] = replicate_seed
+                        row[ERROR_COLNAME] = error_rate
+                        row['edges'] = ts.num_edges
+                        row[SIMTOOL_COLNAME] = "ftprime"
+                        row[SELECTION_COEFF_COLNAME] = self.selection_coefficient
+                        row[DOMINANCE_COEFF_COLNAME] = self.dominance_coefficient
+                        row[SELECTED_FREQ_COLNAME] = output_info[0]
+                        row[SELECTED_POSTGEN_COLNAME] = output_info[1] if len(output_info)>1 else 0
+                        self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
+            except (_msprime.LibraryError, MemoryError) as e:
+                #we sometimes run out of memory here
+                print("Error when running `single_sim()`, probably in" +
+                    "single_simulation_with_selective_sweep({},{},{},{},{},{},{},{},{})".format(
+                    sample_size, self.Ne, self.length, self.recombination_rate,
+                    mutation_rate, self.selection_coefficient, self.dominance_coefficient,
+                    self.stop_at, replicate_seed))
+                raise
         return return_value
+
+### ADDITIONAL DEBUG
+### The following classes are used for drilling down into particular features
+### of the data, e.g. why we do better than AW for high mutation rates, 
+### some debugging routines, etc.
+###
+
+
+class ARGweaverParamChanges(Dataset):
+    """
+    Accuracy of ARGweaver inference (measured by various tree statistics)
+    as we adjust burn-in time and number of time slices.
+    This is an attempt to explain why ARGweaver can do badly e.g. for high mutation rates
+
+    You can check that the timeslices really *are* having an effect by looking at the unique
+    times (field 3) in the .arg files within raw__NOBACKUP__/argweaver_param_changes e.g.
+    cut -f 3 data/raw__NOBACKUP__/argweaver_param_changes/simulations/<filename>.arg | sort | uniq
+    """
+    name = "argweaver_param_changes"
+    tools = [ARGWEAVER, TSINFER]
+    default_replicates = 40
+    default_seed = 123
+    compute_tree_metrics = METRICS_ON
+
+    #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
+    exclude_colnames =[]
+
+
+    def run_simulations(self, replicates, seed, show_progress, num_processes=1):
+        if replicates is None:
+            replicates = self.default_replicates
+        if seed is None:
+            seed = self.default_seed
+        rng = random.Random(seed)
+        # Variable parameters
+        mutation_rates = np.logspace(-8, -3, num=8)[:-1] * 1.5
+        error_rates = [0]
+        sample_sizes = [6]
+        AW_burnin_steps = [1000,2000,5000] #by default, bin/arg-sim has no burnin time
+        AW_num_timepoints = [20,60,200] #by default, bin/arg-sim has n=20
+        # Fixed parameters
+        Ne = 5000
+        length = 10000
+        recombination_rate = 2.5e-8
+        num_rows = replicates * len(mutation_rates) * len(error_rates) * len(sample_sizes) * \
+            len(AW_burnin_steps) * len(AW_num_timepoints)
+        cols = self.sim_cols + ["only_AW", "ARGweaver_burnin", "ARGweaver_ntimes"]
+        data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
+        row_id = 0
+        if show_progress:
+            progress = tqdm.tqdm(total=num_rows)
+        for replicate in range(replicates):
+            for mutation_rate in mutation_rates:
+                for sample_size in sample_sizes:
+                    done = False
+                    while not done:
+                        replicate_seed = rng.randint(1, 2**31)
+                        # Run the simulation
+                        ts, fn = self.single_simulation(
+                            sample_size, Ne, length, recombination_rate, mutation_rate,
+                            replicate_seed, replicate_seed)
+                        #Only accept this instance if we got at least one mutation that
+                        # is not a singleton and is not fixed
+                        for v in ts.variants():
+                            if 1 < np.sum(v.genotypes) < ts.num_samples:
+                                done = True
+                                break
+                    with open(fn +".nex", "w+") as out:
+                        ts.write_nexus_trees(out)
+                    # Add the rows for each of the error rates in this replicate
+                    for error_rate in error_rates:
+                        only_run_ARGweaver_inference = 0
+                        #set up new rows for each set of ARGweaver parameters
+                        for burnin in AW_burnin_steps:
+                            for n_timesteps in AW_num_timepoints:
+                                row = data.iloc[row_id]
+                                row_id += 1
+                                row.sample_size = sample_size
+                                row.recombination_rate = recombination_rate
+                                row.mutation_rate = mutation_rate
+                                row.length = length
+                                row.Ne = Ne
+                                row.seed = replicate_seed
+                                row[ERROR_COLNAME] = error_rate
+                                row.edges = ts.num_edges
+                                row.ARGweaver_burnin = burnin
+                                row.ARGweaver_ntimes = n_timesteps
+                                row.only_AW = only_run_ARGweaver_inference
+                                #only run other infers for the first row in this set of AW run parameters
+                                only_run_ARGweaver_inference = 1
+                        self.save_variant_matrices(ts, fn, error_rate,
+                            #infinite_sites=True)
+                            infinite_sites=False)
+                        if show_progress:
+                            progress.update()
+        return data
 
 class TsinferTracebackDebug(Dataset):
     """
@@ -1609,175 +1982,6 @@ class TsinferTracebackDebug(Dataset):
                     row['ts_filesize'] = os.path.getsize(fn + ".hdf5")
                     self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
         return return_value
-
-class ProgramComparison(Dataset):
-    """
-    The performance of the various programs in terms of running time and memory usage
-    """
-    name = "program_comparison"
-    compute_tree_metrics = METRICS_OFF
-    default_replicates = 2
-    default_seed = 1000
-    tools = [FASTARG, TSINFER]
-    fixed_length = 5 * 10**6
-    fixed_sample_size = 10000
-
-    def run_simulations(self, replicates, seed, show_progress, num_processes=1):
-        # TODO abstract some of this functionality up into the superclass.
-        # There is quite a lot shared with the other dataset.
-        if replicates is None:
-            replicates = self.default_replicates
-        if seed is None:
-            seed = self.default_seed
-        rng = random.Random(seed)
-
-        # Variable parameters
-        num_points = 20
-        sample_sizes = np.linspace(10, 2 * self.fixed_sample_size, num_points).astype(int)
-        lengths = np.linspace(self.fixed_length / 10, 2 * self.fixed_length, num_points).astype(int)
-
-        # Fixed parameters
-        Ne = 5000
-        error_rate = 0
-        recombination_rate = 2.5e-8
-        mutation_rate = recombination_rate
-        num_rows = 2 * num_points * replicates
-        cols = self.sim_cols + [tool + pf for tool in self.tools for pf in ("_cputime", "_memory")]
-        data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
-        work = [
-            (self.fixed_sample_size, l) for l in lengths] + [
-            (n, self.fixed_length) for n in sample_sizes]
-        row_id = 0
-        if show_progress:
-            progress = tqdm.tqdm(total=num_rows)
-        for sample_size, length in work:
-            for _ in range(replicates):
-                replicate_seed = rng.randint(1, 2**31)
-                ts, fn = self.single_simulation(sample_size, Ne, length,
-                    recombination_rate, mutation_rate, replicate_seed)
-                assert ts.get_num_mutations() > 0
-                # Tsinfer should be robust to this, but it currently isn't. Fail
-                # noisily now rather than obscurely later. This will only ever happen
-                # in trivially small data sets, so it doesn't matter.
-                non_singletons = False
-                for v in ts.variants():
-                    if np.sum(v.genotypes) > 1:
-                        non_singletons = True
-                if not non_singletons:
-                    raise ValueError("No non-single mutations present")
-                row = data.iloc[row_id]
-                row_id += 1
-                row.sample_size = sample_size
-                row.recombination_rate = recombination_rate
-                row.mutation_rate = mutation_rate
-                row.length = length
-                row.Ne = Ne
-                row.seed = replicate_seed
-                row[ERROR_COLNAME] = 0.0
-                row.edges = ts.num_edges
-                # for tool in self.tools:
-                #     row[tool + "_completed"] = False
-                # # Hack to prevent RentPlus from running when the sizes are too big.
-                # if sample_size == self.fixed_sample_size:
-                #     if length > lengths[0]:
-                #         row.RentPlus_completed = True
-                # else:
-                #     if sample_size > sample_sizes[0]:
-                #         row.RentPlus_completed = True
-
-                self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
-                if show_progress:
-                    progress.update()
-        return data
-
-class ARGweaverParamChanges(Dataset):
-    """
-    Accuracy of ARGweaver inference (measured by various tree statistics)
-    as we adjust burn-in time and number of time slices.
-    This is an attempt to explain why ARGweaver can do badly e.g. for high mutation rates
-
-    You can check that the timeslices really *are* having an effect by looking at the unique
-    times (field 3) in the .arg files within raw__NOBACKUP__/argweaver_param_changes e.g.
-    cut -f 3 data/raw__NOBACKUP__/argweaver_param_changes/simulations/<filename>.arg | sort | uniq
-    """
-    name = "argweaver_param_changes"
-    tools = [ARGWEAVER, TSINFER]
-    default_replicates = 40
-    default_seed = 123
-    compute_tree_metrics = METRICS_ON
-
-    #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
-    exclude_colnames =[]
-
-
-    def run_simulations(self, replicates, seed, show_progress, num_processes=1):
-        if replicates is None:
-            replicates = self.default_replicates
-        if seed is None:
-            seed = self.default_seed
-        rng = random.Random(seed)
-        # Variable parameters
-        mutation_rates = np.logspace(-8, -3, num=8)[:-1] * 1.5
-        error_rates = [0]
-        sample_sizes = [6]
-        AW_burnin_steps = [1000,2000,5000] #by default, bin/arg-sim has no burnin time
-        AW_num_timepoints = [20,60,200] #by default, bin/arg-sim has n=20
-        # Fixed parameters
-        Ne = 5000
-        length = 10000
-        recombination_rate = 2.5e-8
-        num_rows = replicates * len(mutation_rates) * len(error_rates) * len(sample_sizes) * \
-            len(AW_burnin_steps) * len(AW_num_timepoints)
-        cols = self.sim_cols + ["only_AW", "ARGweaver_burnin", "ARGweaver_ntimes"]
-        data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
-        row_id = 0
-        if show_progress:
-            progress = tqdm.tqdm(total=num_rows)
-        for replicate in range(replicates):
-            for mutation_rate in mutation_rates:
-                for sample_size in sample_sizes:
-                    done = False
-                    while not done:
-                        replicate_seed = rng.randint(1, 2**31)
-                        # Run the simulation
-                        ts, fn = self.single_simulation(
-                            sample_size, Ne, length, recombination_rate, mutation_rate,
-                            replicate_seed, replicate_seed)
-                        #Only accept this instance if we got at least one mutation that
-                        # is not a singleton and is not fixed
-                        for v in ts.variants():
-                            if 1 < np.sum(v.genotypes) < ts.num_samples:
-                                done = True
-                                break
-                    with open(fn +".nex", "w+") as out:
-                        ts.write_nexus_trees(out)
-                    # Add the rows for each of the error rates in this replicate
-                    for error_rate in error_rates:
-                        only_run_ARGweaver_inference = 0
-                        #set up new rows for each set of ARGweaver parameters
-                        for burnin in AW_burnin_steps:
-                            for n_timesteps in AW_num_timepoints:
-                                row = data.iloc[row_id]
-                                row_id += 1
-                                row.sample_size = sample_size
-                                row.recombination_rate = recombination_rate
-                                row.mutation_rate = mutation_rate
-                                row.length = length
-                                row.Ne = Ne
-                                row.seed = replicate_seed
-                                row[ERROR_COLNAME] = error_rate
-                                row.edges = ts.num_edges
-                                row.ARGweaver_burnin = burnin
-                                row.ARGweaver_ntimes = n_timesteps
-                                row.only_AW = only_run_ARGweaver_inference
-                                #only run other infers for the first row in this set of AW run parameters
-                                only_run_ARGweaver_inference = 1
-                        self.save_variant_matrices(ts, fn, error_rate,
-                            #infinite_sites=True)
-                            infinite_sites=False)
-                        if show_progress:
-                            progress.update()
-        return data
 
 
 ######################################
