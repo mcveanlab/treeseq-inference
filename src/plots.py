@@ -774,7 +774,7 @@ class Dataset(object):
     """
     sim_cols = [
         "sample_size", "Ne", "length", "recombination_rate", "mutation_rate",
-        ERROR_COLNAME, "edges", "seed"]
+        ERROR_COLNAME, "edges", "n_trees", "seed"]
 
     #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
     exclude_colnames = []
@@ -1197,7 +1197,7 @@ class MetricsByMutationRateDataset(Dataset):
             seed = self.default_seed
         rng = random.Random(seed)
         # Variable parameters
-        mutation_rates = np.logspace(-8, -5, num=8)[:-1] * 1.5
+        mutation_rates = np.logspace(-9, -5, num=8)[:-1] * 1.5
         error_rates = [0, 0.001, 0.01]
         sample_sizes = [15]
 
@@ -1240,6 +1240,7 @@ class MetricsByMutationRateDataset(Dataset):
                         row.seed = replicate_seed
                         row[ERROR_COLNAME] = error_rate
                         row.edges = ts.num_edges
+                        row.n_trees = ts.num_trees
                         self.save_variant_matrices(ts, fn, error_rate,
                             #infinite_sites=True)
                             infinite_sites=False)
@@ -1353,6 +1354,7 @@ class TsinferPerformance(Dataset):
             row['seed'] = replicate_seed
             row[ERROR_COLNAME] = error_rate
             row['edges'] = ts.num_edges
+            row['n_trees'] = ts.num_edges
             row['sites'] = ts.num_sites
             row['ts_filesize'] = os.path.getsize(fn + ".hdf5")
             row['vcf_filesize'] = vcf_filesize
@@ -1422,6 +1424,7 @@ class ProgramComparison(Dataset):
                 row.seed = replicate_seed
                 row[ERROR_COLNAME] = 0.0
                 row.edges = ts.num_edges
+                row.n_trees = ts.num_edges
                 # for tool in self.tools:
                 #     row[tool + "_completed"] = False
                 # # Hack to prevent RentPlus from running when the sizes are too big.
@@ -1525,6 +1528,7 @@ class MetricsBySampleSizeDataset(Dataset):
                                 row.seed = replicate_seed
                                 row[ERROR_COLNAME] = error_rate
                                 row.edges = subsampled_ts.num_edges
+                                row.n_trees = subsampled_ts.num_trees
                                 self.save_variant_matrices(ts, fn, error_rate,
                                     #infinite_sites=True)
                                     infinite_sites=False)
@@ -1553,7 +1557,7 @@ class MetricsByMutationRateWithDemographyDataset(Dataset):
         rng = random.Random(seed if seed else self.default_seed)
         ## Variable parameters
         # parameters unique to each simulation
-        self.mutation_rates = (np.logspace(-8, -5, num=6)[:-1] * 1.5)
+        self.mutation_rates = (np.logspace(-9, -5, num=6)[:-1] * 1.5)
         self.sample_sizes = [15] #will be split across the 3 human sub pops
         # parameters across a single simulation
         self.error_rates = [0, 0.001, 0.01]
@@ -1623,6 +1627,7 @@ class MetricsByMutationRateWithDemographyDataset(Dataset):
             row['seed'] = replicate_seed
             row[ERROR_COLNAME] = error_rate
             row['edges'] = ts.num_edges
+            row['n_trees'] = ts.num_trees
             self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
         return return_value
 
@@ -1651,7 +1656,7 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
         rng = random.Random(seed if seed else self.default_seed)
         ## Variable parameters
         # parameters unique to each simulation
-        self.mutation_rates = (np.logspace(-8, -5, num=6)[:-1] * 1.5)
+        self.mutation_rates = (np.logspace(-9, -5, num=6)[:-1] * 1.5)
         self.sample_sizes = [15]
         # parameters across a single simulation
         self.error_rates = [0, 0.001, 0.01]
@@ -1736,6 +1741,7 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
                             row['seed'] = replicate_seed
                             row[ERROR_COLNAME] = error_rate
                             row['edges'] = ts.num_edges
+                            row['n_trees'] = ts.num_trees
                             row[SIMTOOL_COLNAME] = "ftprime"
                             row[SELECTION_COEFF_COLNAME] = self.selection_coefficient
                             row[DOMINANCE_COEFF_COLNAME] = self.dominance_coefficient
@@ -1837,6 +1843,7 @@ class ARGweaverParamChanges(Dataset):
                                 row.seed = replicate_seed
                                 row[ERROR_COLNAME] = error_rate
                                 row.edges = ts.num_edges
+                                row.n_trees = ts.num_trees
                                 row.ARGweaver_burnin = burnin
                                 row.ARGweaver_ntimes = n_timesteps
                                 row.only_AW = only_run_ARGweaver_inference
@@ -1964,6 +1971,7 @@ class TsinferTracebackDebug(Dataset):
                     row['seed'] = replicate_seed
                     row[MUTATION_SEED_COLNAME] = mutation_seed
                     row[ERROR_COLNAME] = error_rate
+                    row['n_trees'] = ts.num_trees
                     row['edges'] = ts.num_edges
                     row['tsinfer_srb'] = tsinfer_srb
                     row['tsinfer_sl'] = tsinfer_sl
@@ -2059,7 +2067,7 @@ class AllMetricsByMutationRateFigure(Figure):
             axes[0][-1].legend(
                 artists, ["Sample size = {}".format(n) for n in sample_sizes],
                 loc="upper right")
-        fig.suptitle("Tree comparisons for neutral simulation" +
+        fig.suptitle("Tree comparisons for neutral simulations" +
             " over "  + ",".join(["{:.1f}kb".format(x/1e3) for x in df.length.unique()]) +
             " (Ne=" + ",".join(["{}".format(x) for x in df.Ne.unique()]) +
             " rho="+ ",".join(["{}".format(x) for x in df.recombination_rate.unique()]) +
