@@ -147,11 +147,16 @@ def generate_samples(ts, error_p):
     else:
         for variant in ts.variants():
             done = False
-            # Reject any columns that have no 1s or no zeros
-            while not done:
+            # Reject any columns that have no 1s or no zeros. 
+            # Unless the original also has them, as occasionally we have
+            # some sims (e.g. under selection) where a variant is fixed
+            while True:
                 S[:,variant.index] = make_errors(variant.genotypes, error_p)
                 s = np.sum(S[:, variant.index])
-                done = 0 < s < ts.sample_size
+                if 0 < s < ts.sample_size:
+                    break
+                if s == np.sum(variant.genotypes):
+                    break
     return S
 
 def mk_sim_name(n, Ne, l, rho, mu, genealogy_seed, mut_seed=None, directory=None, tool="msprime",
@@ -503,11 +508,20 @@ class InferenceRunner(object):
         infile = self.base_fn + ".dat"
         time = memory = None
         logging.debug("reading: {} for RentPlus inference".format(infile))
-        treefile, num_tips, time, memory = self.run_rentplus(infile, self.row.length)
-        if self.compute_tree_metrics:
-            for fn in self.inferred_filenames:
-                with open(fn + ".nex", "w+") as out:
-                    msprime_RentPlus.RentPlus_trees_to_nexus(treefile, out, self.row.length, num_tips)
+        try:
+            treefile, num_tips, time, memory = self.run_rentplus(infile, self.row.length)
+            if self.compute_tree_metrics:
+                for fn in self.inferred_filenames:
+                    with open(fn + ".nex", "w+") as out:
+                        msprime_RentPlus.RentPlus_trees_to_nexus(treefile, out, self.row.length, num_tips)
+        except ValueError as e:
+            #allow the RentPlus error described at https://github.com/mcveanlab/treeseq-inference/issues/45
+            if "main.Main.findCompatibleRegion(Main.java:660)" in str(e):
+                logging.warning("RENTplus bug hit"\
+                    " (https://github.com/mcveanlab/treeseq-inference/issues/45),"\
+                    " aborting this replicate.")
+            else:
+                raise
         return {
             save_stats['cpu']: time,
             save_stats['mem']: memory,
@@ -1134,9 +1148,9 @@ class Dataset(object):
             logging.info(
                 "Selective simulation from '{}'; {} sites ({} mutations), {} trees".format(
                     fn, ts.num_sites,ts.get_num_mutations(), ts.num_trees))
+
             # Make sure that there is *some* information in this simulation that can be used
             # to infer a ts, otherwise it's pointless
-            
             if ts.get_num_mutations() == 0:
                 raise ValueError("No mutations present")
             if ts_has_non_singleton_variants(ts) == False:
@@ -1204,7 +1218,7 @@ class MetricsByMutationRateDataset(Dataset):
             seed = self.default_seed
         rng = random.Random(seed)
         # Variable parameters
-        mutation_rates = np.logspace(-8.5, -5, num=8)[:-1] * 1.5
+        mutation_rates = np.geomspace(0.5e-8, 3.5e-6, num=7)
         error_rates = [0, 0.001, 0.01]
         sample_sizes = [15]
 
@@ -1564,7 +1578,7 @@ class MetricsByMutationRateWithDemographyDataset(Dataset):
         rng = random.Random(seed if seed else self.default_seed)
         ## Variable parameters
         # parameters unique to each simulation
-        self.mutation_rates = (np.logspace(-8.5, -5, num=6)[:-1] * 1.5)
+        self.mutation_rates = np.geomspace(0.5e-8, 3.5e-6, num=5)
         self.sample_sizes = [15] #will be split across the 3 human sub pops
         # parameters across a single simulation
         self.error_rates = [0, 0.001, 0.01]
@@ -1663,7 +1677,7 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
         rng = random.Random(seed if seed else self.default_seed)
         ## Variable parameters
         # parameters unique to each simulation
-        self.mutation_rates = (np.logspace(-8.5, -5, num=6)[:-1] * 1.5)
+        self.mutation_rates = np.geomspace(0.5e-8, 3.5e-6, num=5)
         self.sample_sizes = [15]
         # parameters across a single simulation
         self.error_rates = [0, 0.001, 0.01]
@@ -1803,7 +1817,7 @@ class ARGweaverParamChanges(Dataset):
             seed = self.default_seed
         rng = random.Random(seed)
         # Variable parameters
-        mutation_rates = np.logspace(-8, -3, num=8)[:-1] * 1.5
+        mutation_rates = np.geomspace(1e-6, 1e-3, num=6)
         error_rates = [0]
         sample_sizes = [6]
         AW_burnin_steps = [1000,2000,5000] #by default, bin/arg-sim has no burnin time
@@ -1811,7 +1825,7 @@ class ARGweaverParamChanges(Dataset):
         # Fixed parameters
         Ne = 5000
         length = 10000
-        recombination_rate = 2.5e-8
+        recombination_rate = 1e-8
         num_rows = replicates * len(mutation_rates) * len(error_rates) * len(sample_sizes) * \
             len(AW_burnin_steps) * len(AW_num_timepoints)
         cols = self.sim_cols + ["only_AW", "ARGweaver_burnin", "ARGweaver_ntimes"]
@@ -1914,7 +1928,7 @@ class TsinferTracebackDebug(Dataset):
         self.seed = seed if seed else self.default_seed
         rng = random.Random(self.seed)
         # Variable parameters
-        self.mutation_rates = (np.logspace(-8, -5, num=6)[:-1] * 1.5)
+        self.mutation_rates = np.geomspace(0.5e-8, 3.5e-6, num=5)
         self.shared_breakpoint_params = [True]#, False]
         self.shared_length_params = [False]#, True]
         self.error_rates = [0]
