@@ -66,6 +66,7 @@ FASTARG = "fastARG"
 ARGWEAVER = "ARGweaver"
 RENTPLUS = "RentPlus"
 TSINFER = "tsinfer"
+TSINFER_NO_ERROR = "tsinferNoErr"
 
 #names for optional columns in the dataset
 ERROR_COLNAME = 'error_rate'
@@ -295,7 +296,7 @@ def rentplus_name_from_msprime_row(row, sim_dir):
     """
     return construct_rentplus_name(mk_sim_name_from_row(row, sim_dir))
 
-def construct_tsinfer_name(sim_name, subsample_size, shared_breakpoints, shared_lengths):
+def construct_tsinfer_name(sim_name, subsample_size, shared_breakpoints, shared_lengths, error_param=0):
     """
     Returns a TSinfer filename.
     If the file is a subset of the original, this can be added to the
@@ -303,7 +304,7 @@ def construct_tsinfer_name(sim_name, subsample_size, shared_breakpoints, shared_
     add_subsample_param_to_name() routine.
     """
     d,f = os.path.split(sim_name)
-    suffix = ""
+    suffix = "err{}".format(float(error_param))
     if shared_breakpoints is not None:
         suffix += "srb"+str(int(shared_breakpoints))
     if shared_lengths is not None:
@@ -393,6 +394,8 @@ class InferenceRunner(object):
         logging.debug("parameters = {}".format(self.row.to_dict()))
         if self.tool == TSINFER:
             ret = self.__run_tsinfer(skip_infer = metrics_only)
+        if self.tool == TSINFER_NO_ERR:
+            ret = self.__run_tsinfer(skip_infer = metrics_only)
         elif self.tool == FASTARG:
             ret = self.__run_fastARG(skip_infer = metrics_only)
         elif self.tool == ARGWEAVER:
@@ -429,7 +432,15 @@ class InferenceRunner(object):
             self.tool, int(self.row[0]), ret))
         return ret
 
+    #slightly more complex here as we have 2 ways to run tsinfer - with and without an error param
+    def __run_tsinfer_no_err(self, skip_infer=False):
+        if self.row.error_rate != 0: #only bother if this is going to make a difference
+            self.__tsinfer(0, skip_infer)
+        
     def __run_tsinfer(self, skip_infer=False):
+        self.__tsinfer(self.row.error_rate, skip_infer)
+
+    def __tsinfer(self, err, skip_infer=False):
         #default to using srb & but not length breaking if nothing specified in the file
         shared_recombinations = bool(getattr(self.row,'tsinfer_srb', True))
         shared_lengths = bool(getattr(self.row,'tsinfer_sl', False))
@@ -439,7 +450,7 @@ class InferenceRunner(object):
         samples_fn = self.base_fn + ".npy"
         positions_fn = self.base_fn + ".pos.npy"
         out_fn = construct_tsinfer_name(self.base_fn,
-            subsample_size, shared_recombinations, shared_lengths)
+            subsample_size, shared_recombinations, shared_lengths, err)
         self.inferred_filenames = [out_fn]
         if skip_infer:
             return {}
@@ -449,7 +460,7 @@ class InferenceRunner(object):
             samples_fn, positions_fn))
         inferred_ts, time, memory = self.run_tsinfer(
             samples_fn, positions_fn, self.row.length, self.row.recombination_rate,
-            self.row.error_rate, shared_recombinations, shared_lengths, self.num_threads,
+            err, shared_recombinations, shared_lengths, self.num_threads,
             #inject_real_ancestors_from_ts_fn = self.orig_sim_fn + ".hdf5", #uncomment to inject real ancestors
             )
         if inferred_ts:
@@ -780,18 +791,25 @@ class Dataset(object):
     """
     data_dir = "data"
 
+    """
+    The next two can be overridden on the command line
+    """
+    default_replicates = 10
+    default_seed = 123
+
     tools = [
         ARGWEAVER,
         FASTARG,
         RENTPLUS,
         TSINFER,
+        #TSINFER_NO_ERR,
     ]
 
     """
     These are the basic columns that record the simulation used (can be overridden)
     """
     sim_cols = [
-        "sample_size", "Ne", "length", "recombination_rate", "mutation_rate",
+        "replicate", "sample_size", "Ne", "length", "recombination_rate", "mutation_rate",
         ERROR_COLNAME, "edges", "n_trees", "seed"]
 
     #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
@@ -1118,7 +1136,9 @@ class Dataset(object):
         (without file type extension)
 
         """
-        from selective_sweep import simulate_sweep #not at top as this fires up a simupop instance
+        #Don't `import` simulate_sweep at top of file as it fires up a simupop instance
+        # which is not always needed
+        from selective_sweep import simulate_sweep
         logging.info(
             "Running forward simulation with selection for "
             "n = {}, l = {:.2g}, Ne = {}, rho = {}, mu = {}, s = {}".format(
@@ -1149,12 +1169,12 @@ class Dataset(object):
                 "Selective simulation from '{}'; {} sites ({} mutations), {} trees".format(
                     fn, ts.num_sites,ts.get_num_mutations(), ts.num_trees))
 
-            # Make sure that there is *some* information in this simulation that can be used
-            # to infer a ts, otherwise it's pointless
+            # Simulations with a selective sweep might well have reduced diversity
+            # so allow this, but log a warning (not sure if this will break e.g. ARGweaver)
             if ts.get_num_mutations() == 0:
-                raise ValueError("No mutations present")
+                logging.warning("No mutations present")
             if ts_has_non_singleton_variants(ts) == False:
-                raise ValueError("No non-singleton variants present ({} singletons) for output at {}".format(
+                logging.warning("No non-singleton variants present ({} singletons) for output at {}".format(
                     sum([np.sum(v.genotypes)==1 for v in ts.variants()]), outfreq))
             yield ts, fn[:-len(expected_suffix)], outfreq
 
@@ -1573,22 +1593,24 @@ class MetricsByMutationRateWithDemographyDataset(Dataset):
     #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
     exclude_colnames =[]
 
+    #keys here should correspond to the names in the csv file
+    between_sim_params = dict(
+        mutation_rate = np.geomspace(0.5e-8, 3.5e-6, num=5),
+        sample_size =   [15], #will be split across the 3 human sub pops
+        length =        [100000],
+        recombination_rate = [1e-8],
+        )
+
+    within_sim_params = {
+        ERROR_COLNAME : [0, 0.001, 0.01],
+    }
+        
+
     def run_simulations(self, replicates, seed, show_progress, num_processes=1):
         self.replicates = replicates if replicates else self.default_replicates
         rng = random.Random(seed if seed else self.default_seed)
-        ## Variable parameters
-        # parameters unique to each simulation
-        self.mutation_rates = np.geomspace(0.5e-8, 3.5e-6, num=5)
-        self.sample_sizes = [15] #will be split across the 3 human sub pops
-        # parameters across a single simulation
-        self.error_rates = [0, 0.001, 0.01]
-
-        ## Fixed parameters
-        self.length = 100000
-        self.recombination_rate = 1e-8
-
-        self.num_sims = self.replicates * len(self.mutation_rates) * len(self.sample_sizes)
-        self.num_rows = self.num_sims * len(self.error_rates)
+        self.num_sims = self.replicates * np.prod([len(a) for a in self.between_sim_params.values()])
+        self.num_rows = self.num_sims * np.prod([len(a) for a in self.within_sim_params.values()])
 
         data = pd.DataFrame(index=np.arange(0, self.num_rows), columns=self.sim_cols)
         progress = tqdm.tqdm(total=self.num_rows) if show_progress else None
@@ -1602,7 +1624,7 @@ class MetricsByMutationRateWithDemographyDataset(Dataset):
 
         logging.info("Setting up using {} processes".format(num_processes))
         variable_iterator = itertools.product(
-            range(self.replicates), self.mutation_rates,  self.sample_sizes)
+            range(self.replicates), *self.between_sim_params.values())
         seeds = [rng.randint(1, 2**31) for i in range(self.num_sims)]
         combined_iterator = enumerate(itertools.zip_longest(seeds, variable_iterator))
 
@@ -1618,38 +1640,39 @@ class MetricsByMutationRateWithDemographyDataset(Dataset):
         return data
 
     def single_sim(self, runtime_information):
-        sim_name = "Gutenkunst.out.of.africa"
-        i, (params) = runtime_information
-        assert None not in params #one will be none if the lengths of the iterators are different
-        rng_seed, (replicate, mutation_rate, sample_size) = params
+        i, (seed_plus_params) = runtime_information
+        assert None not in seed_plus_params #one will be none if the lengths of the iterators are different
+        rng_seed, params = seed_plus_params
+        sim_params = dict(zip(['replicate'] + list(self.between_sim_params.keys()), params))
+        print(sim_params)
         row_id = i * self.num_rows//self.num_sims #sims may have multiple rows, one for each error rate
         return_value = {}
         rng = random.Random(rng_seed)
+        sim_name = "Gutenkunst.out.of.africa"
         while True:
             replicate_seed = rng.randint(1, 2**31)
             try:
                 # Run the simulation until we get an acceptable one
                 ts, fn = self.single_simulation_with_human_demography(
-                    sample_size, sim_name, self.length,
-                    self.recombination_rate, mutation_rate, replicate_seed)
+                    sim_params['sample_size'], sim_name, sim_params['length'],
+                    sim_params['recombination_rate'], sim_params['mutation_rate'], replicate_seed)
                 break
             except ValueError as e: #No non-singleton variants
                 logging.warning(e)
         with open(fn +".nex", "w+") as out:
             ts.write_nexus_trees(out)
-        for error_rate in self.error_rates:
+        for params in itertools.product(*self.within_sim_params.values()):
+            sim_params.update(dict(zip(self.within_sim_params.keys(), params)))
             row = return_value[row_id] = {}
             row_id += 1
-            row['sample_size'] = sample_size
-            row['recombination_rate'] = self.recombination_rate
-            row['mutation_rate'] = mutation_rate
-            row['length'] = self.length
-            row['Ne'] = sim_name
             row['seed'] = replicate_seed
-            row[ERROR_COLNAME] = error_rate
+            for k,v in sim_params.items():
+                row[k] = v
+            #add some stats from the ts
             row['edges'] = ts.num_edges
             row['n_trees'] = ts.num_trees
-            self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
+            print(sim_params)
+            self.save_variant_matrices(ts, fn, sim_params['error_rate'], infinite_sites=False)
         return return_value
 
 class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
@@ -2785,21 +2808,35 @@ def run_plot(cls, args):
 def main():
     datasets = Dataset.__subclasses__()
     figures = [
-        AllMetricsByMutationRateFigure,
-        RFRootedMetricByMutationRateFigure,
+        ## MAIN PAPER ##
         KCRootedMetricByMutationRateFigure,
-        AllMetricsBySampleSizeFigure,
-        CputimeMetricByMutationRateFigure,
+        CompressionPerformanceFigure,
+        ## SUPPLEMENTARY MATERIALS ##
+        # §1 Algorithm details
+        #     Properties of ancestors: see code in tsinfer
+        #     Perfect inference: 
+        # §2 Tree comparision
+        AllMetricsByMutationRateFigure,
+        # §3 Robustness analysis
         KCRootedMetricByARGweaverParametersFigure,
+        #>>>todo AllMetricsByMutationRateDemographyFigure
+        AllMetricsByMutationRateSweepFigure,
+        #>>>todo AllMetricsByMutationRateBackgroundSelFigure
+        AllMetricsBySampleSizeFigure,
+        # a) 
+        # §4 Data preparation
+        # §5 Performance
+        CputimeMetricByMutationRateFigure,
         RFRootedMetricByARGweaverParametersFigure,
         EdgesPerformanceFigure,
         FileSizePerformanceFigure,
-        CompressionPerformanceFigure,
         PerformanceFigure2,
-        TracebackDebugEdgesFigure,
         ProgramComparisonTimeFigure,
         ProgramComparisonMemoryFigure,
-        AllMetricsByMutationRateSweepFigure,
+        ## Other ##
+        RFRootedMetricByMutationRateFigure,
+        TracebackDebugEdgesFigure,
+
     ]
     name_map = dict([(d.name, d) for d in datasets + figures])
     parser = argparse.ArgumentParser(
