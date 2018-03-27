@@ -11,6 +11,7 @@ import subprocess
 import numpy as np
 import msprime
 import scipy.optimize as optimize
+import scipy.stats as stats
 import pandas as pd
 import humanize
 
@@ -112,8 +113,8 @@ def run_plot():
         return a * n * z + b * z + c
 
     df = pd.read_csv(datafile)
-    df = df[df.sample_size > 10]
-    projected_n = 10**np.arange(2, 11)
+    df = df[df.sample_size > 100]
+    projected_n = 10**np.arange(3, 11)
 
     msp_fit_params, _ = optimize.curve_fit(
         additive_model, df.sample_size[:-1], df.uncompressed[:-1])
@@ -122,10 +123,11 @@ def run_plot():
         additive_model, df.sample_size[:-1], df.compressed[:-1])
     mspz_fit = additive_model(projected_n, *mspz_fit_params)
 
-    index = df.sample_size < 10 ** 5
+    index = df.sample_size < 10**6
     vcf_fit_params, _ = optimize.curve_fit(
         mulplicative_model, df.sample_size[index], df.vcf[index])
     vcf_fit = mulplicative_model(projected_n, *vcf_fit_params)
+
     bcf_fit_params, _ = optimize.curve_fit(
         mulplicative_model, df.sample_size[index], df.bcf[index])
     bcf_fit = mulplicative_model(projected_n, *bcf_fit_params)
@@ -135,6 +137,21 @@ def run_plot():
     fig = pyplot.figure()
     ax1 = fig.add_subplot(111)
     xytext = (18, 0)
+
+    index = df.vcf > 0
+    line, = ax1.loglog(df.sample_size[index], df.vcf[index], "^", label="VCF")
+    ax1.loglog(projected_n, vcf_fit, "--", color=line.get_color())
+    ax1.annotate(
+        humanize.naturalsize(vcf_fit[-1] * GB, binary=True, format="%d"),
+        textcoords="offset points", xytext=xytext,
+        xy=(projected_n[-1], vcf_fit[-1]), xycoords="data")
+
+    line, = ax1.loglog(df.sample_size[index], df.bcf[index], "s", label="BCF")
+    ax1.loglog(projected_n, bcf_fit, "--", color=line.get_color())
+    ax1.annotate(
+        humanize.naturalsize(bcf_fit[-1] * GB, binary=True, format="%d"),
+        textcoords="offset points", xytext=xytext,
+        xy=(projected_n[-1], bcf_fit[-1]), xycoords="data")
 
     line, = ax1.loglog(
         df.sample_size, df.uncompressed, "o", label="msprime uncompressed")
@@ -151,21 +168,6 @@ def run_plot():
         humanize.naturalsize(mspz_fit[-1] * GB, binary=True, format="%d"),
         textcoords="offset points", xytext=xytext,
         xy=(projected_n[-1], mspz_fit[-1]), xycoords="data")
-
-    index = df.vcf > 0
-    line, = ax1.loglog(df.sample_size[index], df.vcf[index], "^", label="VCF")
-    ax1.loglog(projected_n, vcf_fit, "--", color=line.get_color())
-    ax1.annotate(
-        humanize.naturalsize(vcf_fit[-1] * GB, binary=True, format="%d"),
-        textcoords="offset points", xytext=xytext,
-        xy=(projected_n[-1], vcf_fit[-1]), xycoords="data")
-
-    line, = ax1.loglog(df.sample_size[index], df.bcf[index], "s", label="BCF")
-    ax1.loglog(projected_n, bcf_fit, "--", color=line.get_color())
-    ax1.annotate(
-        humanize.naturalsize(bcf_fit[-1] * GB, binary=True, format="%d"),
-        textcoords="offset points", xytext=xytext,
-        xy=(projected_n[-1], bcf_fit[-1]), xycoords="data")
 
     ax1.set_xlabel("Number of chromosomes")
     ax1.set_ylabel("File size (GiB)")
