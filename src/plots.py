@@ -1371,9 +1371,12 @@ class TsinferPerformance(Dataset):
     default_seed = 123
     tools = [TSINFER]
     
-    fixed_length = 20 * 10**6
     fixed_sample_size = 5000
+    fixed_length = 20 * 10**6
     num_points = 20
+    #Ensure sample sizes are even so we can output diploid VCF.
+    sample_sizes = np.linspace(5, fixed_sample_size, num_points).astype(int) * 2
+    lengths = np.linspace(fixed_length / 10, 2 * fixed_length, num_points).astype(int)
     
     #params that change BETWEEN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
@@ -1381,8 +1384,8 @@ class TsinferPerformance(Dataset):
         'Ne':            [5000],
         'mutation_rate': [5e-9],
         #Ensure sample sizes are even so we can output diploid VCF.
-        'sample_size':   np.unique(list(np.linspace(5, fixed_sample_size, num_points).astype(int) * 2) + [fixed_sample_size]),
-        'length':        np.unique(list(np.linspace(fixed_length / 10, 2 * fixed_length, num_points).astype(int)) + [fixed_length]),
+        'sample_size':   np.unique(np.append(sample_sizes, fixed_sample_size)),
+        'length':        np.unique(np.append(lengths, fixed_length)),
         'recombination_rate': [5e-9],
     }
 
@@ -1436,74 +1439,50 @@ class ProgramComparison(Dataset):
     compute_tree_metrics = METRICS_OFF
     default_replicates = 2
     default_seed = 1000
-    tools = [FASTARG, TSINFER]
-    fixed_length = 5 * 10**6
+    tools = [FASTARG, TSINFER] #RentPlus has problems running when the sizes are too big.
     fixed_sample_size = 10000
+    fixed_length = 5 * 10**6
+    num_points = 20
+    #Ensure sample sizes are even so we can output diploid VCF.
+    sample_sizes = np.linspace(10, 2*fixed_sample_size, num_points).astype(int)
+    lengths = np.linspace(fixed_length / 10, 2 * fixed_length, num_points).astype(int)
+    
+    #params that change BETWEEN simulations. Keys should correspond
+    # to column names in the csv file. Values should all be arrays.
+    between_sim_params = {
+        'Ne':            [5000],
+        'mutation_rate': [2.5e-8],
+        'recombination_rate': [2.5e-8],
+        #Ensure sample sizes are even so we can output diploid VCF.
+        'sample_size':   np.unique(np.append(sample_sizes, fixed_sample_size)),
+        'length':        np.unique(np.append(lengths, fixed_length)),
+    }
 
-    def run_simulations(self, replicates, seed, show_progress, num_processes=1):
-        # TODO change this to the new calling convention.
-        if replicates is None:
-            replicates = self.default_replicates
-        if seed is None:
-            seed = self.default_seed
-        rng = random.Random(seed)
+    #params that change WITHIN simulations. Keys should correspond
+    # to column names in the csv file. Values should all be arrays.
+    within_sim_params = {
+        ERROR_COLNAME : [0],
+    }
 
-        # Variable parameters
-        num_points = 20
-        sample_sizes = np.linspace(10, 2 * self.fixed_sample_size, num_points).astype(int)
-        lengths = np.linspace(self.fixed_length / 10, 2 * self.fixed_length, num_points).astype(int)
+    def filter_between_sim_params(self, between_sim_params):
+        """
+        We want to only use cases where the sample_size OR the length are at the fixed values
+        """
+        keyed_params = dict(zip(['replicates']+list(self.between_sim_params.keys()), between_sim_params))
+        return (keyed_params['sample_size']==self.fixed_sample_size) or \
+            (keyed_params['length']==self.fixed_length)
 
-        # Fixed parameters
-        Ne = 5000
-        error_rate = 0
-        recombination_rate = 2.5e-8
-        mutation_rate = recombination_rate
-        num_rows = 2 * num_points * replicates
-        cols = self.sim_cols + [tool + pf for tool in self.tools for pf in ("_cputime", "_memory")]
-        data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
-        work = [
-            (self.fixed_sample_size, l) for l in lengths] + [
-            (n, self.fixed_length) for n in sample_sizes]
-        row_id = 0
-        if show_progress:
-            progress = tqdm.tqdm(total=num_rows)
-        for sample_size, length in work:
-            for _ in range(replicates):
-                while True:
-                    replicate_seed = rng.randint(1, 2**31)
-                    try:
-                        # Run the simulation until we get an acceptable one
-                        ts, fn = self.single_neutral_simulation(sample_size, Ne, length,
-                            recombination_rate, mutation_rate, replicate_seed)
-                        break
-                    except ValueError as e: #No non-singleton variants
-                        logging.warning(e)
-                
-                row = data.iloc[row_id]
-                row_id += 1
-                row.sample_size = sample_size
-                row.recombination_rate = recombination_rate
-                row.mutation_rate = mutation_rate
-                row.length = length
-                row.Ne = Ne
-                row.seed = replicate_seed
-                row[ERROR_COLNAME] = 0.0
-                row.edges = ts.num_edges
-                row.n_trees = ts.num_edges
-                # for tool in self.tools:
-                #     row[tool + "_completed"] = False
-                # # Hack to prevent RentPlus from running when the sizes are too big.
-                # if sample_size == self.fixed_sample_size:
-                #     if length > lengths[0]:
-                #         row.RentPlus_completed = True
-                # else:
-                #     if sample_size > sample_sizes[0]:
-                #         row.RentPlus_completed = True
-
-                self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
-                if show_progress:
-                    progress.update()
-        return data
+    def single_sim(self, row_id, sim_params, rng):
+        while True:
+            sim_params['seed'] = rng.randint(1, 2**31)
+            try:
+                # Run the simulation until we get an acceptable one
+                ts, fn = self.single_neutral_simulation(**sim_params)
+                break
+            except ValueError as e: #No non-singleton variants
+                logging.warning(e)
+        row_data = self.save_within_sim_data(row_id, ts, fn, sim_params)
+        return row_data
         
 ### SUPPLEMENTARY MATERIAL
 ### The following classes are used for figures in the supplementary material
