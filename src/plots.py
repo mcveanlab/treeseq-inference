@@ -934,7 +934,6 @@ class Dataset(object):
             iterate_over_dict = self.within_sim_params
         ts.save_nexus_trees(base_fn +".nex")
         return_value = {}
-        print(iterate_over_dict)
         for params in itertools.product(*iterate_over_dict.values()):
             #may be iterating here over errors, or e.g. tsinfer_srb
             keyed_params = dict(zip(iterate_over_dict.keys(), params))
@@ -946,7 +945,6 @@ class Dataset(object):
             #add some stats from the ts
             row['edges'] = ts.num_edges
             row['n_trees'] = ts.num_trees
-            print(keyed_params.get('error_rate') or 0)
             self.save_variant_matrices(ts, base_fn, keyed_params.get('error_rate') or 0, infinite_sites=False)
         return return_value
 
@@ -1700,7 +1698,7 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
                 logging.warning(e)
             except (_msprime.LibraryError, MemoryError) as e:
                 #we sometimes run out of memory here
-                print("Error when running `single_sim()`, probably in single_simulation_with_selective_sweep({})"\
+                logging.warning("Error when running `single_sim()`, probably in single_simulation_with_selective_sweep({})"\
                     .format(",".join(["{}={}".format(k,v) for k,v in sim_params.items()])))
                 raise
         return return_data
@@ -1728,73 +1726,46 @@ class ARGweaverParamChanges(Dataset):
     default_seed = 123
     compute_tree_metrics = METRICS_ON
 
+    between_sim_params = {
+        'mutation_rate': np.geomspace(1e-6, 1e-3, num=6),
+        'sample_size': [6],
+        'Ne':     [5000],
+        'length': [10**4],
+        'recombination_rate': [1e-8],
+    }
 
-    def run_simulations(self, replicates, seed, show_progress, num_processes=1):
-        if replicates is None:
-            replicates = self.default_replicates
-        if seed is None:
-            seed = self.default_seed
-        rng = random.Random(seed)
-        # Variable parameters
-        mutation_rates = np.geomspace(1e-6, 1e-3, num=6)
-        error_rates = [0]
-        sample_sizes = [6]
-        AW_burnin_steps = [1000,2000,5000] #by default, bin/arg-sim has no burnin time
-        AW_num_timepoints = [20,60,200] #by default, bin/arg-sim has n=20
-        # Fixed parameters
-        Ne = 5000
-        length = 10000
-        recombination_rate = 1e-8
-        num_rows = replicates * len(mutation_rates) * len(error_rates) * len(sample_sizes) * \
-            len(AW_burnin_steps) * len(AW_num_timepoints)
-        cols = self.sim_cols + ["only_AW", "ARGweaver_burnin", "ARGweaver_ntimes"]
-        data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
-        row_id = 0
-        if show_progress:
-            progress = tqdm.tqdm(total=num_rows)
-        for replicate in range(replicates):
-            for mutation_rate in mutation_rates:
-                for sample_size in sample_sizes:
-                    while True:
-                        replicate_seed = rng.randint(1, 2**31)
-                        try:
-                            # Run the simulation
-                            ts, fn = self.single_neutral_simulation(
-                                sample_size, Ne, length, recombination_rate, mutation_rate,
-                                replicate_seed, replicate_seed)
-                            break;
-                        except ValueError as e: #No non-singleton variants
-                            logging.warning(e)
-                    with open(fn +".nex", "w+") as out:
-                        ts.write_nexus_trees(out)
-                    # Add the rows for each of the error rates in this replicate
-                    for error_rate in error_rates:
-                        only_run_ARGweaver_inference = 0
-                        #set up new rows for each set of ARGweaver parameters
-                        for burnin in AW_burnin_steps:
-                            for n_timesteps in AW_num_timepoints:
-                                row = data.iloc[row_id]
-                                row_id += 1
-                                row.sample_size = sample_size
-                                row.recombination_rate = recombination_rate
-                                row.mutation_rate = mutation_rate
-                                row.length = length
-                                row.Ne = Ne
-                                row.seed = replicate_seed
-                                row[ERROR_COLNAME] = error_rate
-                                row.edges = ts.num_edges
-                                row.n_trees = ts.num_trees
-                                row.ARGweaver_burnin = burnin
-                                row.ARGweaver_ntimes = n_timesteps
-                                row.only_AW = only_run_ARGweaver_inference
-                                #only run other infers for the first row in this set of AW run parameters
-                                only_run_ARGweaver_inference = 1
-                        self.save_variant_matrices(ts, fn, error_rate,
-                            #infinite_sites=True)
-                            infinite_sites=False)
-                        if show_progress:
-                            progress.update()
-        return data
+    within_sim_params = {
+        'AW_burnin_steps': [1000,2000,5000], #by default, bin/arg-sim has no burnin time
+        'AW_num_timepoints': [20,60,200], #by default, bin/arg-sim has n=20
+        ERROR_COLNAME : [0],
+    }
+
+    extra_sim_cols = ["only_AW", "ARGweaver_burnin", "ARGweaver_ntimes"]
+
+    def single_sim(self, row_id, sim_params, rng):
+        return_data = {}
+        while True:
+            sim_params['seed'] = rng.randint(1, 2**31)
+            try:
+                # Run the simulation
+                ts, fn = self.single_neutral_simulation(**sim_params)
+                break;
+            except ValueError as e: #No non-singleton variants
+                logging.warning(e)
+        within_sim_params = self.within_sim_params.copy()
+        AW_burnin_steps = within_sim_params.pop('AW_burnin_steps')
+        AW_num_timepoints = within_sim_params.pop('AW_num_timepoints')
+        for i, burnin in enumerate(AW_burnin_steps):
+            for j, n_timesteps in enumerate(AW_num_timepoints):
+                #only run other infers for the first row in this set of AW run parameters
+                sim_params['only_AW'] = (0 if i==0 and j==0 else 1)
+                sim_params['ARGweaver_burnin'] = burnin
+                sim_params['ARGweaver_ntimes'] = n_timesteps
+                row_data = self.save_within_sim_data(row_id, ts, fn, sim_params, iterate_over_dict = within_sim_params)
+                row_id += len(row_data)
+                assert all(k not in return_data for k in row_data)
+                return_data.update(row_data)
+        return return_data
 
 class TsinferTracebackDebug(Dataset):
     """
