@@ -1855,23 +1855,11 @@ class TsinferTracebackDebug(Dataset):
     }
     
     extra_sim_cols = [MUTATION_SEED_COLNAME, "ts_filesize", "tsinfer_srb", "tsinfer_sl"]
-    def run_simulations(self, replicates, seed, show_progress, num_processes=1):
-        # TODO abstract some of this functionality up into the superclass.
-        # There is quite a lot shared with the other dataset.
-        self.replicates = replicates if replicates else self.default_replicates
-        self.seed = seed if seed else self.default_seed
-        rng = random.Random(self.seed)
-        # Variable parameters
-
-        replicate_seeds = [rng.randint(1, 2**31) for i in range(self.replicates)]
-        mutation_seeds = [rng.randint(1, 2**31) for i in range(self.num_sims)]
-        variable_iterator = itertools.product(
-            replicate_seeds, self.mutation_rates)
 
     def single_sim(self, row_id, sim_params, rng):
         while True:
             sim_params['seed'] = rng.randint(1, 2**31)
-            sim_params['mut_seed'] = rng.randint(1, 2**31)
+            sim_params[MUTATION_SEED_COLNAME] = rng.randint(1, 2**31)
             try:
                 # Run the simulation until we get an acceptable one
                 ts, fn = self.single_neutral_simulation(**sim_params)
