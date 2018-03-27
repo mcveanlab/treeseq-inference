@@ -59,8 +59,9 @@ smc2arg_executable = os.path.join(sys.path[0],'..','argweaver','bin','smc2arg')
 RentPlus_executable = os.path.join(sys.path[0],'..','RentPlus','RentPlus.jar')
 tsinfer_executable = os.path.join(sys.path[0],'run_tsinfer.py')
 
-#monkey-patch write.nexus into msprime
+#monkey-patch nexus saving/writing into msprime
 msprime.TreeSequence.write_nexus_trees = msprime_extras.write_nexus_trees
+msprime.TreeSequence.save_nexus_trees = msprime_extras.save_nexus_trees
 
 FASTARG = "fastARG"
 ARGWEAVER = "ARGweaver"
@@ -313,7 +314,6 @@ def construct_tsinfer_name(sim_name, subsample_size, shared_breakpoints, shared_
     if subsample_size is not None and not pd.isnull(subsample_size):
         name = add_subsample_param_to_name(name, subsample_size)
     return name
-
 
 def time_cmd(cmd, stdout=sys.stdout):
     """
@@ -812,6 +812,8 @@ class Dataset(object):
         "replicate", "sample_size", "Ne", "length", "recombination_rate", "mutation_rate",
         ERROR_COLNAME, "edges", "n_trees", "seed"]
 
+    extra_sim_cols = []
+
     #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
     exclude_colnames = []
 
@@ -859,6 +861,104 @@ class Dataset(object):
                 self.data[col] = False
         # Other result columns are added later during the infer step.
         self.dump_data(write_index=True)
+
+    def run_simulations(self, replicates=None, seed=None, show_progress=False, num_processes=1):
+        """
+        Called from setup(): requires us to define the dictionaries 
+        self.between_sim_params and self.within_sim_params.
+        if self.filter_between_sim_params is given then it is a function passed to 
+        filter to only leave in certain param combinations 
+        """
+        rng = random.Random(seed or self.default_seed)
+        n_reps = replicates or self.default_replicates
+        if hasattr(self,'filter_between_sim_params'):
+            logging.info("Filtering out some parameter values")
+            param_iter, count_param_iter = itertools.tee(
+                filter(lambda params: self.filter_between_sim_params(params),
+                    itertools.product(
+                        #always call with replicate number first, then all other params
+                        range(n_reps), *self.between_sim_params.values())))
+        else:
+            param_iter, count_param_iter = itertools.tee(
+                itertools.product(
+                    #always call with replicate number first, then all other params
+                    range(n_reps), *self.between_sim_params.values()))
+
+        num_sims = sum(1 for _ in count_param_iter)
+        num_rows = num_sims * np.prod([len(a) for a in self.within_sim_params.values()])
+
+        self.progress = tqdm.tqdm(total=num_rows) if show_progress else None
+        #Predefine a set of seeds so that we get a different seed for each
+        #thread (NB if we filter out sims, this may be unnecessarily long)
+        seeds = [rng.randint(1, 2**31) for i in range(num_sims)]
+        combined_iterator = enumerate(zip(seeds, param_iter))
+
+        def save_result(data, values_by_row):
+            for i,d in values_by_row.items():
+                for colname, val in d.items():
+                    data.iloc[i][colname]=val
+                if self.progress is not None:
+                    self.progress.update()
+
+        data = pd.DataFrame(index=np.arange(0, num_rows), columns=self.sim_cols + self.extra_sim_cols)
+
+        if num_processes > 1:
+            logging.info("Setting up using multiprocessing ({} processes)".format(num_processes))
+            with multiprocessing.Pool(processes=num_processes, maxtasksperchild=2) as pool:
+                for result in pool.imap_unordered(self.run_single_sim, combined_iterator):
+                    save_result(data, result)
+        else:
+            # When we have only one process it's easier to keep everything in the same
+            # process for debugging.
+            logging.info("Setting up using a single process")
+            for result in map(self.run_single_sim, combined_iterator):
+                save_result(data, result)
+        return data
+
+    def run_single_sim(self, runtime_information):
+        i, (seed_plus_params) = runtime_information
+        rng_seed, params = seed_plus_params
+        sim_params = dict(zip(['replicate'] + list(self.between_sim_params.keys()), params))
+        #sims may have multiple rows, e.g. one for each error rate
+        #so the row numbers will start at multiples of this
+        initial_row_id = i * np.prod([len(x) for x in self.within_sim_params.values()])
+        return self.single_sim(initial_row_id, sim_params, random.Random(rng_seed))
+        
+    def save_within_sim_data(self, base_row_id, ts, base_fn, base_params, iterate_over_dict = None):
+        """
+        save trees and variant matrices with error, and return the values to be save in the csv file
+        iterate_over_dict can be used to pass a subset of values to iterate over, rather than the default
+        of self.within_sim_params
+        """
+        if iterate_over_dict == None:
+            iterate_over_dict = self.within_sim_params
+        ts.save_nexus_trees(base_fn +".nex")
+        return_value = {}
+        print(iterate_over_dict)
+        for params in itertools.product(*iterate_over_dict.values()):
+            #may be iterating here over errors, or e.g. tsinfer_srb
+            keyed_params = dict(zip(iterate_over_dict.keys(), params))
+            keyed_params.update(base_params)
+            row = return_value[base_row_id] = {}
+            base_row_id += 1
+            for k,v in keyed_params.items():
+                row[k] = v
+            #add some stats from the ts
+            row['edges'] = ts.num_edges
+            row['n_trees'] = ts.num_trees
+            print(keyed_params.get('error_rate') or 0)
+            self.save_variant_matrices(ts, base_fn, keyed_params.get('error_rate') or 0, infinite_sites=False)
+        return return_value
+
+    def single_sim(self, row_id, sim_params, rng):
+        """
+        Return a dictionary whose keys are the row numbers which
+        will be inserted into the csv file, and whose values are
+        dictionaries keyed by column name 
+        """
+        raise NotImplementedError(
+            "A dataset should implement a single_sim method that runs" \
+            " a simulation, e.g. by calling self.single_neutral_simulation")
 
     def infer(
             self, num_processes, num_threads, force=False, metrics_only=False,
@@ -951,7 +1051,8 @@ class Dataset(object):
     #
     # Utilities for running simulations and saving files.
     #
-    def single_simulation(self, n, Ne, l, rho, mu, seed, mut_seed=None, **kwargs):
+    def single_neutral_simulation(self, sample_size, Ne, length, recombination_rate, mutation_rate, seed, 
+        mut_seed=None, replicate=None, **kwargs):
         """
         The standard way to run one msprime simulation for a set of parameter
         values. Saves the output to an .hdf5 file, and also saves variant files
@@ -968,17 +1069,19 @@ class Dataset(object):
 
         If Ne is a string, it is an identified used for the population model
         which will be saved into the filename & results file, while the simulation
-        will be called with Ne=1, and the 
+        will be called with Ne=1
+        
+        replicate is useful to pass in for error messages etc.
 
         Returns a tuple of treesequence, filename (without file type extension)
         """
         logging.info(
             "Running neutral simulation for "
             "n = {}, l = {:.2g}, Ne = {}, rho = {}, mu = {}".format(
-                n, l, Ne, rho, mu))
+                sample_size, length, Ne, recombination_rate, mutation_rate))
         # Since we want to have a finite site model, we force the recombination map
         # to have exactly l loci with a recombination rate of rho between them.
-        recombination_map = msprime.RecombinationMap.uniform_map(l, rho, l)
+        recombination_map = msprime.RecombinationMap.uniform_map(length, recombination_rate, length)
         rng1 = random.Random(seed)
         sim_seed = rng1.randint(1, 2**31)
         if "population_configurations" in kwargs:
@@ -986,10 +1089,10 @@ class Dataset(object):
             n_used = None
         else:
             Ne_used = Ne
-            n_used = n
+            n_used = sample_size
         if mut_seed is None:
             ts = msprime.simulate(
-                n_used, Ne_used, recombination_map=recombination_map, mutation_rate=mu,
+                n_used, Ne_used, recombination_map=recombination_map, mutation_rate=mutation_rate,
                 random_seed=sim_seed, **kwargs)
         else:
             #run with no mutations (should give same result regardless of mutation rate)
@@ -1003,14 +1106,14 @@ class Dataset(object):
             sites = msprime.SiteTable()
             muts = msprime.MutationTable()
             ts.dump_tables(nodes=nodes, edges=edges)
-            mutgen = msprime.MutationGenerator(rng2, mu)
+            mutgen = msprime.MutationGenerator(rng2, mutation_rate)
             mutgen.generate(nodes, edges, sites, muts)
             msprime.sort_tables(nodes=nodes, edges=edges, sites=sites, mutations=muts)
             ts = msprime.load_tables(nodes=nodes, edges=edges, sites=sites, mutations=muts)
 
         logging.info(
             "Neutral simulation done; {} sites, {} trees".format(ts.num_sites, ts.num_trees))
-        sim_fn = mk_sim_name(n, Ne, l, rho, mu, seed, mut_seed, self.simulations_dir)
+        sim_fn = mk_sim_name(sample_size, Ne, length, recombination_rate, mutation_rate, seed, mut_seed, self.simulations_dir)
         logging.debug("writing {}.hdf5".format(sim_fn))
         ts.dump(sim_fn+".hdf5")
         
@@ -1024,7 +1127,8 @@ class Dataset(object):
         
         return ts, sim_fn
 
-    def single_simulation_with_human_demography(self, n, sim_name, l, rho, mu, seed, mut_seed=None, **kwargs):
+    def single_simulation_with_human_demography(self, sample_size, sim_name, length, 
+        recombination_rate, mutation_rate, seed, mut_seed=None, **kwargs):
         """
         Run an msprime simulation with a rough approximation of recent human demography
         using the  Gutenkunst et al., (2009) model used by a number of other simulators 
@@ -1104,17 +1208,18 @@ class Dataset(object):
                 demographic_events=demographic_events
                 )
         
-        asian_samples = n//3
-        afro_european_samples = n - asian_samples
+        asian_samples = sample_size//3
+        afro_european_samples = sample_size - asian_samples
         european_samples = afro_european_samples//2
         african_samples = afro_european_samples - european_samples
-        assert african_samples + european_samples + asian_samples
+        assert african_samples + european_samples + asian_samples == sample_size
         
         kwargs.update(out_of_africa(african_samples, european_samples, asian_samples))
-        return self.single_simulation(n, sim_name, l, rho, mu, seed, mut_seed, **kwargs)        
+        return self.single_neutral_simulation(sample_size, sim_name, length, 
+            recombination_rate, mutation_rate, seed, mut_seed, **kwargs)        
 
-    def single_simulation_with_selective_sweep(self, n, Ne, l, rho, mu, s, h, stop_freqs,
-        seed, mut_seed=None):
+    def single_simulation_with_selective_sweep(self, sample_size, Ne, length, recombination_rate, mutation_rate, 
+        selection_coefficient, dominance_coefficient, stop_freqs, seed, mut_seed=None, replicate=None):
         """
         Run a forward simulation with a selective sweep for a set of parameter values.
         using simuPOP.
@@ -1131,7 +1236,7 @@ class Dataset(object):
         stop = (1.0, 200), the simulation is stopped 200 generations after fixation.
 
         Convert the output to multiple .hdf5 files using ftprime. Other
-        details as for single_simulation()
+        details as for single_neutral_simulation()
         Returns an iterator over (treesequence, filename, output_freq) tuples
         (without file type extension)
 
@@ -1140,22 +1245,22 @@ class Dataset(object):
         # which is not always needed
         from selective_sweep import simulate_sweep
         logging.info(
-            "Running forward simulation with selection for "
-            "n = {}, l = {:.2g}, Ne = {}, rho = {}, mu = {}, s = {}".format(
-                n, l, Ne, rho, mu, s))
-        sim_fn = mk_sim_name(n, Ne, l, rho, mu, seed, mut_seed, self.simulations_dir,
-            tool="ftprime", s=s, h=h) + "_f" #freq + post_gens added by simulate_sweep()
+            "Running forward simulation with selection for " + \
+            "n = {}, Ne = {}, l = {:.2g}, rho = {}, mu = {}, s = {}".format(
+                sample_size, Ne, length, recombination_rate, mutation_rate, selection_coefficient))
+        sim_fn = mk_sim_name(sample_size, Ne, length, recombination_rate, mutation_rate, seed, mut_seed, self.simulations_dir,
+            tool="ftprime", s=selection_coefficient, h=dominance_coefficient) + "_f" #freq + post_gens added by simulate_sweep()
 
 
         saved_files = simulate_sweep(
-            popsize=Ne,
-            chrom_length=l,
-            recomb_rate=rho,
-            mut_rate=mu,
-            selection_coef=s,
-            dominance_coef=h,
-            output_at_freqs=[(s,0) if isinstance(s, (str, float, int)) else (s[0],s[1]) for s in stop_freqs],
-            nsamples = int(n/2), #sample n/2 diploid individuals from the population
+            popsize = Ne,
+            chrom_length = length,
+            recomb_rate = recombination_rate,
+            mut_rate = mutation_rate,
+            selection_coef = selection_coefficient,
+            dominance_coef = dominance_coefficient,
+            output_at_freqs = [(s,0) if isinstance(s, (str, float, int)) else (s[0],s[1]) for s in stop_freqs],
+            nsamples = int(sample_size/2), #sample n/2 diploid individuals from the population
             max_generations=int(1e8), #bail after ridiculous numbers of generations
             mutations_after_simulation=True,
             treefile_prefix=sim_fn,
@@ -1227,67 +1332,33 @@ class MetricsByMutationRateDataset(Dataset):
     default_seed = 123
     compute_tree_metrics = METRICS_ON #| METRICS_RANDOMLY_BREAK_POLYTOMIES
 
-    #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
-    exclude_colnames =[]
+    #params that change BETWEEN simulations. Keys should correspond
+    # to column names in the csv file. Values should all be arrays.
+    between_sim_params = {
+        'Ne': [5000],
+        'mutation_rate': np.geomspace(0.5e-8, 3.5e-6, num=7),
+        'sample_size':   [15], #will be split across the 3 human sub pops
+        'length':        [100000],  #should be enough for ~ 50 trees
+        'recombination_rate': [1e-8],
+    }
 
-
-    def run_simulations(self, replicates, seed, show_progress, num_processes=1):
-        if replicates is None:
-            replicates = self.default_replicates
-        if seed is None:
-            seed = self.default_seed
-        rng = random.Random(seed)
-        # Variable parameters
-        mutation_rates = np.geomspace(0.5e-8, 3.5e-6, num=7)
-        error_rates = [0, 0.001, 0.01]
-        sample_sizes = [15]
-
-        # Fixed parameters
-        Ne = 5000
-        length = 100000 #should be enough for ~ 50 trees
-        recombination_rate = 1e-8
-        num_rows = replicates * len(mutation_rates) * len(error_rates) * len(sample_sizes)
-        data = pd.DataFrame(index=np.arange(0, num_rows), columns=self.sim_cols)
-        row_id = 0
-        if show_progress:
-            progress = tqdm.tqdm(total=num_rows)
-        for replicate in range(replicates):
-            for mutation_rate in mutation_rates:
-                for sample_size in sample_sizes:
-                    done = False
-                    while True:
-                        replicate_seed = rng.randint(1, 2**31)
-                        try:
-                            # Run the simulation until we get an acceptable one
-                            ts, fn = self.single_simulation(sample_size, Ne, length,
-                                recombination_rate, mutation_rate, replicate_seed)
-                            break
-                        except ValueError as e: #No non-singleton variants
-                            logging.warning(e)
-                        
-                    with open(fn +".nex", "w+") as out:
-                        ts.write_nexus_trees(out)
-                    self.save_positions(ts, fn)
-
-                    # Add the rows for each of the error rates in this replicate
-                    for error_rate in error_rates:
-                        row = data.iloc[row_id]
-                        row_id += 1
-                        row.sample_size = sample_size
-                        row.recombination_rate = recombination_rate
-                        row.mutation_rate = mutation_rate
-                        row.length = length
-                        row.Ne = Ne
-                        row.seed = replicate_seed
-                        row[ERROR_COLNAME] = error_rate
-                        row.edges = ts.num_edges
-                        row.n_trees = ts.num_trees
-                        self.save_variant_matrices(ts, fn, error_rate,
-                            #infinite_sites=True)
-                            infinite_sites=False)
-                        if show_progress:
-                            progress.update()
-        return data
+    #params that change WITHIN simulations. Keys should correspond
+    # to column names in the csv file. Values should all be arrays.
+    within_sim_params = {
+        ERROR_COLNAME : [0, 0.001, 0.01],
+    }
+            
+    def single_sim(self, row_id, sim_params, rng):
+        while True:
+            sim_params['seed'] = rng.randint(1, 2**31)
+            try:
+                # Run the simulation until we get an acceptable one
+                ts, fn = self.single_neutral_simulation(**sim_params)
+                break
+            except ValueError as e: #No non-singleton variants
+                logging.warning(e)
+        row_data = self.save_within_sim_data(row_id, ts, fn, sim_params)
+        return row_data
 
 
 class TsinferPerformance(Dataset):
@@ -1301,79 +1372,47 @@ class TsinferPerformance(Dataset):
     default_replicates = 20
     default_seed = 123
     tools = [TSINFER]
+    
     fixed_length = 20 * 10**6
     fixed_sample_size = 5000
-    mutation_rate = 5e-9
+    num_points = 20
+    
+    #params that change BETWEEN simulations. Keys should correspond
+    # to column names in the csv file. Values should all be arrays.
+    between_sim_params = {
+        'Ne':            [5000],
+        'mutation_rate': [5e-9],
+        #Ensure sample sizes are even so we can output diploid VCF.
+        'sample_size':   np.unique(list(np.linspace(5, fixed_sample_size, num_points).astype(int) * 2) + [fixed_sample_size]),
+        'length':        np.unique(list(np.linspace(fixed_length / 10, 2 * fixed_length, num_points).astype(int)) + [fixed_length]),
+        'recombination_rate': [5e-9],
+    }
 
-    def run_simulations(self, user_specified_replicates, seed, show_progress, num_processes=1):
-        # TODO abstract some of this functionality up into the superclass.
-        # There is quite a lot shared with the other dataset.
-        replicates = user_specified_replicates or self.default_replicates
-        rng = random.Random(seed if seed else self.default_seed)
-        # Fixed parameters
-        self.Ne = 5000
-        # TODO we'll want to do this for multiple error rates eventually. For now
-        # just look at perfect data.
-        # Variable parameters
-        num_points = 20
-        sample_sizes = np.linspace(10, 2 * self.fixed_sample_size, num_points).astype(int)
-        # Ensure sample sizes are even so we can output diploid VCF.
-        sample_sizes[sample_sizes % 2 != 0] += 1
-        lengths = np.linspace(self.fixed_length / 10, 2 * self.fixed_length, num_points).astype(int)
-        recombination_rates = np.array([1]) * self.mutation_rate
-        #parameters that are iterated over within a single simulation
-        self.error_rates = [0]
-
-        self.num_sims = (len(sample_sizes) + len(lengths)) * len(recombination_rates) * replicates
-        self.num_rows = self.num_sims * len(self.error_rates)
-        cols = self.sim_cols + ["sites", "ts_filesize", "vcf_filesize", "vcfgz_filesize"]
-        data = pd.DataFrame(index=np.arange(0, self.num_rows), columns=cols)
-        progress = tqdm.tqdm(total=self.num_rows) if show_progress else None
-
-        def save_result(data, values_by_row, progress):
-            for i,d in values_by_row.items():
-                for colname, val in d.items():
-                    data.iloc[i][colname]=val
-                if progress is not None:
-                    progress.update()
-
-        logging.info("Setting up using {} processes".format(num_processes))
-        nl = [(self.fixed_sample_size, l) for l in lengths] + [
-            (n, self.fixed_length) for n in sample_sizes]
-        variable_iterator = itertools.product(nl, recombination_rates, range(replicates))
-        seeds = [rng.randint(1, 2**31) for i in range(self.num_sims)]
-        combined_iterator = enumerate(itertools.zip_longest(seeds, variable_iterator))
-
-        if num_processes > 1:
-            with multiprocessing.Pool(processes=num_processes, maxtasksperchild=2) as pool:
-                for result in pool.imap_unordered(self.single_sim, combined_iterator):
-                    save_result(data, result, progress)
-        else:
-            # When we have only one process it's easier to keep everything in the same
-            # process for debugging.
-            for result in map(self.single_sim, combined_iterator):
-                save_result(data, result, progress)
-        return data
-
-
-    def single_sim(self, runtime_information):
-        i, (params) = runtime_information
-        assert None not in params #one will be none if the lengths of the iterators are different
-        rng_seed, ((sample_size, length), recombination_rate, _) = params
-        base_row_id = i * self.num_rows//self.num_sims
-        return_value = {}
-        rng = random.Random(rng_seed)
+    #params that change WITHIN simulations. Keys should correspond
+    # to column names in the csv file. Values should all be arrays.
+    within_sim_params = {
+        ERROR_COLNAME : [0],
+    }
+    
+    extra_sim_cols = ["sites", "ts_filesize", "vcf_filesize", "vcfgz_filesize"]
+    
+    def filter_between_sim_params(self, params):
+        """
+        We want to only use cases where the sample_size OR the length are at the fixed values
+        """
+        keyed_params = dict(zip(['replicates']+list(self.between_sim_params.keys()), params))
+        return (keyed_params['sample_size']==self.fixed_sample_size) or \
+            (keyed_params['length']==self.fixed_length)
+        
+    def single_sim(self, row_id, sim_params, rng):
         while True:
-            replicate_seed = rng.randint(1, 2**31)
+            sim_params['seed'] = rng.randint(1, 2**31)
             try:
                 # Run the simulation until we get an acceptable one
-                ts, fn = self.single_simulation(
-                    sample_size, self.Ne, length, recombination_rate, self.mutation_rate,
-                    replicate_seed)
+                ts, fn = self.single_neutral_simulation(**sim_params)
                 break
             except ValueError as e: #No non-singleton variants
                 logging.warning(e)
-                
         vcf_filename = fn + ".vcf"
         with open(vcf_filename, "w") as vcf_file:
             ts.write_vcf(vcf_file, 2)
@@ -1382,26 +1421,14 @@ class TsinferPerformance(Dataset):
         # gzip removes the original by default, so might as well save some space.
         subprocess.check_call(["gzip", vcf_filename])
 
-        assert ts.num_sites > 0
-        row_id = base_row_id
-        for error_rate in self.error_rates:
-            row = return_value[row_id] = {}
-            row_id += 1
-            row['sample_size'] = sample_size
-            row['recombination_rate'] = recombination_rate
-            row['mutation_rate'] = self.mutation_rate
-            row['length'] = length
-            row['Ne'] = self.Ne
-            row['seed'] = replicate_seed
-            row[ERROR_COLNAME] = error_rate
-            row['edges'] = ts.num_edges
-            row['n_trees'] = ts.num_edges
-            row['sites'] = ts.num_sites
-            row['ts_filesize'] = os.path.getsize(fn + ".hdf5")
-            row['vcf_filesize'] = vcf_filesize
-            row['vcfgz_filesize'] = os.path.getsize(vcfgz_filename)
-            self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
-        return return_value
+        row_data = self.save_within_sim_data(row_id, ts, fn, dict(sim_params,
+            sites=ts.num_sites,
+            ts_filesize = os.path.getsize(fn + ".hdf5"),
+            vcf_filesize = vcf_filesize,
+            vcfgz_filesize = os.path.getsize(vcfgz_filename)
+            ))
+        return row_data
+
 
 class ProgramComparison(Dataset):
     """
@@ -1416,8 +1443,7 @@ class ProgramComparison(Dataset):
     fixed_sample_size = 10000
 
     def run_simulations(self, replicates, seed, show_progress, num_processes=1):
-        # TODO abstract some of this functionality up into the superclass.
-        # There is quite a lot shared with the other dataset.
+        # TODO change this to the new calling convention.
         if replicates is None:
             replicates = self.default_replicates
         if seed is None:
@@ -1449,7 +1475,7 @@ class ProgramComparison(Dataset):
                     replicate_seed = rng.randint(1, 2**31)
                     try:
                         # Run the simulation until we get an acceptable one
-                        ts, fn = self.single_simulation(sample_size, Ne, length,
+                        ts, fn = self.single_neutral_simulation(sample_size, Ne, length,
                             recombination_rate, mutation_rate, replicate_seed)
                         break
                     except ValueError as e: #No non-singleton variants
@@ -1502,80 +1528,63 @@ class MetricsBySampleSizeDataset(Dataset):
     #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
     exclude_colnames =[]
 
+    #params that change BETWEEN simulations. Keys should correspond
+    # to column names in the csv file. Values should all be arrays.
+    between_sim_params = {
+        'length': [10000, 100000, 1000000], 
+        'Ne':              [5000],
+        'mutation_rate':   [1e-8],
+        'recombination_rate': [1e-8]
+    }
 
-    def run_simulations(self, replicates, seed, show_progress, num_processes=1):
-        if replicates is None:
-            replicates = self.default_replicates
-        if seed is None:
-            seed = self.default_seed
-        rng = random.Random(seed)
-
-        # Variable parameters
-        lengths = [10000, 100000, 1000000]
-        error_rates = [0, 0.001, 0.01]
-        sample_sizes = [12, 50, 100, 500, 1000]
-        shared_breakpoint_params = [True]#, False]
-        shared_length_params = [False]#, True]
-
-        # Fixed parameters
-        subsample_size=10
-        assert subsample_size <= min(sample_sizes)
-        Ne = 5000
-        mutation_rate = 1e-8
-        recombination_rate = 1e-8
-        num_rows = replicates * len(lengths) * len(error_rates) * len(sample_sizes) * \
-            len(shared_breakpoint_params) * len(shared_length_params)
-        cols = self.sim_cols + ["tsinfer_srb", "tsinfer_sl", "subsample_size"]
-        data = pd.DataFrame(index=np.arange(0, num_rows), columns=cols)
-        row_id = 0
-        if show_progress:
-            progress = tqdm.tqdm(total=num_rows)
-        for replicate in range(replicates):
-            for length in lengths:
-                while True:
-                    replicate_seed = rng.randint(1, 2**31)
-                    try:
-                        # Run the simulation until we get an acceptable one
-                        base_ts, unused_fn = self.single_simulation(max(sample_sizes), Ne, length,
-                            recombination_rate, mutation_rate, replicate_seed)
-                        break
-                    except ValueError as e: #No non-singleton variants
-                        logging.warning(e)
-                #Take the same base simulation and sample down to get comparable test sets
-                for sample_size in sample_sizes:
-                    ts = base_ts.simplify(list(range(sample_size)))
-                    fn = mk_sim_name(sample_size, Ne, length, recombination_rate, mutation_rate,
-                        replicate_seed, directory=self.simulations_dir)
-                    #subsample to produce a nexus file for metric comparison
-                    subsampled_fn=add_subsample_param_to_name(fn, subsample_size)
-                    subsampled_ts = ts.simplify(list(range(subsample_size)))
-                    with open(subsampled_fn +".nex", "w+") as out:
-                        subsampled_ts.write_nexus_trees(out)
-                    self.save_positions(subsampled_ts, subsampled_fn)
-                    # Add the rows for each of the error rates in this replicate
-                    for tsinfer_srb in shared_breakpoint_params:
-                        for tsinfer_sl in shared_length_params:
-                            for error_rate in error_rates:
-                                row = data.iloc[row_id]
-                                row_id += 1
-                                row.sample_size = sample_size
-                                row.recombination_rate = recombination_rate
-                                row.mutation_rate = mutation_rate
-                                row.length = length
-                                row.Ne = Ne
-                                row.tsinfer_srb = tsinfer_srb
-                                row.tsinfer_sl = tsinfer_sl
-                                row.subsample_size = subsample_size
-                                row.seed = replicate_seed
-                                row[ERROR_COLNAME] = error_rate
-                                row.edges = subsampled_ts.num_edges
-                                row.n_trees = subsampled_ts.num_trees
-                                self.save_variant_matrices(ts, fn, error_rate,
-                                    #infinite_sites=True)
-                                    infinite_sites=False)
-                                if show_progress:
-                                    progress.update()
-        return data
+    within_sim_params = {
+        'subsample_size':  [10],
+        'sample_size': [12, 50, 100, 500, 1000], 
+        'tsinfer_srb' : [True], #, False],
+        'tsinfer_sl' : [False], #, True],
+        ERROR_COLNAME: [0, 0.001, 0.01]
+    }
+    
+    def single_sim(self, row_id, sim_params, rng):
+        assert all([sss <= min(self.within_sim_params['sample_size']) for sss in self.within_sim_params['subsample_size']])
+        base_row_id = row_id
+        while True:
+            sim_params['seed'] = rng.randint(1, 2**31)
+            sim_params['sample_size'] = max(self.within_sim_params['sample_size'])
+            try:
+                # Run the simulation until we get an acceptable one
+                base_ts, unused_fn = self.single_neutral_simulation(**sim_params)
+                break
+            except ValueError as e: #No non-singleton variants
+                logging.warning(e)
+        #Take the same base simulation and sample down to get comparable test sets
+        return_data = {}
+        within_sim_params = self.within_sim_params.copy()
+        subsample_sizes = within_sim_params.pop('subsample_size') #usually only one value in this arr
+        sample_sizes = within_sim_params.pop('sample_size') #remove sample_size - we will loop over it explictly
+        #make sure the outermost loop is the sampling loop
+        for subsample_size in subsample_sizes:
+            for sample_size in sample_sizes:
+                #here we override the original sample_size and save a smaller file under a different name
+                sim_params['subsample_size'] = subsample_size
+                sim_params['sample_size'] = sample_size #override from previous definition
+                ts = base_ts.simplify(list(range(sample_size)))
+                fn = mk_sim_name(sim_params['sample_size'], 
+                    sim_params['Ne'],
+                    sim_params['length'],
+                    sim_params['recombination_rate'],
+                    sim_params['mutation_rate'],
+                    sim_params['seed'], directory=self.simulations_dir)
+                #subsample to produce a nexus file for metric comparison
+                subsampled_fn=add_subsample_param_to_name(fn, subsample_size)
+                subsampled_ts = ts.simplify(list(range(subsample_size)))
+                subsampled_ts.save_nexus_trees(subsampled_fn +".nex")
+                self.save_positions(subsampled_ts, subsampled_fn)
+                row_data = self.save_within_sim_data(base_row_id, ts, fn, sim_params, within_sim_params)
+                base_row_id += len(row_data)
+                assert all(k not in return_data for k in row_data)
+                return_data.update(row_data)
+        return return_data
 
 class MetricsByMutationRateWithDemographyDataset(Dataset):
     """
@@ -1593,87 +1602,34 @@ class MetricsByMutationRateWithDemographyDataset(Dataset):
     #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
     exclude_colnames =[]
 
-    #keys here should correspond to the names in the csv file
-    between_sim_params = dict(
-        mutation_rate = np.geomspace(0.5e-8, 3.5e-6, num=5),
-        sample_size =   [15], #will be split across the 3 human sub pops
-        length =        [100000],
-        recombination_rate = [1e-8],
-        )
+    #params that change BETWEEN simulations. Keys should correspond
+    # to column names in the csv file. Values should all be arrays.
+    between_sim_params = {
+        'mutation_rate': np.geomspace(0.5e-8, 3.5e-6, num=5),
+        'sample_size':   [15], #will be split across the 3 human sub pops
+        'length':        [100000],
+        'recombination_rate': [1e-8],
+        'sim_name': "Gutenkunst.out.of.africa"
+    }
 
+    #params that change WITHIN simulations. Keys should correspond
+    # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
         ERROR_COLNAME : [0, 0.001, 0.01],
     }
+            
+    def single_sim(self, row_id, sim_params, rng):
         
-
-    def run_simulations(self, replicates, seed, show_progress, num_processes=1):
-        self.replicates = replicates if replicates else self.default_replicates
-        rng = random.Random(seed if seed else self.default_seed)
-        self.num_sims = self.replicates * np.prod([len(a) for a in self.between_sim_params.values()])
-        self.num_rows = self.num_sims * np.prod([len(a) for a in self.within_sim_params.values()])
-
-        data = pd.DataFrame(index=np.arange(0, self.num_rows), columns=self.sim_cols)
-        progress = tqdm.tqdm(total=self.num_rows) if show_progress else None
-
-        def save_result(data, values_by_row, progress):
-            for i,d in values_by_row.items():
-                for colname, val in d.items():
-                    data.iloc[i][colname]=val
-                if progress is not None:
-                    progress.update()
-
-        logging.info("Setting up using {} processes".format(num_processes))
-        variable_iterator = itertools.product(
-            range(self.replicates), *self.between_sim_params.values())
-        seeds = [rng.randint(1, 2**31) for i in range(self.num_sims)]
-        combined_iterator = enumerate(itertools.zip_longest(seeds, variable_iterator))
-
-        if num_processes > 1:
-            with multiprocessing.Pool(processes=num_processes, maxtasksperchild=2) as pool:
-                for result in pool.imap_unordered(self.single_sim, combined_iterator):
-                    save_result(data, result, progress)
-        else:
-            # When we have only one process it's easier to keep everything in the same
-            # process for debugging.
-            for result in map(self.single_sim, combined_iterator):
-                save_result(data, result, progress)
-        return data
-
-    def single_sim(self, runtime_information):
-        i, (seed_plus_params) = runtime_information
-        assert None not in seed_plus_params #one will be none if the lengths of the iterators are different
-        rng_seed, params = seed_plus_params
-        sim_params = dict(zip(['replicate'] + list(self.between_sim_params.keys()), params))
-        print(sim_params)
-        row_id = i * self.num_rows//self.num_sims #sims may have multiple rows, one for each error rate
-        return_value = {}
-        rng = random.Random(rng_seed)
-        sim_name = "Gutenkunst.out.of.africa"
         while True:
-            replicate_seed = rng.randint(1, 2**31)
+            sim_params['seed'] = rng.randint(1, 2**31)
             try:
                 # Run the simulation until we get an acceptable one
-                ts, fn = self.single_simulation_with_human_demography(
-                    sim_params['sample_size'], sim_name, sim_params['length'],
-                    sim_params['recombination_rate'], sim_params['mutation_rate'], replicate_seed)
+                ts, fn = self.single_simulation_with_human_demography(**sim_params)
                 break
             except ValueError as e: #No non-singleton variants
                 logging.warning(e)
-        with open(fn +".nex", "w+") as out:
-            ts.write_nexus_trees(out)
-        for params in itertools.product(*self.within_sim_params.values()):
-            sim_params.update(dict(zip(self.within_sim_params.keys(), params)))
-            row = return_value[row_id] = {}
-            row_id += 1
-            row['seed'] = replicate_seed
-            for k,v in sim_params.items():
-                row[k] = v
-            #add some stats from the ts
-            row['edges'] = ts.num_edges
-            row['n_trees'] = ts.num_trees
-            print(sim_params)
-            self.save_variant_matrices(ts, fn, sim_params['error_rate'], infinite_sites=False)
-        return return_value
+        row_data = self.save_within_sim_data(row_id, ts, fn, sim_params)
+        return row_data
 
 class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
     """
@@ -1695,116 +1651,59 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
     #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
     exclude_colnames =[]
 
-    def run_simulations(self, replicates, seed, show_progress, num_processes=1):
-        self.replicates = replicates if replicates else self.default_replicates
-        rng = random.Random(seed if seed else self.default_seed)
-        ## Variable parameters
-        # parameters unique to each simulation
-        self.mutation_rates = np.geomspace(0.5e-8, 3.5e-6, num=5)
-        self.sample_sizes = [15]
-        # parameters across a single simulation
-        self.error_rates = [0, 0.001, 0.01]
-        self.stop_at = ['0.2', '0.5', '0.8', '1.0', ('1.0', 200), ('1.0', 1000)] #frequencies to output a file.
+
+    between_sim_params = {
+        'mutation_rate': np.geomspace(0.5e-8, 3.5e-6, num=5),
+        'sample_size': [15],
+        'Ne':     [5000],
+        'length': [100000],
+        'recombination_rate': [1e-8],
+        SELECTION_COEFF_COLNAME: [0.1],
+        DOMINANCE_COEFF_COLNAME: [0.5],
+    }
+
+    within_sim_params = {
         #NB - these are strings because they are output as part of the filename
+        'stop_freqs': ['0.2', '0.5', '0.8', '1.0', ('1.0', 200), ('1.0', 1000)], #frequencies to output a file.
+        ERROR_COLNAME : [0, 0.001, 0.01],
+    }
 
-        ## Fixed parameters
-        self.Ne = 5000
-        self.length = 100000
-        self.recombination_rate = 1e-8
-        self.selection_coefficient = 0.1
-        self.dominance_coefficient = 0.5
-
-        self.num_sims = self.replicates * len(self.mutation_rates) * len(self.sample_sizes)
-        self.num_rows = self.num_sims * len(self.error_rates) * len(self.stop_at)
-
-        cols = self.sim_cols + [SIMTOOL_COLNAME, SELECTION_COEFF_COLNAME,
+    extra_sim_cols = [SIMTOOL_COLNAME, SELECTION_COEFF_COLNAME,
             DOMINANCE_COEFF_COLNAME, SELECTED_FREQ_COLNAME, SELECTED_POSTGEN_COLNAME]
-        data = pd.DataFrame(index=np.arange(0, self.num_rows), columns=cols)
-        progress = tqdm.tqdm(total=self.num_rows) if show_progress else None
 
-
-        def save_result(data, values_by_row, progress):
-            for i,d in values_by_row.items():
-                for colname, val in d.items():
-                    data.iloc[i][colname]=val
-                if progress is not None:
-                    progress.update()
-
-        logging.info("Setting up using {} processes".format(num_processes))
-        variable_iterator = itertools.product(
-            range(self.replicates), self.mutation_rates,  self.sample_sizes)
-        seeds = [rng.randint(1, 2**31) for i in range(self.num_sims)]
-        combined_iterator = enumerate(itertools.zip_longest(seeds, variable_iterator))
-
-        if num_processes > 1:
-            with multiprocessing.Pool(processes=num_processes, maxtasksperchild=2) as pool:
-                for result in pool.imap_unordered(self.single_sim, combined_iterator):
-                    save_result(data, result, progress)
-        else:
-            # When we have only one process it's easier to keep everything in the same
-            # process for debugging.
-            for result in map(self.single_sim, combined_iterator):
-                save_result(data, result, progress)
-        return data
-
-    def single_sim(self, runtime_information):
-        i, (params) = runtime_information
-        assert None not in params #one will be none if the lengths of the iterators are different
-        rng_seed, (replicate, mutation_rate, sample_size) = params
-        base_row_id = i * self.num_rows//self.num_sims
-        return_value = {}
-        rng = random.Random(rng_seed)
+    def single_sim(self, row_id, sim_params, rng):
         while True:
-            replicate_seed = rng.randint(1, 2**31)
-            logging.info("Running simulation {} of {} in process {} using " \
-                "n={}, Ne={}, L={}, rho={}, mu={}, s={}, h={} " \
-                "stopping at frequencies {}, and with seed {}".format(
-                i, self.num_sims, os.getpid(), sample_size, self.Ne, self.length,
-                self.recombination_rate, mutation_rate, self.selection_coefficient,
-                self.dominance_coefficient, self.stop_at, replicate_seed))
+            base_row_id = row_id
+            return_data = {}
+            sim_params['seed'] = rng.randint(1, 2**31)
+            logging.info("Running simulation {} of {} in process {} with following params: {} ".format(
+                i, self.num_sims, os.getpid(), sim_params))
             try:
                 #we have multiple rows per simulation for results after different generations post-fixation
                 #save the base number here, which will be incremented
-                row_id = base_row_id 
-                # Run the simulation, in parallel if necessary - and loop through the returned freqs
+                within_sim_params = self.within_sim_params.copy()
+                stop_freqs = within_sim_params.pop('stop_freqs')
+                # Pass stopping freqs into the sim and loop through the returned freqs
                 # Reject this entire set if we got no mutations at any point, or all mutations are fixed
-                for ts, fn, output_info in self.single_simulation_with_selective_sweep(
-                    sample_size, self.Ne, self.length, self.recombination_rate,
-                    mutation_rate, self.selection_coefficient, self.dominance_coefficient,
-                    self.stop_at, replicate_seed):
-                        with open(fn +".nex", "w+") as out:
-                            ts.write_nexus_trees(out)
-                        for error_rate in self.error_rates:
-                            row = return_value[row_id] = {}
-                            row_id += 1
-                            row['sample_size'] = sample_size
-                            row['recombination_rate'] = self.recombination_rate
-                            row['mutation_rate'] = mutation_rate
-                            row['length'] = self.length
-                            row['Ne'] = self.Ne
-                            row['seed'] = replicate_seed
-                            row[ERROR_COLNAME] = error_rate
-                            row['edges'] = ts.num_edges
-                            row['n_trees'] = ts.num_trees
-                            row[SIMTOOL_COLNAME] = "ftprime"
-                            row[SELECTION_COEFF_COLNAME] = self.selection_coefficient
-                            row[DOMINANCE_COEFF_COLNAME] = self.dominance_coefficient
-                            row[SELECTED_FREQ_COLNAME] = output_info[0]
-                            row[SELECTED_POSTGEN_COLNAME] = output_info[1] if len(output_info)>1 else 0
-                            self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
+                for ts, fn, output_info in self.single_simulation_with_selective_sweep(stop_freqs = stop_freqs, **sim_params):
+                    #create new parameters to save to the csv file
+                    params = {SIMTOOL_COLNAME:    'ftprime',
+                        SELECTED_FREQ_COLNAME:    output_info[0],
+                        SELECTED_POSTGEN_COLNAME: output_info[1] if len(output_info)>1 else 0}
+                    params.update(sim_params)
+                    row_data = self.save_within_sim_data(base_row_id, ts, fn, params, iterate_over_dict = within_sim_params)
+                    base_row_id += len(row_data)
+                    assert all(k not in return_data for k in row_data)
+                    return_data.update(row_data)
                 break #not rejected, can finish
             except ValueError as e: #No non-singleton variants
                 logging.warning(e)
-
             except (_msprime.LibraryError, MemoryError) as e:
                 #we sometimes run out of memory here
-                print("Error when running `single_sim()`, probably in" +
-                    "single_simulation_with_selective_sweep({},{},{},{},{},{},{},{},{})".format(
-                    sample_size, self.Ne, self.length, self.recombination_rate,
-                    mutation_rate, self.selection_coefficient, self.dominance_coefficient,
-                    self.stop_at, replicate_seed))
+                print("Error when running `single_sim()`, probably in single_simulation_with_selective_sweep({})"\
+                    .format(",".join(["{}={}".format(k,v) for k,v in sim_params.items()])))
                 raise
-        return return_value
+        return return_data
 
 ### ADDITIONAL DEBUG
 ### The following classes are used for drilling down into particular features
@@ -1828,9 +1727,6 @@ class ARGweaverParamChanges(Dataset):
     default_replicates = 40
     default_seed = 123
     compute_tree_metrics = METRICS_ON
-
-    #for a tidier csv file, we can exclude any of the save_stats values or ARGmetrics columns
-    exclude_colnames =[]
 
 
     def run_simulations(self, replicates, seed, show_progress, num_processes=1):
@@ -1863,7 +1759,7 @@ class ARGweaverParamChanges(Dataset):
                         replicate_seed = rng.randint(1, 2**31)
                         try:
                             # Run the simulation
-                            ts, fn = self.single_simulation(
+                            ts, fn = self.single_neutral_simulation(
                                 sample_size, Ne, length, recombination_rate, mutation_rate,
                                 replicate_seed, replicate_seed)
                             break;
@@ -1944,6 +1840,21 @@ class TsinferTracebackDebug(Dataset):
     default_seed = 123
     tools = [TSINFER]
 
+    between_sim_params = {
+        'mutation_rate': np.geomspace(0.5e-8, 3.5e-6, num=5),
+        'sample_size': [1000],
+        'Ne':     [5000],
+        'length': [10**6],
+        'recombination_rate': [2e-8],
+        'tsinfer_srb' : [True], #, False],
+        'tsinfer_sl' : [False], #, True],
+    }
+
+    within_sim_params = {
+        ERROR_COLNAME : [0],
+    }
+    
+    extra_sim_cols = [MUTATION_SEED_COLNAME, "ts_filesize", "tsinfer_srb", "tsinfer_sl"]
     def run_simulations(self, replicates, seed, show_progress, num_processes=1):
         # TODO abstract some of this functionality up into the superclass.
         # There is quite a lot shared with the other dataset.
@@ -1951,77 +1862,25 @@ class TsinferTracebackDebug(Dataset):
         self.seed = seed if seed else self.default_seed
         rng = random.Random(self.seed)
         # Variable parameters
-        self.mutation_rates = np.geomspace(0.5e-8, 3.5e-6, num=5)
-        self.shared_breakpoint_params = [True]#, False]
-        self.shared_length_params = [False]#, True]
-        self.error_rates = [0]
-        # Fixed parameters
-        self.Ne = 5000
-        self.sample_size = 1000
-        self.length = 10**6
-        self.recombination_rate = 2e-8
-        self.num_sims = self.replicates * len(self.mutation_rates)
-        self.num_rows = self.num_sims * len(self.error_rates) * \
-            len(self.shared_breakpoint_params) * len(self.shared_length_params)
-        cols = self.sim_cols + [MUTATION_SEED_COLNAME, "ts_filesize", "tsinfer_srb", "tsinfer_sl"]
-        data = pd.DataFrame(index=np.arange(0, self.num_rows), columns=cols)
-        progress = tqdm.tqdm(total=self.num_rows) if show_progress else None
 
-        def save_result(data, values_by_row, progress):
-            for i,d in values_by_row.items():
-                for colname, val in d.items():
-                    data.iloc[i][colname]=val
-                if progress is not None:
-                    progress.update()
-
-        logging.info("Setting up using {} processes".format(num_processes))
         replicate_seeds = [rng.randint(1, 2**31) for i in range(self.replicates)]
         mutation_seeds = [rng.randint(1, 2**31) for i in range(self.num_sims)]
         variable_iterator = itertools.product(
             replicate_seeds, self.mutation_rates)
 
-        combined_iterator = enumerate(itertools.zip_longest(mutation_seeds, variable_iterator))
-
-        if num_processes > 1:
-            with multiprocessing.Pool(processes=num_processes, maxtasksperchild=2) as pool:
-                for result in pool.imap_unordered(self.single_sim, combined_iterator):
-                    save_result(data, result, progress)
-        else:
-            # When we have only one process it's easier to keep everything in the same
-            # process for debugging.
-            for result in map(self.single_sim, combined_iterator):
-                save_result(data, result, progress)
-        return data
-
-    def single_sim(self, runtime_information):
-        i, (params) = runtime_information
-        assert None not in params #one will be none if the lengths of the iterators are different
-        mutation_seed, (replicate_seed, mutation_rate) = params
-        base_row_id = i * self.num_rows//self.num_sims
-        return_value = {}
-        ts, fn = self.single_simulation(self.sample_size, self.Ne, self.length,
-            self.recombination_rate, mutation_rate, replicate_seed, mutation_seed)
-        row_id = base_row_id
-        for error_rate in self.error_rates:
-            for tsinfer_srb in self.shared_breakpoint_params:
-                for tsinfer_sl in self.shared_length_params:
-                    row = return_value[row_id] = {}
-                    row_id += 1
-                    row['sample_size'] = self.sample_size
-                    row['recombination_rate'] = self.recombination_rate
-                    row['mutation_rate'] = mutation_rate
-                    row['length'] = self.length
-                    row['Ne'] = self.Ne
-                    row['seed'] = replicate_seed
-                    row[MUTATION_SEED_COLNAME] = mutation_seed
-                    row[ERROR_COLNAME] = error_rate
-                    row['n_trees'] = ts.num_trees
-                    row['edges'] = ts.num_edges
-                    row['tsinfer_srb'] = tsinfer_srb
-                    row['tsinfer_sl'] = tsinfer_sl
-                    row['ts_filesize'] = os.path.getsize(fn + ".hdf5")
-                    self.save_variant_matrices(ts, fn, error_rate, infinite_sites=False)
-        return return_value
+    def single_sim(self, row_id, sim_params, rng):
+        while True:
+            sim_params['seed'] = rng.randint(1, 2**31)
+            sim_params['mut_seed'] = rng.randint(1, 2**31)
+            try:
+                # Run the simulation until we get an acceptable one
+                ts, fn = self.single_neutral_simulation(**sim_params)
+                break
+            except ValueError as e: #No non-singleton variants
+                logging.warning(e)
+        row_data = self.save_within_sim_data(row_id, ts, fn, dict(sim_params,
+            ts_filesize=os.path.getsize(fn + ".hdf5")))
+        return row_data
 
 
 ######################################

@@ -60,3 +60,12 @@ def write_nexus_trees(
                 treefile.name, t.get_interval())
             print("TREE " + str(t.get_interval()[1]) + " = [&R] " + t.newick(precision=14,time_scale=(1/4))[:-1] + ":0;", file=treefile)
     print("END;", file=treefile)
+
+def save_nexus_trees(
+        ts, fn, tree_labels_between_variants=False):
+    """
+    Same as write_nexus_trees() only use a file name not a file handle
+    """
+    with open(fn, "w+") as out:
+        write_nexus_trees(ts, out, tree_labels_between_variants)
+
