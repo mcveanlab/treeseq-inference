@@ -1446,7 +1446,6 @@ class ProgramComparison(Dataset):
     #Ensure sample sizes are even so we can output diploid VCF.
     sample_sizes = np.linspace(10, 2*fixed_sample_size, num_points).astype(int)
     lengths = np.linspace(fixed_length / 10, 2 * fixed_length, num_points).astype(int)
-    
     #params that change BETWEEN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     between_sim_params = {
@@ -1457,7 +1456,6 @@ class ProgramComparison(Dataset):
         'sample_size':   np.unique(np.append(sample_sizes, fixed_sample_size)),
         'length':        np.unique(np.append(lengths, fixed_length)),
     }
-
     #params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
@@ -1467,10 +1465,15 @@ class ProgramComparison(Dataset):
     def filter_between_sim_params(self, between_sim_params):
         """
         We want to only use cases where the sample_size OR the length are at the fixed values
+        (and not both, unless e.g. the fixed length happens to be in the variable lengths array
         """
         keyed_params = dict(zip(['replicates']+list(self.between_sim_params.keys()), between_sim_params))
-        return (keyed_params['sample_size']==self.fixed_sample_size) or \
-            (keyed_params['length']==self.fixed_length)
+        if (self.fixed_sample_size not in self.sample_sizes) and (self.fixed_length not in self.lengths):
+            return ((keyed_params['sample_size']==self.fixed_sample_size) ^ \
+                (keyed_params['length']==self.fixed_length))
+        else:
+            return ((keyed_params['sample_size']==self.fixed_sample_size) or \
+                (keyed_params['length']==self.fixed_length))
 
     def single_sim(self, row_id, sim_params, rng):
         while True:
@@ -1641,7 +1644,7 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
 
     within_sim_params = {
         #NB - these are strings because they are output as part of the filename
-        'stop_freqs': ['0.2', '0.5', '0.8', '1.0', ('1.0', 200), ('1.0', 1000)], #frequencies to output a file.
+        'stop_freqs': ['0.2', '0.5', '0.8', '1.0', ('1.0', 200), ('1.0', 1000)], #frequencies when file is saved.
         ERROR_COLNAME : [0, 0.001, 0.01],
     }
 
@@ -1657,7 +1660,8 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
                 i, self.num_sims, os.getpid(), sim_params))
             try:
                 #we have multiple rows per simulation for results after different generations post-fixation
-                #save the base number here, which will be incremented
+                #these are returned in an iterator by the single_simulation_with_selective_sweep() method
+                #so we pop this set of permutations off the auto-iterated list
                 within_sim_params = self.within_sim_params.copy()
                 stop_freqs = within_sim_params.pop('stop_freqs')
                 # Pass stopping freqs into the sim and loop through the returned freqs
