@@ -435,10 +435,12 @@ class InferenceRunner(object):
     #slightly more complex here as we have 2 ways to run tsinfer - with and without an error param
     def __run_tsinfer_no_err(self, skip_infer=False):
         if self.row.error_rate != 0: #only bother if this is going to make a difference
-            self.__tsinfer(0, skip_infer)
+            return self.__tsinfer(0, skip_infer)
+        else:
+            assert "Yan, what should we return here??"
 
     def __run_tsinfer(self, skip_infer=False):
-        self.__tsinfer(self.row.error_rate, skip_infer)
+        return self.__tsinfer(self.row.error_rate, skip_infer)
 
     def __tsinfer(self, err, skip_infer=False):
         #default to using srb & but not length breaking if nothing specified in the file
