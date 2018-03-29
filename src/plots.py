@@ -394,7 +394,7 @@ class InferenceRunner(object):
         logging.debug("parameters = {}".format(self.row.to_dict()))
         if self.tool == TSINFER:
             ret = self.__run_tsinfer(skip_infer = metrics_only)
-        if self.tool == TSINFER_NO_ERR:
+        elif self.tool == TSINFER_NO_ERROR:
             ret = self.__run_tsinfer(skip_infer = metrics_only)
         elif self.tool == FASTARG:
             ret = self.__run_fastARG(skip_infer = metrics_only)
