@@ -2575,6 +2575,7 @@ class ProgramComparisonFigure(Figure):
         # ax1.set_xlim(-5, 105)
         # ax1.set_ylim(-5, 250)
         # ax2.set_xlim(-5, 105)
+        self.tweak(ax1, ax2)
 
         fig.tight_layout()
 
@@ -2589,10 +2590,18 @@ class ProgramComparisonTimeFigure(ProgramComparisonFigure):
     plotted_column = "cputime"
     y_label = "CPU time (hours)"
 
+    def tweak(self, ax1, ax2):
+        ax1.set_ylim(0, 2.5)
+
+
 class ProgramComparisonMemoryFigure(ProgramComparisonFigure):
     name = "program_comparison_memory"
     plotted_column = "memory"
     y_label = "Memory (GiB)"
+
+    def tweak(self, ax1, ax2):
+        pass
+
 
 def run_setup(cls, args):
     f = cls()
