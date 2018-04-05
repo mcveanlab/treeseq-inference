@@ -1954,7 +1954,7 @@ class MetricByMutationRateFigure(Figure):
         error_rates = df[ERROR_COLNAME].unique()
         sample_sizes = df.sample_size.unique()
 
-        linestyles = ["-", ":"]
+        fillstyles = ['none', 'full']
         fig, axes = pyplot.subplots(1, len(error_rates), figsize=(12, 6), sharey=True)
         lines = []
         for k, error_rate in enumerate(error_rates):
@@ -1964,7 +1964,7 @@ class MetricByMutationRateFigure(Figure):
             ax.set_xscale('log')
             if k == 0:
                 ax.set_ylabel(self.metric + " metric")
-            for n, linestyle in zip(sample_sizes, linestyles):
+            for n, fillstyle in zip(sample_sizes, fillstyles):
                 df_s = df[np.logical_and(df.sample_size == n, df[ERROR_COLNAME] == error_rate)]
                 group = df_s.groupby(["mutation_rate"])
                 mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
@@ -1977,7 +1977,8 @@ class MetricByMutationRateFigure(Figure):
                         [m['mu'] for m in mean_sem],
                         [m['mean'][tool + "_" + self.metric] for m in mean_sem],
                         yerr=yerr,
-                        linestyle=linestyle,
+                        linestyle=setting["linestyle"],
+                        fillstyle=fillstyle,
                         color=setting["col"],
                         marker=setting["mark"],
                         elinewidth=1)
