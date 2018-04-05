@@ -1987,11 +1987,11 @@ class MetricByMutationRateFigure(Figure):
 
         # Create legends from custom artists
         artists = [
-            pyplot.Line2D((0,1),(0,0), color= setting["col"],
-                marker= setting["mark"], linestyle='')
+            pyplot.Line2D((0,1),(0,0), color= setting["col"], fillstyle=fillstyles[0],
+                marker= setting["mark"], linestyle=setting["linestyle"])
             for tool,setting in self.tools_format.items()]
         first_legend = axes[0].legend(
-            artists, self.tools_format.keys(), numpoints=3, loc="upper center")
+            artists, self.tools_format.keys(), numpoints=1, loc="upper center")
             # bbox_to_anchor=(0.0, 0.1))
         # ax = pyplot.gca().add_artist(first_legend)
         if len(sample_sizes)>1:
