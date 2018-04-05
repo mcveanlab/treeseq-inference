@@ -149,7 +149,7 @@ def generate_samples(ts, error_p):
     else:
         for variant in ts.variants():
             done = False
-            # Reject any columns that have no 1s or no zeros. 
+            # Reject any columns that have no 1s or no zeros.
             # Unless the original also has them, as occasionally we have
             # some sims (e.g. under selection) where a variant is fixed
             while True:
@@ -441,7 +441,7 @@ class InferenceRunner(object):
             self.compute_tree_metrics = False
             return {}
         return self.__tsinfer(0, skip_infer)
-        
+
     def __run_tsinfer(self, skip_infer=False):
         return self.__tsinfer(self.row.error_rate, skip_infer)
 
@@ -559,7 +559,7 @@ class InferenceRunner(object):
         #this is a hack when we specify a complex model which does not have an explicit Ne
         #just set the Ne to something likely (HACK!!)
         ARGweaver_Ne = 10000 if isinstance(self.row.Ne, str) else str(self.row.Ne)
-        
+
         inference_seed = self.row.seed  # TODO do we need to specify this separately?
         burnin = getattr(self.row,'ARGweaver_burnin', default_ARGweaver_burnin)
         n_timesteps = getattr(self.row,'ARGweaver_ntimes', default_ARGweaver_ntimes)
@@ -869,10 +869,10 @@ class Dataset(object):
 
     def run_simulations(self, replicates=None, seed=None, show_progress=False, num_processes=1):
         """
-        Called from setup(): requires us to define the dictionaries 
+        Called from setup(): requires us to define the dictionaries
         self.between_sim_params and self.within_sim_params.
-        if self.filter_between_sim_params is given then it is a function passed to 
-        filter to only leave in certain param combinations 
+        if self.filter_between_sim_params is given then it is a function passed to
+        filter to only leave in certain param combinations
         """
         rng = random.Random(seed or self.default_seed)
         n_reps = replicates or self.default_replicates
@@ -928,16 +928,17 @@ class Dataset(object):
         #so the row numbers will start at multiples of this
         initial_row_id = i * np.prod([len(x) for x in self.within_sim_params.values()])
         return self.single_sim(initial_row_id, sim_params, random.Random(rng_seed))
-        
-    def save_within_sim_data(self, base_row_id, ts, base_fn, base_params, iterate_over_dict = None):
+
+    def save_within_sim_data(self, base_row_id, ts, base_fn, base_params, iterate_over_dict=None):
         """
         save trees and variant matrices with error, and return the values to be save in the csv file
         iterate_over_dict can be used to pass a subset of values to iterate over, rather than the default
         of self.within_sim_params
         """
-        if iterate_over_dict == None:
+        if iterate_over_dict is None:
             iterate_over_dict = self.within_sim_params
-        ts.save_nexus_trees(base_fn +".nex")
+        if self.compute_tree_metrics != METRICS_OFF:
+            ts.save_nexus_trees(base_fn +".nex")
         return_value = {}
         for params in itertools.product(*iterate_over_dict.values()):
             #may be iterating here over errors, or e.g. tsinfer_srb
@@ -950,14 +951,16 @@ class Dataset(object):
             #add some stats from the ts
             row['edges'] = ts.num_edges
             row['n_trees'] = ts.num_trees
-            self.save_variant_matrices(ts, base_fn, keyed_params.get('error_rate') or 0, infinite_sites=False)
+            self.save_variant_matrices(
+                ts, base_fn, keyed_params.get('error_rate') or 0,
+                infinite_sites=False)
         return return_value
 
     def single_sim(self, row_id, sim_params, rng):
         """
         Return a dictionary whose keys are the row numbers which
         will be inserted into the csv file, and whose values are
-        dictionaries keyed by column name 
+        dictionaries keyed by column name
         """
         raise NotImplementedError(
             "A dataset should implement a single_sim method that runs" \
@@ -1054,7 +1057,7 @@ class Dataset(object):
     #
     # Utilities for running simulations and saving files.
     #
-    def single_neutral_simulation(self, sample_size, Ne, length, recombination_rate, mutation_rate, seed, 
+    def single_neutral_simulation(self, sample_size, Ne, length, recombination_rate, mutation_rate, seed,
         mut_seed=None, replicate=None, **kwargs):
         """
         The standard way to run one msprime simulation for a set of parameter
@@ -1073,7 +1076,7 @@ class Dataset(object):
         If Ne is a string, it is an identified used for the population model
         which will be saved into the filename & results file, while the simulation
         will be called with Ne=1
-        
+
         replicate is useful to pass in for error messages etc.
 
         Returns a tuple of treesequence, filename (without file type extension)
@@ -1119,7 +1122,7 @@ class Dataset(object):
         sim_fn = mk_sim_name(sample_size, Ne, length, recombination_rate, mutation_rate, seed, mut_seed, self.simulations_dir)
         logging.debug("writing {}.hdf5".format(sim_fn))
         ts.dump(sim_fn+".hdf5")
-        
+
         # Make sure that there is *some* information in this simulation that can be used
         # to infer a ts, otherwise it's pointless
         if ts.get_num_mutations() == 0:
@@ -1127,18 +1130,18 @@ class Dataset(object):
         if ts_has_non_singleton_variants(ts) == False:
             raise ValueError("No non-singleton variants present ({} singletons)".format(
                 sum([np.sum(v)==1 for v in ts.variants()])))
-        
+
         return ts, sim_fn
 
-    def single_simulation_with_human_demography(self, sample_size, sim_name, length, 
+    def single_simulation_with_human_demography(self, sample_size, sim_name, length,
         recombination_rate, mutation_rate, seed, mut_seed=None, **kwargs):
         """
         Run an msprime simulation with a rough approximation of recent human demography
-        using the  Gutenkunst et al., (2009) model used by a number of other simulators 
+        using the  Gutenkunst et al., (2009) model used by a number of other simulators
         (e.g. msms), which is an elaboration of https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1310645/
-        
+
         (see http://msprime.readthedocs.io/en/stable/tutorial.html#demography)
-        
+
         the sample_size, n, is divided into 3 roughly equal-sized groups from africa, europe, & china
         (YRI, CEU, and CHB)
         """
@@ -1203,25 +1206,25 @@ class Dataset(object):
                 # Size changes to N_A at T_AF
                 msprime.PopulationParametersChange(
                     time=T_AF, initial_size=N_A, population_id=0)
-            ]        
-        
+            ]
+
             return dict(
                 population_configurations=population_configurations,
                 migration_matrix=migration_matrix,
                 demographic_events=demographic_events
                 )
-        
+
         asian_samples = sample_size//3
         afro_european_samples = sample_size - asian_samples
         european_samples = afro_european_samples//2
         african_samples = afro_european_samples - european_samples
         assert african_samples + european_samples + asian_samples == sample_size
-        
-        kwargs.update(out_of_africa(african_samples, european_samples, asian_samples))
-        return self.single_neutral_simulation(sample_size, sim_name, length, 
-            recombination_rate, mutation_rate, seed, mut_seed, **kwargs)        
 
-    def single_simulation_with_selective_sweep(self, sample_size, Ne, length, recombination_rate, mutation_rate, 
+        kwargs.update(out_of_africa(african_samples, european_samples, asian_samples))
+        return self.single_neutral_simulation(sample_size, sim_name, length,
+            recombination_rate, mutation_rate, seed, mut_seed, **kwargs)
+
+    def single_simulation_with_selective_sweep(self, sample_size, Ne, length, recombination_rate, mutation_rate,
         selection_coefficient, dominance_coefficient, stop_freqs, seed, mut_seed=None, replicate=None):
         """
         Run a forward simulation with a selective sweep for a set of parameter values.
@@ -1350,7 +1353,7 @@ class MetricsByMutationRateDataset(Dataset):
     within_sim_params = {
         ERROR_COLNAME : [0, 0.001, 0.01],
     }
-            
+
     def single_sim(self, row_id, sim_params, rng):
         while True:
             sim_params['seed'] = rng.randint(1, 2**31)
@@ -1375,14 +1378,14 @@ class TsinferPerformance(Dataset):
     default_replicates = 20
     default_seed = 123
     tools = [TSINFER]
-    
+
     fixed_sample_size = 5000
     fixed_length = 20 * 10**6
     num_points = 20
     #Ensure sample sizes are even so we can output diploid VCF.
     sample_sizes = np.linspace(5, fixed_sample_size, num_points).astype(int) * 2
     lengths = np.linspace(fixed_length / 10, 2 * fixed_length, num_points).astype(int)
-    
+
     #params that change BETWEEN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     between_sim_params = {
@@ -1399,9 +1402,9 @@ class TsinferPerformance(Dataset):
     within_sim_params = {
         ERROR_COLNAME : [0],
     }
-    
+
     extra_sim_cols = ["sites", "ts_filesize", "vcf_filesize", "vcfgz_filesize"]
-    
+
     def filter_between_sim_params(self, params):
         """
         We want to only use cases where the sample_size OR the length are at the fixed values
@@ -1409,7 +1412,7 @@ class TsinferPerformance(Dataset):
         keyed_params = dict(zip(['replicates']+list(self.between_sim_params.keys()), params))
         return (keyed_params['sample_size']==self.fixed_sample_size) or \
             (keyed_params['length']==self.fixed_length)
-        
+
     def single_sim(self, row_id, sim_params, rng):
         while True:
             sim_params['seed'] = rng.randint(1, 2**31)
@@ -1444,7 +1447,7 @@ class ProgramComparison(Dataset):
     compute_tree_metrics = METRICS_OFF
     default_replicates = 2
     default_seed = 1000
-    tools = [FASTARG, TSINFER] #RentPlus has problems running when the sizes are too big.
+    tools = [FASTARG, TSINFER] # Everything else is too slow
     fixed_sample_size = 10000
     fixed_length = 5 * 10**6
     num_points = 20
@@ -1491,7 +1494,7 @@ class ProgramComparison(Dataset):
                 logging.warning(e)
         row_data = self.save_within_sim_data(row_id, ts, fn, sim_params)
         return row_data
-        
+
 ### SUPPLEMENTARY MATERIAL
 ### The following classes are used for figures in the supplementary material
 ###
@@ -1516,7 +1519,7 @@ class MetricsBySampleSizeDataset(Dataset):
     #params that change BETWEEN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     between_sim_params = {
-        'length': [10000, 100000, 1000000], 
+        'length': [10000, 100000, 1000000],
         'Ne':              [5000],
         'mutation_rate':   [1e-8],
         'recombination_rate': [1e-8]
@@ -1524,12 +1527,12 @@ class MetricsBySampleSizeDataset(Dataset):
 
     within_sim_params = {
         'subsample_size':  [10],
-        'sample_size': [12, 50, 100, 500, 1000], 
+        'sample_size': [12, 50, 100, 500, 1000],
         'tsinfer_srb' : [True], #, False],
         'tsinfer_sl' : [False], #, True],
         ERROR_COLNAME: [0, 0.001, 0.01]
     }
-    
+
     def single_sim(self, row_id, sim_params, rng):
         assert all([sss <= min(self.within_sim_params['sample_size']) for sss in self.within_sim_params['subsample_size']])
         base_row_id = row_id
@@ -1554,7 +1557,7 @@ class MetricsBySampleSizeDataset(Dataset):
                 sim_params['subsample_size'] = subsample_size
                 sim_params['sample_size'] = sample_size #override from previous definition
                 ts = base_ts.simplify(list(range(sample_size)))
-                fn = mk_sim_name(sim_params['sample_size'], 
+                fn = mk_sim_name(sim_params['sample_size'],
                     sim_params['Ne'],
                     sim_params['length'],
                     sim_params['recombination_rate'],
@@ -1602,9 +1605,9 @@ class MetricsByMutationRateWithDemographyDataset(Dataset):
     within_sim_params = {
         ERROR_COLNAME : [0, 0.001, 0.01],
     }
-            
+
     def single_sim(self, row_id, sim_params, rng):
-        
+
         while True:
             sim_params['seed'] = rng.randint(1, 2**31)
             try:
@@ -1693,7 +1696,7 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
 
 ### ADDITIONAL DEBUG
 ### The following classes are used for drilling down into particular features
-### of the data, e.g. why we do better than AW for high mutation rates, 
+### of the data, e.g. why we do better than AW for high mutation rates,
 ### some debugging routines, etc.
 ###
 
@@ -1812,7 +1815,7 @@ class TsinferTracebackDebug(Dataset):
     within_sim_params = {
         ERROR_COLNAME : [0],
     }
-    
+
     extra_sim_cols = [MUTATION_SEED_COLNAME, "ts_filesize", "tsinfer_srb", "tsinfer_sl"]
 
     def single_sim(self, row_id, sim_params, rng):
@@ -2588,6 +2591,7 @@ class ProgramComparisonFigure(Figure):
         # ax1.set_xlim(-5, 105)
         # ax1.set_ylim(-5, 250)
         # ax2.set_xlim(-5, 105)
+        self.tweak(ax1, ax2)
 
         fig.tight_layout()
 
@@ -2602,10 +2606,18 @@ class ProgramComparisonTimeFigure(ProgramComparisonFigure):
     plotted_column = "cputime"
     y_label = "CPU time (hours)"
 
+    def tweak(self, ax1, ax2):
+        ax1.set_ylim(0, 2.5)
+
+
 class ProgramComparisonMemoryFigure(ProgramComparisonFigure):
     name = "program_comparison_memory"
     plotted_column = "memory"
     y_label = "Memory (GiB)"
+
+    def tweak(self, ax1, ax2):
+        pass
+
 
 def run_setup(cls, args):
     f = cls()
@@ -2633,7 +2645,7 @@ def main():
         ## SUPPLEMENTARY MATERIALS ##
         # §1 Algorithm details
         #     Properties of ancestors: see code in tsinfer
-        #     Perfect inference: 
+        #     Perfect inference:
         # §2 Tree comparision
         AllMetricsByMutationRateFigure,
         # §3 Robustness analysis
@@ -2642,7 +2654,7 @@ def main():
         AllMetricsByMutationRateSweepFigure,
         #>>>todo AllMetricsByMutationRateBackgroundSelFigure
         AllMetricsBySampleSizeFigure,
-        # a) 
+        # a)
         # §4 Data preparation
         # §5 Performance
         CputimeMetricByMutationRateFigure,
