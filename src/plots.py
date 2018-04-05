@@ -1342,9 +1342,9 @@ class MetricsByMutationRateDataset(Dataset):
     # to column names in the csv file. Values should all be arrays.
     between_sim_params = {
         'Ne': [5000],
-        'mutation_rate': np.geomspace(0.5e-8, 3.5e-6, num=4),
+        'mutation_rate': np.geomspace(0.5e-8, 3.5e-6, num=7),
         'sample_size':   [15],
-        'length':        [10000],  #should be enough for ~ 50 trees
+        'length':        [100000],  #should be enough for ~ 50 trees
         'recombination_rate': [1e-8],
     }
 
