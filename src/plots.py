@@ -395,7 +395,7 @@ class InferenceRunner(object):
         if self.tool == TSINFER:
             ret = self.__run_tsinfer(skip_infer = metrics_only)
         elif self.tool == TSINFER_NO_ERROR:
-            ret = self.__run_tsinfer(skip_infer = metrics_only)
+            ret = self.__run_tsinfer_no_err(skip_infer = metrics_only)
         elif self.tool == FASTARG:
             ret = self.__run_fastARG(skip_infer = metrics_only)
         elif self.tool == ARGWEAVER:
@@ -434,10 +434,13 @@ class InferenceRunner(object):
 
     #slightly more complex here as we have 2 ways to run tsinfer - with and without an error param
     def __run_tsinfer_no_err(self, skip_infer=False):
-        if self.row.error_rate != 0: #only bother if this is going to make a difference
-            return self.__tsinfer(0, skip_infer)
-        else:
-            assert "Yan, what should we return here??"
+        #only bother actually inferring a specific no-error version if there was error injected into
+        #the original simulation. Otherwise skip everything, including the metrics (assume these were
+        #calculated in the "normal" __run_tsinfer() equivalent step
+        if self.row.error_rate == 0:
+            self.compute_tree_metrics = False
+            return {}
+        return self.__tsinfer(0, skip_infer)
 
     def __run_tsinfer(self, skip_infer=False):
         return self.__tsinfer(self.row.error_rate, skip_infer)
@@ -632,11 +635,11 @@ class InferenceRunner(object):
             return ts_simplified, cpu_time, memory_use
         except ValueError as e:
             # temporary hack around tsinfer bug
-            if "time[parent] must be greater than time[child]" in str(e):
-                logging.warning("Hit tsinfer bug for {}. Skipping".format(sample_fn))
-                return None, None, None
-            else:
-                raise
+            #if "time[parent] must be greater than time[child]" in str(e):
+            #    logging.warning("Hit tsinfer bug for {}. Skipping".format(sample_fn))
+            #    return None, None, None
+            #else:
+            raise
 
     @staticmethod
     def run_fastarg(file_name, seq_length, seed):
@@ -804,7 +807,7 @@ class Dataset(object):
         FASTARG,
         RENTPLUS,
         TSINFER,
-        #TSINFER_NO_ERR,
+        TSINFER_NO_ERROR,
     ]
 
     """
@@ -1340,7 +1343,7 @@ class MetricsByMutationRateDataset(Dataset):
     between_sim_params = {
         'Ne': [5000],
         'mutation_rate': np.geomspace(0.5e-8, 3.5e-6, num=7),
-        'sample_size':   [15], #will be split across the 3 human sub pops
+        'sample_size':   [15],
         'length':        [100000],  #should be enough for ~ 50 trees
         'recombination_rate': [1e-8],
     }
@@ -1844,10 +1847,11 @@ class Figure(object):
     name = None
     figures_dir = "figures"
     tools_format = collections.OrderedDict([
-        (TSINFER,   {"mark":"*", "col":"blue"}),
-        (RENTPLUS,  {"mark":"s", "col":"red"}),
-        (ARGWEAVER, {"mark":"o", "col":"green"}),
-        (FASTARG,   {"mark":"^", "col":"magenta"}),
+        (ARGWEAVER, {"mark":"d", "col":"green", "linestyle":"-"}),
+        (RENTPLUS,  {"mark":"^", "col":"red", "linestyle":"-"}),
+        (FASTARG,   {"mark":"s", "col":"magenta", "linestyle":"-"}),
+        (TSINFER,   {"mark":"o", "col":"blue", "linestyle":"-"}),
+        (TSINFER_NO_ERROR,   {"mark":"o", "col":"blue", "linestyle":":"}),
     ])
     """
     Each figure has a unique name. This is used as the identifier and the
@@ -1871,11 +1875,13 @@ class Figure(object):
 class AllMetricsByMutationRateFigure(Figure):
     """
     Simple figure that shows all the metrics at the same time.
+    Assumes at most 2 sample sizes
     """
     datasetClass = MetricsByMutationRateDataset
     name = "all_metrics_by_mutation_rate"
 
     def plot(self):
+        from matplotlib.legend_handler import HandlerTuple
         df = self.dataset.data
         error_rates = df[ERROR_COLNAME].unique()
         sample_sizes = df.sample_size.unique()
@@ -1883,7 +1889,7 @@ class AllMetricsByMutationRateFigure(Figure):
         topology_only_metrics = [m for m in metrics if not m.startswith('w')]
         fig, axes = pyplot.subplots(len(topology_only_metrics),
             len(error_rates), figsize=(6*len(error_rates), 20))
-        linestyles = ["-", "-."]
+        fillstyles = ['none', 'full']
         for j, metric in enumerate(topology_only_metrics):
             for k, error_rate in enumerate(error_rates):
                 ax = axes[j][k]
@@ -1893,35 +1899,45 @@ class AllMetricsByMutationRateFigure(Figure):
                     ax.set_ylabel(metric + " metric")
                 if j == len(topology_only_metrics) - 1:
                     ax.set_xlabel("Mutation rate")
-                for n, linestyle in zip(sample_sizes, linestyles):
+                for n, fillstyle in zip(sample_sizes, fillstyles):
                     df_s = df[np.logical_and(df.sample_size == n, df[ERROR_COLNAME] == error_rate)]
                     group = df_s.groupby(["mutation_rate"])
                     group_mean = group.mean()
                     for tool, setting in self.tools_format.items():
                         colname = tool + "_" + metric
                         if colname in df.columns:
-                            ax.semilogx(group_mean[colname], linestyle, color=setting["col"])
+                            ax.semilogx(group_mean[colname], setting["linestyle"], 
+                                fillstyle=fillstyle, color=setting["col"], 
+                                marker=None if len(sample_sizes)==1 else setting['mark'])
         artists = [
             pyplot.Line2D((0,1),(0,0), color= setting["col"],
-                marker= setting["mark"], linestyle='')
+                linewidth=2, linestyle=setting["linestyle"],
+                marker = None if len(sample_sizes)==1 else setting['mark'])
             for tool,setting in self.tools_format.items()]
-        first_legend = axes[0][0].legend(
-            artists, self.tools_format.keys(), numpoints=3, loc="upper right")
+        axes[0][0].legend(
+        artists, self.tools_format.keys(),numpoints=1, labelspacing=0.1)
+            
+            #numpoints=3, loc="upper right")
             # bbox_to_anchor=(0.0, 0.1))
         # ax = pyplot.gca().add_artist(first_legend)
+        maintitle = "Tree comparisons for neutral simulations"
         if len(sample_sizes)>1:
             artists = [
-                pyplot.Line2D(
-                    (0,0),(0,0), color="black", linestyle=linestyle, linewidth=2)
-                for linestyle in linestyles]
+                tuple([
+                    pyplot.Line2D(
+                    (0,0),(0,0), color=setting['col'], fillstyle=fillstyle, marker=setting['mark'], linestyle='None')
+                    for tool, setting in self.tools_format.items() if tool!=TSINFER_NO_ERROR])
+                for fillstyle in fillstyles]
             axes[0][-1].legend(
-                artists, ["Sample size = {}".format(n) for n in sample_sizes],
-                loc="upper right")
-        fig.suptitle("Tree comparisons for neutral simulations" +
-            " over "  + ",".join(["{:.1f}kb".format(x/1e3) for x in df.length.unique()]) +
-            " (Ne=" + ",".join(["{}".format(x) for x in df.Ne.unique()]) +
-            " rho="+ ",".join(["{}".format(x) for x in df.recombination_rate.unique()]) +
-            ")", fontsize=16)
+                artists, ["Sample size = {}".format(n) for n in [15,20]],
+                loc="upper right", numpoints=1, handler_map={tuple: HandlerTuple(ndivide=None, pad=2)})
+        else:
+            maintitle += " of {} samples".format(sample_sizes[0])
+        maintitle += " over "  + ",".join(["{:.1f}kb".format(x/1e3) for x in df.length.unique()])
+        maintitle += " (Ne=" + ",".join(["{}".format(x) for x in df.Ne.unique()])
+        maintitle += "; rho="+ ",".join(["{}".format(x) for x in df.recombination_rate.unique()])
+        maintitle += ")"
+        fig.suptitle(maintitle, fontsize=16)
         self.savefig(fig)
 
 
@@ -1938,7 +1954,7 @@ class MetricByMutationRateFigure(Figure):
         error_rates = df[ERROR_COLNAME].unique()
         sample_sizes = df.sample_size.unique()
 
-        linestyles = ["-", ":"]
+        fillstyles = ['none', 'full']
         fig, axes = pyplot.subplots(1, len(error_rates), figsize=(12, 6), sharey=True)
         lines = []
         for k, error_rate in enumerate(error_rates):
@@ -1948,7 +1964,7 @@ class MetricByMutationRateFigure(Figure):
             ax.set_xscale('log')
             if k == 0:
                 ax.set_ylabel(self.metric + " metric")
-            for n, linestyle in zip(sample_sizes, linestyles):
+            for n, fillstyle in zip(sample_sizes, fillstyles):
                 df_s = df[np.logical_and(df.sample_size == n, df[ERROR_COLNAME] == error_rate)]
                 group = df_s.groupby(["mutation_rate"])
                 mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
@@ -1961,7 +1977,8 @@ class MetricByMutationRateFigure(Figure):
                         [m['mu'] for m in mean_sem],
                         [m['mean'][tool + "_" + self.metric] for m in mean_sem],
                         yerr=yerr,
-                        linestyle=linestyle,
+                        linestyle=setting["linestyle"],
+                        fillstyle=fillstyle,
                         color=setting["col"],
                         marker=setting["mark"],
                         elinewidth=1)
@@ -1970,11 +1987,11 @@ class MetricByMutationRateFigure(Figure):
 
         # Create legends from custom artists
         artists = [
-            pyplot.Line2D((0,1),(0,0), color= setting["col"],
-                marker= setting["mark"], linestyle='')
+            pyplot.Line2D((0,1),(0,0), color= setting["col"], fillstyle=fillstyles[0],
+                marker= setting["mark"], linestyle=setting["linestyle"])
             for tool,setting in self.tools_format.items()]
         first_legend = axes[0].legend(
-            artists, self.tools_format.keys(), numpoints=3, loc="upper center")
+            artists, self.tools_format.keys(), numpoints=1, loc="upper center")
             # bbox_to_anchor=(0.0, 0.1))
         # ax = pyplot.gca().add_artist(first_legend)
         if len(sample_sizes)>1:
