@@ -1372,15 +1372,15 @@ class TsinferPerformance(Dataset):
     """
     name = "tsinfer_performance"
     compute_tree_metrics = METRICS_OFF
-    default_replicates = 20
+    default_replicates = 5
     default_seed = 123
     tools = [TSINFER]
 
-    fixed_sample_size = 5000
-    fixed_length = 20 * 10**6
+    fixed_sample_size = 50000
+    fixed_length = 50 * 10**6
     num_points = 20
     #Ensure sample sizes are even so we can output diploid VCF.
-    sample_sizes = np.linspace(5, fixed_sample_size, num_points).astype(int) * 2
+    sample_sizes = np.linspace(0, fixed_sample_size, num_points + 1)[1:].astype(int) * 2
     lengths = np.linspace(fixed_length / 10, 2 * fixed_length, num_points).astype(int)
 
     #params that change BETWEEN simulations. Keys should correspond
@@ -2353,9 +2353,9 @@ class PerformanceFigure(Figure):
         # fig.text(0.19, 0.97, "Sample size = 1000")
         # fig.text(0.60, 0.97, "Sequence length = 50Mb")
         # pyplot.savefig("plots/simulators.pdf")
-        pyplot.suptitle(
-            'Tsinfer large dataset performance for mu={}'.format(
-                self.datasetClass.mutation_rate))
+        # pyplot.suptitle(
+        #     'Tsinfer large dataset performance for mu={}'.format(
+        #         self.datasetClass.mutation_rate))
         self.savefig(fig)
 
 
