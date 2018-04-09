@@ -2621,6 +2621,10 @@ class ProgramComparisonMemoryFigure(ProgramComparisonFigure):
 
 
 def run_setup(cls, args):
+    if args.processes > 1 and args.progress == True:
+        raise ValueError("Due to limitations of the Python multiprocessing module" \
+            " you can't show a tqdm progress-bar when setting up simulations in parallel." \
+            " Try again without the -P (--progress) flag.")
     f = cls()
     f.setup(args)
 
