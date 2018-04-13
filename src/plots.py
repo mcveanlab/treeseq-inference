@@ -815,7 +815,7 @@ class Dataset(object):
     """
     sim_cols = [
         "replicate", "sample_size", "Ne", "length", "recombination_rate", "mutation_rate",
-        ERROR_COLNAME, "edges", "n_trees", "seed"]
+        ERROR_COLNAME, "edges", "n_trees", "n_sites", "seed"]
 
     extra_sim_cols = []
 
@@ -951,6 +951,7 @@ class Dataset(object):
             #add some stats from the ts
             row['edges'] = ts.num_edges
             row['n_trees'] = ts.num_trees
+            row['n_sites'] = ts.num_sites
             self.save_variant_matrices(
                 ts, base_fn, keyed_params.get('error_rate') or 0,
                 infinite_sites=False)
