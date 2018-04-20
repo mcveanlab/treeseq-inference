@@ -67,7 +67,7 @@ FASTARG = "fastARG"
 ARGWEAVER = "ARGweaver"
 RENTPLUS = "RentPlus"
 TSINFER = "tsinfer"
-TSINFER_NO_ERROR = "tsinferNoErr"
+TSINFER_WITH_ERROR = "tsinferWithErr"
 
 #names for optional columns in the dataset
 ERROR_COLNAME = 'error_rate'
@@ -394,8 +394,8 @@ class InferenceRunner(object):
         logging.debug("parameters = {}".format(self.row.to_dict()))
         if self.tool == TSINFER:
             ret = self.__run_tsinfer(skip_infer = metrics_only)
-        elif self.tool == TSINFER_NO_ERROR:
-            ret = self.__run_tsinfer_no_err(skip_infer = metrics_only)
+        elif self.tool == TSINFER_WITH_ERROR:
+            ret = self.__run_tsinfer_with_err(skip_infer = metrics_only)
         elif self.tool == FASTARG:
             ret = self.__run_fastARG(skip_infer = metrics_only)
         elif self.tool == ARGWEAVER:
@@ -433,17 +433,20 @@ class InferenceRunner(object):
         return ret
 
     #slightly more complex here as we have 2 ways to run tsinfer - with and without an error param
-    def __run_tsinfer_no_err(self, skip_infer=False):
-        #only bother actually inferring a specific no-error version if there was error injected into
+    def __run_tsinfer_with_err(self, skip_infer=False):
+        #only bother actually inferring a specific with-error version if there was error injected into
         #the original simulation. Otherwise skip everything, including the metrics (assume these were
         #calculated in the "normal" __run_tsinfer() equivalent step
         if self.row.error_rate == 0:
             self.compute_tree_metrics = False
             return {}
-        return self.__tsinfer(0, skip_infer)
+        return self.__tsinfer(self.row.error_rate, skip_infer)
 
     def __run_tsinfer(self, skip_infer=False):
-        return self.__tsinfer(self.row.error_rate, skip_infer)
+        """
+        Standard is now to run without incorporating any error parameters into the inference 
+        """
+        return self.__tsinfer(0, skip_infer)
 
     def __tsinfer(self, err, skip_infer=False):
         #default to using srb & but not length breaking if nothing specified in the file
@@ -807,7 +810,7 @@ class Dataset(object):
         FASTARG,
         RENTPLUS,
         TSINFER,
-        TSINFER_NO_ERROR,
+        #TSINFER_WITH_ERROR,
     ]
 
     """
@@ -1878,7 +1881,7 @@ class Figure(object):
         (RENTPLUS,  {"mark":"^", "col":"red", "linestyle":"-"}),
         (FASTARG,   {"mark":"s", "col":"magenta", "linestyle":"-"}),
         (TSINFER,   {"mark":"o", "col":"blue", "linestyle":"-"}),
-        (TSINFER_NO_ERROR,   {"mark":"o", "col":"blue", "linestyle":":"}),
+        (TSINFER_WITH_ERROR,   {"mark":"o", "col":"blue", "linestyle":":"}),
     ])
     """
     Each figure has a unique name. This is used as the identifier and the
@@ -1898,10 +1901,6 @@ class Figure(object):
     def plot(self):
         raise NotImplementedError()
 
-class AllMetricsByMuRhoRatioFigure(AllMetricsByMutationRateFigure):
-    datasetClass = MetricsByMuRhoRatioDataset
-    name = "all_metrics_by_mu_rho_ratio"
-    
 
 class AllMetricsByMutationRateFigure(Figure):
     """
@@ -1957,7 +1956,7 @@ class AllMetricsByMutationRateFigure(Figure):
                 tuple([
                     pyplot.Line2D(
                     (0,0),(0,0), color=setting['col'], fillstyle=fillstyle, marker=setting['mark'], linestyle='None')
-                    for tool, setting in self.tools_format.items() if tool!=TSINFER_NO_ERROR])
+                    for tool, setting in self.tools_format.items() if tool!=TSINFER_WITH_ERROR])
                 for fillstyle in fillstyles]
             axes[0][-1].legend(
                 artists, ["Sample size = {}".format(n) for n in [15,20]],
@@ -1971,6 +1970,10 @@ class AllMetricsByMutationRateFigure(Figure):
         fig.suptitle(maintitle, fontsize=16)
         self.savefig(fig)
 
+class AllMetricsByMuRhoRatioFigure(AllMetricsByMutationRateFigure):
+    datasetClass = MetricsByMuRhoRatioDataset
+    name = "all_metrics_by_mu_rho_ratio"
+    
 
 class MetricByMutationRateFigure(Figure):
     """
