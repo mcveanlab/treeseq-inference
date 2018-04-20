@@ -1369,13 +1369,22 @@ class MetricsByMutationRateDataset(Dataset):
 
 class MetricsByMuRhoRatioDataset(MetricsByMutationRateDataset):
     """
-    Accuracy of ARG inference (measured by various statistics)
-    tending to fully accurate as mutation rate increases
+    Accuracy of ARG inference (measured by various statistics) around
+    regions of interest (symmetrical in log space either side of mu/rho = 1
+    
+    For symmetry around e.g. mu = 1e-8, we can pick a lower bound x and set
+    the upper bound as (1e-8 ** 2)/x
     """
+    def geomspace_around(middle, bound, **kwargs):
+        if bound < middle:
+            return np.geomspace(bound, middle**2/bound, **kwargs)
+        else:
+            return np.geomspace(middle**2/bound, bound, **kwargs)
+    
     name = "metrics_by_mu_rho_ratio"
     between_sim_params = {
         'Ne': [5000],
-        'mutation_rate': np.geomspace(5e-10, 5e-6, num=7),
+        'mutation_rate': geomspace_around(1e-8, 5e-7, num=7),
         'sample_size':   [15],
         'length':        [1000000], #increase to 1Mb
         'recombination_rate': [1e-8],
@@ -1889,6 +1898,10 @@ class Figure(object):
     def plot(self):
         raise NotImplementedError()
 
+class AllMetricsByMuRhoRatioFigure(AllMetricsByMutationRateFigure):
+    datasetClass = MetricsByMuRhoRatioDataset
+    name = "all_metrics_by_mu_rho_ratio"
+    
 
 class AllMetricsByMutationRateFigure(Figure):
     """
