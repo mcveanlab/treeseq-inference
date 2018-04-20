@@ -1367,6 +1367,23 @@ class MetricsByMutationRateDataset(Dataset):
         row_data = self.save_within_sim_data(row_id, ts, fn, sim_params)
         return row_data
 
+class MetricsByMuRhoRatioDataset(MetricsByMutationRateDataset):
+    """
+    Accuracy of ARG inference (measured by various statistics)
+    tending to fully accurate as mutation rate increases
+    """
+    name = "metrics_by_mu_rho_ratio"
+    between_sim_params = {
+        'Ne': [5000],
+        'mutation_rate': np.geomspace(5e-10, 5e-6, num=7),
+        'sample_size':   [15],
+        'length':        [1000000], #increase to 1Mb
+        'recombination_rate': [1e-8],
+    }
+    within_sim_params = {
+        ERROR_COLNAME : [0],
+    }
+    
 
 class TsinferPerformance(Dataset):
     """
@@ -2643,38 +2660,12 @@ def run_plot(cls, args):
 
 
 def main():
-    datasets = Dataset.__subclasses__()
-    figures = [
-        ## MAIN PAPER ##
-        KCRootedMetricByMutationRateFigure,
-        CompressionPerformanceFigure,
-        ## SUPPLEMENTARY MATERIALS ##
-        # §1 Algorithm details
-        #     Properties of ancestors: see code in tsinfer
-        #     Perfect inference:
-        # §2 Tree comparision
-        AllMetricsByMutationRateFigure,
-        # §3 Robustness analysis
-        KCRootedMetricByARGweaverParametersFigure,
-        #>>>todo AllMetricsByMutationRateDemographyFigure
-        AllMetricsByMutationRateSweepFigure,
-        #>>>todo AllMetricsByMutationRateBackgroundSelFigure
-        AllMetricsBySampleSizeFigure,
-        # a)
-        # §4 Data preparation
-        # §5 Performance
-        CputimeMetricByMutationRateFigure,
-        RFRootedMetricByARGweaverParametersFigure,
-        EdgesPerformanceFigure,
-        FileSizePerformanceFigure,
-        PerformanceFigure2,
-        ProgramComparisonTimeFigure,
-        ProgramComparisonMemoryFigure,
-        ## Other ##
-        RFRootedMetricByMutationRateFigure,
-        TracebackDebugEdgesFigure,
-
-    ]
+    def get_subclasses(cls):
+        for subclass in cls.__subclasses__():
+            yield from get_subclasses(subclass)
+            yield subclass
+    datasets = list(get_subclasses(Dataset))
+    figures = list(get_subclasses(Figure))
     name_map = dict([(d.name, d) for d in datasets + figures])
     parser = argparse.ArgumentParser(
         description="Set up base data, generate inferred datasets, process datasets and plot figures.")
