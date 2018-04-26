@@ -38,9 +38,6 @@ def main():
         "-srb", "--shared-recombinations", action='store_true',
         help="Use shared recombinations (path compression) to break polytomies")
     parser.add_argument(
-        "-sl", "--shared-lengths", action='store_true',
-        help="Use shorter shared lengths of sequence to break polytomies")
-    parser.add_argument(
         "-l", "--length", default=None, type=int,
         help="The total sequence length")
     parser.add_argument(

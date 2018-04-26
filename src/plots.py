@@ -297,7 +297,7 @@ def rentplus_name_from_msprime_row(row, sim_dir):
     """
     return construct_rentplus_name(mk_sim_name_from_row(row, sim_dir))
 
-def construct_tsinfer_name(sim_name, subsample_size, shared_breakpoints, shared_lengths, error_param=None):
+def construct_tsinfer_name(sim_name, subsample_size, shared_breakpoints, error_param=None):
     """
     Returns a TSinfer filename.
     If the file is a subset of the original, this can be added to the
@@ -308,8 +308,6 @@ def construct_tsinfer_name(sim_name, subsample_size, shared_breakpoints, shared_
     suffix = "" if error_param is None else "err{}".format(float(error_param))
     if shared_breakpoints is not None:
         suffix += "srb"+str(int(shared_breakpoints))
-    if shared_lengths is not None:
-        suffix += "sl"+str(int(shared_lengths))
     name = os.path.join(d,'+'.join(['tsinfer', f, suffix]))
     if subsample_size is not None and not pd.isnull(subsample_size):
         name = add_subsample_param_to_name(name, subsample_size)
@@ -451,14 +449,13 @@ class InferenceRunner(object):
     def __tsinfer(self, err, skip_infer=False):
         #default to using srb & but not length breaking if nothing specified in the file
         shared_recombinations = bool(getattr(self.row,'tsinfer_srb', True))
-        shared_lengths = bool(getattr(self.row,'tsinfer_sl', False))
         #default to no subsampling
         subsample_size = getattr(self.row,'subsample_size', None)
         #construct filenames - these can be used even if inference does not occur
         samples_fn = self.base_fn + ".npy"
         positions_fn = self.base_fn + ".pos.npy"
         out_fn = construct_tsinfer_name(self.base_fn,
-            subsample_size, shared_recombinations, shared_lengths, err)
+            subsample_size, shared_recombinations, err)
         self.inferred_filenames = [out_fn]
         if skip_infer:
             return {}
@@ -467,7 +464,7 @@ class InferenceRunner(object):
         logging.debug("reading: variant matrix {} & positions {} for msprime inference".format(
             samples_fn, positions_fn))
         inferred_ts, time, memory = self.run_tsinfer(
-            samples_fn, positions_fn, self.row.length, shared_recombinations, shared_lengths, self.num_threads,
+            samples_fn, positions_fn, self.row.length, shared_recombinations, self.num_threads,
             #inject_real_ancestors_from_ts_fn = self.orig_sim_fn + ".hdf5", #uncomment to inject real ancestors
             )
         if inferred_ts:
@@ -617,7 +614,7 @@ class InferenceRunner(object):
 
     @staticmethod
     def run_tsinfer(sample_fn, positions_fn, length,
-        shared_recombinations, shared_lengths, num_threads=1, inject_real_ancestors_from_ts_fn=None, rho=None, error_probability=None):
+        shared_recombinations, num_threads=1, inject_real_ancestors_from_ts_fn=None, rho=None, error_probability=None):
         with tempfile.NamedTemporaryFile("w+") as ts_out:
             cmd = [sys.executable, tsinfer_executable, sample_fn, positions_fn, "--length", str(int(length))]
             if rho is not None:
@@ -631,8 +628,6 @@ class InferenceRunner(object):
                 cmd.extend(["--inject-real-ancestors-from-ts", inject_real_ancestors_from_ts_fn])
             if shared_recombinations:
                 cmd.append("--shared-recombinations")
-            if shared_lengths:
-                cmd.append("--shared-lengths")
             cpu_time, memory_use = time_cmd(cmd)
             ts_simplified = msprime.load(ts_out.name)
         return ts_simplified, cpu_time, memory_use
@@ -1386,7 +1381,7 @@ class MetricsByMuRhoRatioDataset(MetricsByMutationRateDataset):
         'recombination_rate': [1e-8],
     }
     within_sim_params = {
-        ERROR_COLNAME : [0],
+        ERROR_COLNAME : [0, 0.001, 0.01],
     }
     
 
@@ -1552,7 +1547,6 @@ class MetricsBySampleSizeDataset(Dataset):
         'subsample_size':  [10],
         'sample_size': [12, 50, 100, 500, 1000],
         'tsinfer_srb' : [True], #, False],
-        'tsinfer_sl' : [False], #, True],
         ERROR_COLNAME: [0, 0.001, 0.01]
     }
 
@@ -1832,14 +1826,13 @@ class TsinferTracebackDebug(Dataset):
         'length': [10**6],
         'recombination_rate': [2e-8],
         'tsinfer_srb' : [True], #, False],
-        'tsinfer_sl' : [False], #, True],
     }
 
     within_sim_params = {
         ERROR_COLNAME : [0],
     }
 
-    extra_sim_cols = [MUTATION_SEED_COLNAME, "ts_filesize", "tsinfer_srb", "tsinfer_sl"]
+    extra_sim_cols = [MUTATION_SEED_COLNAME, "ts_filesize", "tsinfer_srb"]
 
     def single_sim(self, row_id, sim_params, rng):
         while True:
@@ -1915,7 +1908,7 @@ class AllMetricsByMutationRateFigure(Figure):
         fillstyles = ['none', 'full']
         for j, metric in enumerate(topology_only_metrics):
             for k, error_rate in enumerate(error_rates):
-                ax = axes[j][k]
+                ax = axes[j][k] if len(error_rates)>1 else axes[j]
                 if j == 0:
                     ax.set_title("Error = {}".format(error_rate))
                 if k == 0:
@@ -1985,11 +1978,12 @@ class MetricByMutationRateFigure(Figure):
         fig, axes = pyplot.subplots(1, len(error_rates), figsize=(12, 6), sharey=True)
         lines = []
         for k, error_rate in enumerate(error_rates):
-            ax = axes[k]
+            ax = axes[k] if len(error_rates)>1 else axes
             ax.set_title("Error = {}".format(error_rate))
             ax.set_xlabel("Mutation rate")
             ax.set_xscale('log')
             if k == 0:
+                ax.set_ylim(self.ylim)
                 ax.set_ylabel(self.metric + " metric")
             for n, fillstyle in zip(sample_sizes, fillstyles):
                 df_s = df[np.logical_and(df.sample_size == n, df[ERROR_COLNAME] == error_rate)]
@@ -2009,8 +2003,6 @@ class MetricByMutationRateFigure(Figure):
                         color=setting["col"],
                         marker=setting["mark"],
                         elinewidth=1)
-
-        axes[0].set_ylim(self.ylim)
 
         # Create legends from custom artists
         artists = [
@@ -2185,27 +2177,25 @@ class AllMetricsBySampleSizeFigure(Figure):
                 if j == len(topology_only_metrics) - 1:
                     ax.set_xlabel("Original sample size")
                 for shared_breakpoint in df.tsinfer_srb.unique():
-                    for shared_length in df.tsinfer_sl.unique():
-                        dfp = df[np.logical_and.reduce((
-                            df.length == length,
-                            df.tsinfer_srb == shared_breakpoint,
-                            df.tsinfer_sl == shared_length))]
-                        group = dfp.groupby(["sample_size"])
-                            #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
-                        mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-                        if getattr(self, 'error_bars', None):
-                            yerr=[m['sem'] for m in mean_sem]
-                        else:
-                            yerr = None
-                        ax.errorbar(
-                            [m['mu'] for m in mean_sem],
-                            [m['mean'][TSINFER + "_" + metric] for m in mean_sem],
-                            yerr=[m['sem'][TSINFER + "_" + metric] for m in mean_sem] \
-                                if getattr(self, 'error_bars', None) else None,
-                            color=col,
-                            linestyle=inferred_linestyles[shared_breakpoint][shared_length],
-                            marker="o", fillstyle='none',
-                            elinewidth=1)
+                    dfp = df[np.logical_and.reduce((
+                        df.length == length,
+                        df.tsinfer_srb == shared_breakpoint))]
+                    group = dfp.groupby(["sample_size"])
+                        #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
+                    mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
+                    if getattr(self, 'error_bars', None):
+                        yerr=[m['sem'] for m in mean_sem]
+                    else:
+                        yerr = None
+                    ax.errorbar(
+                        [m['mu'] for m in mean_sem],
+                        [m['mean'][TSINFER + "_" + metric] for m in mean_sem],
+                        yerr=[m['sem'][TSINFER + "_" + metric] for m in mean_sem] \
+                            if getattr(self, 'error_bars', None) else None,
+                        color=col,
+                        linestyle=inferred_linestyles[shared_breakpoint],
+                        marker="o", fillstyle='none',
+                        elinewidth=1)
         pyplot.suptitle('ARG metric for trees subsampled down to {} tips'.format(
             subsample_size[0]))
         self.savefig(fig)
@@ -2325,8 +2315,8 @@ class PerformanceFigure(Figure):
         # Set statistics to the ratio of observed over expected
         source_colour = "red"
         inferred_colour = "blue"
-        # inferred_linestyles = {False:{False:':',True:'-.'},True:{False:'-',True:'--'}}
-        #inferred_markers =    {False:{False:':',True:'-.'},True:{False:'--',True:'-'}}
+        # inferred_linestyles = {False:':',True:'-'}
+        #inferred_markers =    {False:'s',True:'b'}
         fig, (ax1, ax2) = pyplot.subplots(1, 2, figsize=(12, 6), sharey=True)
         ax1.set_title("Fixed number of chromosomes ({})".format(self.datasetClass.fixed_sample_size))
         ax1.set_xlabel("Sequence length (MB)")
@@ -2344,7 +2334,7 @@ class PerformanceFigure(Figure):
             [m['mu'] for m in mean_sem],
             [m['mean'][self.plotted_column] for m in mean_sem],
             yerr=yerr,
-            # linestyle=inferred_linestyles[shared_breakpoint][shared_length],
+            # linestyle=inferred_linestyles[shared_breakpoint],
             color=inferred_colour,
             #marker=self.tools_format[tool]["mark"],
             elinewidth=1)
@@ -2364,42 +2354,11 @@ class PerformanceFigure(Figure):
             [m['mu'] for m in mean_sem],
             [m['mean'][self.plotted_column] for m in mean_sem],
             yerr=yerr,
-            # linestyle=inferred_linestyles[shared_breakpoint][shared_length],
+            # linestyle=inferred_linestyles[shared_breakpoint],
             color=inferred_colour,
             #marker=self.tools_format[tool]["mark"],
             elinewidth=1)
 
-        # ax1.plot(group_mean[self.plotted_column],
-        #         color=source_colour, linestyle="-", label="Source")
-        # ax1.plot(
-        #     group_mean["tsinfer_" + self.plotted_column],
-        #     color=inferred_colour, linestyle="-", label="Inferred")
-        # ax1.legend(
-        #     loc="upper left", numpoints=1, fontsize="small")
-
-        # ax1.set_xlim(-5, 105)
-        # ax1.set_ylim(-5, 250)
-        # ax2.set_xlim(-5, 105)
-
-        # if len(df.tsinfer_srb.unique())>1 or len(df.tsinfer_sl.unique())>1:
-        #     params = [
-        #         pyplot.Line2D(
-        #             (0,0),(0,0), color= inferred_colour,
-        #             linestyle=inferred_linestyles[shared_breakpoint][shared_length], linewidth=2)
-        #         for shared_breakpoint, linestyles2 in inferred_linestyles.items()
-        #         for shared_length, linestyle in linestyles2.items()]
-        #     ax1.legend(
-        #         params, ["breakpoints={}, lengths={}".format(srb, sl)
-        #             for srb, linestyles2 in inferred_linestyles.items()
-        #             for sl, linestyle in  linestyles2.items()],
-        #         loc="lower right", fontsize=10, title="Polytomy resolution")
-
-        # fig.text(0.19, 0.97, "Sample size = 1000")
-        # fig.text(0.60, 0.97, "Sequence length = 50Mb")
-        # pyplot.savefig("plots/simulators.pdf")
-        # pyplot.suptitle(
-        #     'Tsinfer large dataset performance for mu={}'.format(
-        #         self.datasetClass.mutation_rate))
         self.savefig(fig)
 
 
@@ -2456,43 +2415,38 @@ class PerformanceFigure2(Figure):
         # Set statistics to the ratio of observed over expected
         source_colour = "red"
         inferred_colour = "blue"
-        inferred_linestyles = {False:{False:':',True:'-.'},True:{False:'-',True:'--'}}
-        #inferred_markers =    {False:{False:':',True:'-.'},True:{False:'--',True:'-'}}
+        inferred_linestyles = {False:':',True:'-'}
         fig, (ax1, ax2) = pyplot.subplots(1, 2, figsize=(12, 6), sharey=True)
         ax1.set_title("Fixed number of chromosomes ({})".format(self.datasetClass.fixed_sample_size))
         ax1.set_xlabel("Sequence length (MB)")
         ax1.set_ylabel(self.y_axis_label)
         for shared_breakpoint in df.tsinfer_srb.unique():
-            for shared_length in df.tsinfer_sl.unique():
-                dfp = df[np.logical_and.reduce((
-                    df.sample_size == self.datasetClass.fixed_sample_size,
-                    df.tsinfer_srb == shared_breakpoint,
-                    df.tsinfer_sl == shared_length))]
-                group = dfp.groupby(["length"])
-                    #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
-                mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-                ax1.errorbar(
-                    [m['mu'] for m in mean_sem],
-                    [m['mean'][self.plotted_column] for m in mean_sem],
-                    yerr=[m['sem'][self.plotted_column] for m in mean_sem] if getattr(self, 'error_bars') else None,
-                    linestyle=inferred_linestyles[shared_breakpoint][shared_length],
-                    color=inferred_colour,
-                    )
+            dfp = df[np.logical_and.reduce((
+                df.sample_size == self.datasetClass.fixed_sample_size,
+                df.tsinfer_srb == shared_breakpoint))]
+            group = dfp.groupby(["length"])
+                #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
+            mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
+            ax1.errorbar(
+                [m['mu'] for m in mean_sem],
+                [m['mean'][self.plotted_column] for m in mean_sem],
+                yerr=[m['sem'][self.plotted_column] for m in mean_sem] if getattr(self, 'error_bars') else None,
+                linestyle=inferred_linestyles[shared_breakpoint],
+                color=inferred_colour,
+                )
 
         ax2.set_title("Fixed number of chromosomes ({})".format(self.datasetClass.fixed_sample_size))
         ax2.set_xlabel("Number of variable sites")
         ax2.set_ylabel(self.y_axis_label)
         for shared_breakpoint in df.tsinfer_srb.unique():
-            for shared_length in df.tsinfer_sl.unique():
-                dfp = df[np.logical_and.reduce((
-                    df.length == self.datasetClass.fixed_length / 10**6,
-                    df.tsinfer_srb == shared_breakpoint,
-                    df.tsinfer_sl == shared_length))]
-                ax2.plot(
-                    dfp['sites'],
-                    dfp[self.plotted_column],
-                    color=inferred_colour,
-                    linestyle="",marker="o")
+            dfp = df[np.logical_and.reduce((
+                df.length == self.datasetClass.fixed_length / 10**6,
+                df.tsinfer_srb == shared_breakpoint))]
+            ax2.plot(
+                dfp['sites'],
+                dfp[self.plotted_column],
+                color=inferred_colour,
+                linestyle="",marker="o")
 
         pyplot.suptitle('Tsinfer large dataset performance for mu={}'.format(self.datasetClass.mutation_rate))
         self.savefig(fig)
@@ -2510,7 +2464,7 @@ class TracebackDebugFigure(Figure):
         df = self.dataset.data
         source_colour = "red"
         inferred_colour = "blue"
-        inferred_linestyles = {False:{False:':',True:'-.'},True:{False:'-',True:'--'}}
+        inferred_linestyles = {False:':',True:'-'}
         #inferred_markers =    {False:{False:':',True:'-.'},True:{False:'-',True:'--'}}
         fig, (ax1) = pyplot.subplots(1, 1, figsize=(6, 6), sharey=True)
         ax1.set_title("{} samples, seq length = {}Mb, rho = {}".format(
@@ -2521,32 +2475,28 @@ class TracebackDebugFigure(Figure):
         ax1.set_ylabel(self.y_axis_label)
         ax1.set_xscale('log')
         for shared_breakpoint in df.tsinfer_srb.unique():
-            for shared_length in df.tsinfer_sl.unique():
-                dfp = df[np.logical_and.reduce((
-                    df.tsinfer_srb == shared_breakpoint,
-                    df.tsinfer_sl == shared_length))]
-                group = dfp.groupby(["mutation_rate"])
-                #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
-                mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-                ax1.errorbar(
-                    [m['mu'] for m in mean_sem],
-                    [m['mean'][self.plotted_column] for m in mean_sem],
-                    yerr=[m['sem'][self.plotted_column] for m in mean_sem] if getattr(self, 'error_bars') else None,
-                    linestyle=inferred_linestyles[shared_breakpoint][shared_length],
-                    color=inferred_colour,
-                    #marker=self.tools_format[tool]["mark"],
-                    elinewidth=1)
-        if len(df.tsinfer_srb.unique())>1 or len(df.tsinfer_sl.unique())>1:
+            dfp = df[np.logical_and.reduce((
+                df.tsinfer_srb == shared_breakpoint))]
+            group = dfp.groupby(["mutation_rate"])
+            #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
+            mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
+            ax1.errorbar(
+                [m['mu'] for m in mean_sem],
+                [m['mean'][self.plotted_column] for m in mean_sem],
+                yerr=[m['sem'][self.plotted_column] for m in mean_sem] if getattr(self, 'error_bars') else None,
+                linestyle=inferred_linestyles[shared_breakpoint],
+                color=inferred_colour,
+                #marker=self.tools_format[tool]["mark"],
+                elinewidth=1)
+        if len(df.tsinfer_srb.unique())>1:
             params = [
                 pyplot.Line2D(
                     (0,0),(0,0), color= inferred_colour,
-                    linestyle=inferred_linestyles[shared_breakpoint][shared_length], linewidth=2)
-                for shared_breakpoint, linestyles2 in inferred_linestyles.items()
-                for shared_length, linestyle in linestyles2.items()]
+                    linestyle=inferred_linestyles[shared_breakpoint], linewidth=2)
+                for shared_breakpoint in inferred_linestyles.keys()]
             ax1.legend(
-                params, ["breakpoints={}, lengths={}".format(srb, sl)
-                    for srb, linestyles2 in inferred_linestyles.items()
-                    for sl, linestyle in  linestyles2.items()],
+                params, ["breakpoints={}".format(srb)
+                    for srb in inferred_linestyles.keys()],
                 loc="lower right", fontsize=10, title="Polytomy resolution")
 
         # fig.text(0.19, 0.97, "Sample size = 1000")
