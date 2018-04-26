@@ -297,7 +297,7 @@ def rentplus_name_from_msprime_row(row, sim_dir):
     """
     return construct_rentplus_name(mk_sim_name_from_row(row, sim_dir))
 
-def construct_tsinfer_name(sim_name, subsample_size, shared_breakpoints, shared_lengths, error_param=0):
+def construct_tsinfer_name(sim_name, subsample_size, shared_breakpoints, shared_lengths, error_param=None):
     """
     Returns a TSinfer filename.
     If the file is a subset of the original, this can be added to the
@@ -305,7 +305,7 @@ def construct_tsinfer_name(sim_name, subsample_size, shared_breakpoints, shared_
     add_subsample_param_to_name() routine.
     """
     d,f = os.path.split(sim_name)
-    suffix = "err{}".format(float(error_param))
+    suffix = "" if error_param is None else "err{}".format(float(error_param))
     if shared_breakpoints is not None:
         suffix += "srb"+str(int(shared_breakpoints))
     if shared_lengths is not None:
@@ -446,7 +446,7 @@ class InferenceRunner(object):
         """
         Standard is now to run without incorporating any error parameters into the inference 
         """
-        return self.__tsinfer(0, skip_infer)
+        return self.__tsinfer(None, skip_infer)
 
     def __tsinfer(self, err, skip_infer=False):
         #default to using srb & but not length breaking if nothing specified in the file
@@ -467,8 +467,7 @@ class InferenceRunner(object):
         logging.debug("reading: variant matrix {} & positions {} for msprime inference".format(
             samples_fn, positions_fn))
         inferred_ts, time, memory = self.run_tsinfer(
-            samples_fn, positions_fn, self.row.length, self.row.recombination_rate,
-            err, shared_recombinations, shared_lengths, self.num_threads,
+            samples_fn, positions_fn, self.row.length, shared_recombinations, shared_lengths, self.num_threads,
             #inject_real_ancestors_from_ts_fn = self.orig_sim_fn + ".hdf5", #uncomment to inject real ancestors
             )
         if inferred_ts:
@@ -534,6 +533,7 @@ class InferenceRunner(object):
                     with open(fn + ".nex", "w+") as out:
                         msprime_RentPlus.RentPlus_trees_to_nexus(treefile, out, self.row.length, num_tips)
         except ValueError as e:
+            self.inferred_filenames = None
             #allow the RentPlus error described at https://github.com/mcveanlab/treeseq-inference/issues/45
             if "main.Main.findCompatibleRegion(Main.java:660)" in str(e):
                 logging.warning("RENTplus bug hit"\
@@ -616,33 +616,26 @@ class InferenceRunner(object):
             }
 
     @staticmethod
-    def run_tsinfer(sample_fn, positions_fn, length, rho, error_probability,
-        shared_recombinations, shared_lengths, num_threads=1, inject_real_ancestors_from_ts_fn=None):
-        try:
-            with tempfile.NamedTemporaryFile("w+") as ts_out:
-                cmd = [
-                    sys.executable, tsinfer_executable, sample_fn, positions_fn,
-                    "--length", str(int(length)), "--recombination-rate", str(rho),
-                    "--error-probability", str(error_probability),
-                    "--threads", str(num_threads), ts_out.name]
-                if inject_real_ancestors_from_ts_fn:
-                    logging.debug("Injecting real ancestors constructed from {}".format(
-                        inject_real_ancestors_from_ts_fn))
-                    cmd.extend(["--inject-real-ancestors-from-ts", inject_real_ancestors_from_ts_fn])
-                if shared_recombinations:
-                    cmd.append("--shared-recombinations")
-                if shared_lengths:
-                    cmd.append("--shared-lengths")
-                cpu_time, memory_use = time_cmd(cmd)
-                ts_simplified = msprime.load(ts_out.name)
-            return ts_simplified, cpu_time, memory_use
-        except ValueError as e:
-            # temporary hack around tsinfer bug
-            #if "time[parent] must be greater than time[child]" in str(e):
-            #    logging.warning("Hit tsinfer bug for {}. Skipping".format(sample_fn))
-            #    return None, None, None
-            #else:
-            raise
+    def run_tsinfer(sample_fn, positions_fn, length,
+        shared_recombinations, shared_lengths, num_threads=1, inject_real_ancestors_from_ts_fn=None, rho=None, error_probability=None):
+        with tempfile.NamedTemporaryFile("w+") as ts_out:
+            cmd = [sys.executable, tsinfer_executable, sample_fn, positions_fn, "--length", str(int(length))]
+            if rho is not None:
+                cmd += ["--recombination-rate", str(rho)]
+            if error_probability is not None:
+                cmd += ["--error-probability", str(error_probability)]
+            cmd += ["--threads", str(num_threads), ts_out.name]
+            if inject_real_ancestors_from_ts_fn:
+                logging.debug("Injecting real ancestors constructed from {}".format(
+                    inject_real_ancestors_from_ts_fn))
+                cmd.extend(["--inject-real-ancestors-from-ts", inject_real_ancestors_from_ts_fn])
+            if shared_recombinations:
+                cmd.append("--shared-recombinations")
+            if shared_lengths:
+                cmd.append("--shared-lengths")
+            cpu_time, memory_use = time_cmd(cmd)
+            ts_simplified = msprime.load(ts_out.name)
+        return ts_simplified, cpu_time, memory_use
 
     @staticmethod
     def run_fastarg(file_name, seq_length, seed):

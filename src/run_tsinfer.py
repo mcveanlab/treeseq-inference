@@ -44,11 +44,11 @@ def main():
         "-l", "--length", default=None, type=int,
         help="The total sequence length")
     parser.add_argument(
-        "-r", "--recombination-rate", default=1, type=float,
-        help="The scaled recombination rate.")
+        "-r", "--recombination-rate", default=None, type=float,
+        help="The scaled recombination rate (now ignored)")
     parser.add_argument(
-        "-e", "--error-probability", default=0, type=float,
-        help="The probability of observing an error")
+        "-e", "--error-probability", default=None, type=float,
+        help="The probability of observing an error (now ignored)")
     parser.add_argument(
         "-t", "--threads", default=1, type=int,
         help="The number of worker threads to use")
@@ -65,6 +65,10 @@ def main():
     pos = np.load(args.positions)
     # We need to transpose this now as
     genotypes = S.astype(np.uint8).T
+    if args.recombination_rate is not None:
+        logging.warning("TSinfer now simply ignores recombination rate. You can omit this parameter")
+    if args.error_probability is not None:
+        logging.warning("TSinfer now simply ignores error probabilities. You can omit this parameter")
     if args.inject_real_ancestors_from_ts is not None:
         orig_ts = msprime.load(args.inject_real_ancestors_from_ts)
         sample_data = formats.SampleData.initialise(
@@ -88,8 +92,6 @@ def main():
     else:
         ts = tsinfer.infer(
             genotypes, pos, args.length,
-            args.recombination_rate,
-            args.error_probability,
             num_threads=args.threads,
             path_compression=args.shared_recombinations,
             method=args.method)
