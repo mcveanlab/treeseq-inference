@@ -1408,11 +1408,11 @@ class TsinferPerformance(Dataset):
     # to column names in the csv file. Values should all be arrays.
     between_sim_params = {
         'Ne':            [5000],
-        'mutation_rate': [5e-9],
+        'mutation_rate': [1e-8],
         #Ensure sample sizes are even so we can output diploid VCF.
         'sample_size':   np.unique(np.append(sample_sizes, fixed_sample_size)),
         'length':        np.unique(np.append(lengths, fixed_length)),
-        'recombination_rate': [5e-9],
+        'recombination_rate': [1e-8/2, 1e-8, 1e-8*2],
     }
 
     #params that change WITHIN simulations. Keys should correspond
@@ -1454,6 +1454,7 @@ class TsinferPerformance(Dataset):
             vcf_filesize = vcf_filesize,
             vcfgz_filesize = os.path.getsize(vcfgz_filename)
             ))
+        os.remove(vcfgz_filename)
         return row_data
 
 
