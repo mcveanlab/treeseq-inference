@@ -27,10 +27,7 @@ def main():
     parser.add_argument('--verbosity', '-v', action='count', default=0)
     parser.add_argument(
         "samples",
-        help="The observed haplotypes as a numpy array file")
-    parser.add_argument(
-        "positions",
-        help="The positions of sites as a numpy array file")
+        help="The observed haplotypes as an npz file containing 2 arrays named 'genotypes' and 'positions'")
     parser.add_argument(
         "output",
         help="The path to write the output file to")
@@ -58,10 +55,9 @@ def main():
     
 
     args = parser.parse_args()
-    S = np.load(args.samples)
-    pos = np.load(args.positions)
+    samples = np.load(args.samples)
     # We need to transpose this now as
-    genotypes = S.astype(np.uint8).T
+    genotypes = samples['genotypes'].astype(np.uint8)
     if args.recombination_rate is not None:
         logging.warning("TSinfer now simply ignores recombination rate. You can omit this parameter")
     if args.error_probability is not None:
@@ -73,7 +69,7 @@ def main():
             sequence_length=orig_ts.sequence_length, 
             compressor=None)
         # Get variants from the samples file, which may contain errors.
-        for p, g in zip(pos, genotypes):
+        for g, p in zip(genotypes, samples['positions']):
             sample_data.add_variant(p, ('0', '1'), g)
         sample_data.finalise()
         ancestor_data = formats.AncestorData.initialise(sample_data, compressor=None)
@@ -88,7 +84,7 @@ def main():
             simplify=True)
     else:
         ts = tsinfer.infer(
-            genotypes, pos, args.length,
+            genotypes, samples['positions'], args.length,
             num_threads=args.threads,
             path_compression=args.shared_recombinations,
             method=args.method)

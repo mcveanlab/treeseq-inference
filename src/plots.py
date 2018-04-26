@@ -407,7 +407,7 @@ class InferenceRunner(object):
             #rather than an average over multiple inferred nexus files, and do the averaging in python
             if self.inferred_filenames is not None:
                 if (self.compute_tree_metrics & METRICS_AT_VARIANT_SITES):
-                    positions = np.load(self.orig_sim_fn + ".pos.npy").tolist()
+                    positions = np.load(self.orig_sim_fn + ".npz")['positions'].tolist()
                 else:
                     positions = None
                 source_nexus_file = self.orig_sim_fn + ".nex"
@@ -452,8 +452,7 @@ class InferenceRunner(object):
         #default to no subsampling
         subsample_size = getattr(self.row,'subsample_size', None)
         #construct filenames - these can be used even if inference does not occur
-        samples_fn = self.base_fn + ".npy"
-        positions_fn = self.base_fn + ".pos.npy"
+        samples_fn = self.base_fn + ".npz"
         out_fn = construct_tsinfer_name(self.base_fn,
             subsample_size, shared_recombinations, err)
         self.inferred_filenames = [out_fn]
@@ -461,10 +460,10 @@ class InferenceRunner(object):
             return {}
         #Now perform the inference
         time = memory = fs = counts = None
-        logging.debug("reading: variant matrix {} & positions {} for msprime inference".format(
-            samples_fn, positions_fn))
+        logging.debug("reading: variant matrix & positions for msprime inference from {}".format(
+            samples_fn))
         inferred_ts, time, memory = self.run_tsinfer(
-            samples_fn, positions_fn, self.row.length, shared_recombinations, self.num_threads,
+            samples_fn, self.row.length, shared_recombinations, self.num_threads,
             #inject_real_ancestors_from_ts_fn = self.orig_sim_fn + ".hdf5", #uncomment to inject real ancestors
             )
         if inferred_ts:
@@ -613,10 +612,10 @@ class InferenceRunner(object):
             }
 
     @staticmethod
-    def run_tsinfer(sample_fn, positions_fn, length,
+    def run_tsinfer(sample_fn, length,
         shared_recombinations, num_threads=1, inject_real_ancestors_from_ts_fn=None, rho=None, error_probability=None):
         with tempfile.NamedTemporaryFile("w+") as ts_out:
-            cmd = [sys.executable, tsinfer_executable, sample_fn, positions_fn, "--length", str(int(length))]
+            cmd = [sys.executable, tsinfer_executable, sample_fn, "--length", str(int(length))]
             if rho is not None:
                 cmd += ["--recombination-rate", str(rho)]
             if error_probability is not None:
@@ -1282,12 +1281,6 @@ class Dataset(object):
             yield ts, fn[:-len(expected_suffix)], outfreq
 
 
-    def save_positions(self, ts, fn):
-        outfile = fn + ".pos.npy"
-        pos = np.array([v.position for v in ts.variants()])
-        logging.debug("writing variant positions to {}".format(outfile))
-        np.save(outfile, pos)
-
 
     def save_variant_matrices(self, ts, fname, error_rate=0, infinite_sites=True):
         if infinite_sites:
@@ -1298,10 +1291,11 @@ class Dataset(object):
         pos = np.array([v.position for v in ts.variants()])
         filename = add_error_param_to_name(fname, error_rate)
         if TSINFER in self.tools:
-            outfile = filename + ".npy"
-            logging.debug("writing variant matrix to {} for tsinfer".format(outfile))
-            np.save(outfile, S)
-            self.save_positions(ts,filename)
+            outfile = filename + ".npz"
+            logging.debug("writing variants and positions to {} for tsinfer".format(outfile))
+            np.savez_compressed(outfile, 
+                genotypes=S.astype(np.uint8).T, 
+                positions=np.array([v.position for v in ts.variants()]))
         if FASTARG in self.tools:
             logging.debug("writing variant matrix to {}.hap for fastARG".format(filename))
             with open(filename+".hap", "w+") as fastarg_in:
@@ -1585,7 +1579,9 @@ class MetricsBySampleSizeDataset(Dataset):
                 subsampled_fn=add_subsample_param_to_name(fn, subsample_size)
                 subsampled_ts = ts.simplify(list(range(subsample_size)))
                 subsampled_ts.save_nexus_trees(subsampled_fn +".nex")
-                self.save_positions(subsampled_ts, subsampled_fn)
+                #save just the positions in an npz file, for metric calcs
+                np.savez_compressed(subsampled_fn + ".npz", 
+                    positions=np.array([v.position for v in subsampled_ts.variants()]))
                 row_data = self.save_within_sim_data(base_row_id, ts, fn, sim_params, within_sim_params)
                 base_row_id += len(row_data)
                 assert all(k not in return_data for k in row_data)
