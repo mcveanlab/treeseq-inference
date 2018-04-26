@@ -2086,7 +2086,7 @@ class AllMetricsByMutationRateSweepFigure(Figure):
         sample_sizes = df.sample_size.unique()
 
         metrics = ARG_metrics.get_metric_names()
-        topology_only_metrics = [m for m in metrics if not m.startswith('w')]
+        topology_only_metrics = [m for m in metrics if not m.startswith('w')] #don't use the weighted metrics
         figures = [] #save figures for putting onto a multi-page pdf
         for error_rate in error_rates:
             fig, axes = pyplot.subplots(len(topology_only_metrics),
