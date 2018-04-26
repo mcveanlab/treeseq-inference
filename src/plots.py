@@ -1877,6 +1877,8 @@ class Figure(object):
     def __init__(self):
         self.dataset = self.datasetClass()
         self.dataset.load_data()
+        self.tools = collections.OrderedDict([(a,b) 
+            for a,b in self.tools_format.items() if a in self.dataset.tools])
 
     def savefig(self, *figures):
         filename = os.path.join(self.figures_dir, "{}.pdf".format(self.name))
@@ -1919,7 +1921,7 @@ class AllMetricsByMutationRateFigure(Figure):
                     df_s = df[np.logical_and(df.sample_size == n, df[ERROR_COLNAME] == error_rate)]
                     group = df_s.groupby(["mutation_rate"])
                     group_mean = group.mean()
-                    for tool, setting in self.tools_format.items():
+                    for tool, setting in self.tools.items():
                         colname = tool + "_" + metric
                         if colname in df.columns:
                             ax.semilogx(group_mean[colname], setting["linestyle"], 
@@ -1929,9 +1931,9 @@ class AllMetricsByMutationRateFigure(Figure):
             pyplot.Line2D((0,1),(0,0), color= setting["col"],
                 linewidth=2, linestyle=setting["linestyle"],
                 marker = None if len(sample_sizes)==1 else setting['mark'])
-            for tool,setting in self.tools_format.items()]
+            for tool,setting in self.tools.items()]
         axes[0][0].legend(
-        artists, self.tools_format.keys(),numpoints=1, labelspacing=0.1)
+        artists, self.tools.keys(),numpoints=1, labelspacing=0.1)
             
             #numpoints=3, loc="upper right")
             # bbox_to_anchor=(0.0, 0.1))
@@ -1942,7 +1944,7 @@ class AllMetricsByMutationRateFigure(Figure):
                 tuple([
                     pyplot.Line2D(
                     (0,0),(0,0), color=setting['col'], fillstyle=fillstyle, marker=setting['mark'], linestyle='None')
-                    for tool, setting in self.tools_format.items() if tool!=TSINFER_WITH_ERROR])
+                    for tool, setting in self.tools.items() if tool!=TSINFER_WITH_ERROR])
                 for fillstyle in fillstyles]
             axes[0][-1].legend(
                 artists, ["Sample size = {}".format(n) for n in [15,20]],
@@ -1989,7 +1991,7 @@ class MetricByMutationRateFigure(Figure):
                 df_s = df[np.logical_and(df.sample_size == n, df[ERROR_COLNAME] == error_rate)]
                 group = df_s.groupby(["mutation_rate"])
                 mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-                for tool,setting in self.tools_format.items():
+                for tool,setting in self.tools.items():
                     if getattr(self, 'error_bars', None):
                         yerr=[m['sem'][tool + "_" + self.metric] for m in mean_sem]
                     else:
@@ -2008,9 +2010,9 @@ class MetricByMutationRateFigure(Figure):
         artists = [
             pyplot.Line2D((0,1),(0,0), color= setting["col"], fillstyle=fillstyles[0],
                 marker= setting["mark"], linestyle=setting["linestyle"])
-            for tool,setting in self.tools_format.items()]
+            for tool,setting in self.tools.items()]
         first_legend = axes[0].legend(
-            artists, self.tools_format.keys(), numpoints=1, loc="upper center")
+            artists, self.tools.keys(), numpoints=1, loc="upper center")
             # bbox_to_anchor=(0.0, 0.1))
         # ax = pyplot.gca().add_artist(first_legend)
         if len(sample_sizes)>1:
@@ -2061,7 +2063,7 @@ class CputimeMetricByMutationRateFigure(MetricByMutationRateFigure):
         df_s = df[np.logical_and(df.sample_size == n, df[ERROR_COLNAME] == error_rate)]
         group = df_s.groupby(["mutation_rate"])
         group_mean = group.mean()
-        for tool, setting in self.tools_format.items():
+        for tool, setting in self.tools.items():
             ax.semilogx(
                 group_mean[tool + "_" + "cputime"],
                 color=setting["col"],
@@ -2115,7 +2117,7 @@ class AllMetricsByMutationRateSweepFigure(Figure):
                         group = df_s.groupby(["mutation_rate"])
                         #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
                         mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-                        for tool, setting in self.tools_format.items():
+                        for tool, setting in self.tools.items():
                             if all(np.isnan(m['mean'][tool + "_" + metric]) for m in mean_sem):
                                 #don't plot if all NAs
                                 continue
@@ -2133,9 +2135,9 @@ class AllMetricsByMutationRateSweepFigure(Figure):
             artists = [
                 pyplot.Line2D((0,1),(0,0), color= setting["col"],
                     marker= setting["mark"], linestyle='')
-                for tool,setting in self.tools_format.items()]
+                for tool,setting in self.tools.items()]
             first_legend = axes[0][0].legend(
-                artists, self.tools_format.keys(), numpoints=3, loc="upper right")
+                artists, self.tools.keys(), numpoints=3, loc="upper right")
             artists = [
                 pyplot.Line2D(
                     (0,0),(0,0), color="black", linestyle=linestyle, linewidth=2)
@@ -2240,8 +2242,8 @@ class MetricByARGweaverParametersFigure(Figure):
                 [m['mean'][tool + "_" + self.metric] for m in mean_sem],
                 yerr=yerr,
                 linestyle=linestyles[0],
-                color=self.tools_format[tool]["col"],
-                marker=self.tools_format[tool]["mark"],
+                color=self.tools[tool]["col"],
+                marker=self.tools[tool]["mark"],
                 elinewidth=1)
 
 
@@ -2259,16 +2261,16 @@ class MetricByARGweaverParametersFigure(Figure):
                     [m['mean'][tool + "_" + self.metric] for m in mean_sem],
                     yerr=yerr,
                     linestyle=linestyle,
-                    color=self.tools_format[tool]["col"],
-                    marker=self.tools_format[tool]["mark"],
+                    color=self.tools[tool]["col"],
+                    marker=self.tools[tool]["mark"],
                     elinewidth=1)
 
         axes[0].set_ylim(self.ylim)
 
         # Create legends from custom artists
         artists = [
-            pyplot.Line2D((0,1),(0,0), color=self.tools_format[tool]["col"],
-                marker=self.tools_format[tool]["mark"], linestyle='')
+            pyplot.Line2D((0,1),(0,0), color=self.tools[tool]["col"],
+                marker=self.tools[tool]["mark"], linestyle='')
             for tool in tools]
         first_legend = axes[0].legend(
             artists, tools, numpoints=3, loc="upper center")
@@ -2336,7 +2338,7 @@ class PerformanceFigure(Figure):
             yerr=yerr,
             # linestyle=inferred_linestyles[shared_breakpoint],
             color=inferred_colour,
-            #marker=self.tools_format[tool]["mark"],
+            #marker=self.tools[tool]["mark"],
             elinewidth=1)
 
         ax2.set_title("Fixed sequence length ({:.2f} Mb)".format(self.datasetClass.fixed_length / 10**6))
@@ -2356,7 +2358,7 @@ class PerformanceFigure(Figure):
             yerr=yerr,
             # linestyle=inferred_linestyles[shared_breakpoint],
             color=inferred_colour,
-            #marker=self.tools_format[tool]["mark"],
+            #marker=self.tools[tool]["mark"],
             elinewidth=1)
 
         self.savefig(fig)
@@ -2486,7 +2488,7 @@ class TracebackDebugFigure(Figure):
                 yerr=[m['sem'][self.plotted_column] for m in mean_sem] if getattr(self, 'error_bars') else None,
                 linestyle=inferred_linestyles[shared_breakpoint],
                 color=inferred_colour,
-                #marker=self.tools_format[tool]["mark"],
+                #marker=self.tools[tool]["mark"],
                 elinewidth=1)
         if len(df.tsinfer_srb.unique())>1:
             params = [
@@ -2548,7 +2550,7 @@ class ProgramComparisonFigure(Figure):
 
         for tool in tools:
             col = tool + "_" + self.plotted_column
-            ax1.plot(group_mean[col], label=tool, color=self.tools_format[tool]["col"])
+            ax1.plot(group_mean[col], label=tool, color=self.tools[tool]["col"])
         ax1.legend(
             loc="upper left", numpoints=1, fontsize="small")
 
@@ -2561,7 +2563,7 @@ class ProgramComparisonFigure(Figure):
 
         for tool in tools:
             col = tool + "_" + self.plotted_column
-            ax2.plot(group_mean[col], label=tool, color=self.tools_format[tool]["col"])
+            ax2.plot(group_mean[col], label=tool, color=self.tools[tool]["col"])
 
         ax2.set_xlabel("Sample size for fixed length of {} Mb".format(
             self.datasetClass.fixed_length / length_scale))
