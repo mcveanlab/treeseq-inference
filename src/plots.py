@@ -1962,7 +1962,7 @@ class AllMetricsByMutationRateFigure(Figure):
                 loc="upper right", numpoints=1, handler_map={tuple: HandlerTuple(ndivide=None, pad=2)})
         else:
             maintitle += " of {} samples".format(sample_sizes[0])
-        maintitle += " over "  + ",".join(["{:g}kb".format(x/1e3) for x in df.length.unique()])
+        maintitle += " spanning "  + ",".join(["{:g}kb".format(x/1e3) for x in df.length.unique()])
         maintitle += " ($N_e$=" + ",".join(["{}".format(x) for x in df.Ne.unique()])
         maintitle += r"; $\rho="+ ",".join(["{}".format(latex_float(x)) for x in df.recombination_rate.unique()])
         maintitle += "$)"
