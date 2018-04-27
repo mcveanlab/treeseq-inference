@@ -95,6 +95,18 @@ save_stats = dict(
     ts_filesize = "ts_filesize"
 )
 
+def latex_float(f):
+    """
+    Return an exponential number in nice LaTeX form. 
+    In titles etc for plots this needs to be encased in $ $ signs, and r'' strings used
+    """
+    float_str = "{0:.2g}".format(f)
+    if "e" in float_str:
+        base, exponent = float_str.split("e")
+        return r"{0} \times 10^{{{1}}}".format(base, int(exponent))
+    else:
+        return float_str
+
 def nanblank(val):
     """hack around a horrible pandas syntax, which puts nan instead of blank strings"""
     return "" if pd.isnull(val) else val
@@ -1580,6 +1592,8 @@ class MetricsBySampleSizeDataset(Dataset):
                 subsampled_ts = ts.simplify(list(range(subsample_size)))
                 subsampled_ts.save_nexus_trees(subsampled_fn +".nex")
                 #save just the positions in an npz file, for metric calcs
+                ## TO DO - this should be replaced by a tsinfer routine to save the 
+                ## samples directly to the standard tsinfer (zarr) input format
                 np.savez_compressed(subsampled_fn + ".npz", 
                     positions=np.array([v.position for v in subsampled_ts.variants()]))
                 row_data = self.save_within_sim_data(base_row_id, ts, fn, sim_params, within_sim_params)
@@ -2313,53 +2327,65 @@ class PerformanceFigure(Figure):
         df.length /= 10**6
         # Set statistics to the ratio of observed over expected
         source_colour = "red"
-        inferred_colour = "blue"
-        # inferred_linestyles = {False:':',True:'-'}
+        inferred_colour = self.tools[TSINFER]["col"]
+        recombination_linestyles = [':', '-', '--']
+        recombination_rates = df.recombination_rate.unique()
+        mutation_rates = self.datasetClass.between_sim_params['mutation_rate']
+        assert len(recombination_linestyles) >= len(recombination_rates)
+        assert len(mutation_rates) ==1
+        mu = mutation_rates[0]
         #inferred_markers =    {False:'s',True:'b'}
         fig, (ax1, ax2) = pyplot.subplots(1, 2, figsize=(12, 6), sharey=True)
         ax1.set_title("Fixed number of chromosomes ({})".format(self.datasetClass.fixed_sample_size))
         ax1.set_xlabel("Sequence length (MB)")
         ax1.set_ylabel(self.y_axis_label)
-
-        dfp = df[df.sample_size == self.datasetClass.fixed_sample_size]
-        group = dfp.groupby(["length"])
+        for rho_index, rho in enumerate(recombination_rates):
+            dfp = df[np.logical_and.reduce((
+                df.sample_size == self.datasetClass.fixed_sample_size,
+                df.recombination_rate == rho))]
+            group = dfp.groupby(["length"])
             #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
-        mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-        if getattr(self, 'error_bars', None):
-            yerr=[m['sem'] for m in mean_sem]
-        else:
-            yerr = None
-        ax1.errorbar(
-            [m['mu'] for m in mean_sem],
-            [m['mean'][self.plotted_column] for m in mean_sem],
-            yerr=yerr,
-            # linestyle=inferred_linestyles[shared_breakpoint],
-            color=inferred_colour,
-            #marker=self.tools[tool]["mark"],
-            elinewidth=1)
+            mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
+            ax1.errorbar(
+                [m['mu'] for m in mean_sem],
+                [m['mean'][self.plotted_column] for m in mean_sem],
+                yerr=[m['sem'][self.plotted_column] for m in mean_sem] if hasattr(self, 'error_bars') else None,
+                linestyle= recombination_linestyles[rho_index],
+                color=inferred_colour,
+                #elinewidth=1
+                )
+
 
         ax2.set_title("Fixed sequence length ({:.2f} Mb)".format(self.datasetClass.fixed_length / 10**6))
         ax2.set_xlabel("Sample size")
         ax2.set_ylabel(self.y_axis_label)
-        dfp = df[df.length == self.datasetClass.fixed_length / 10**6]
-        group = dfp.groupby(["sample_size"])
-        #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
-        mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-        if getattr(self, 'error_bars', None):
-            yerr=[m['sem'] for m in mean_sem]
-        else:
-            yerr = None
-        ax2.errorbar(
-            [m['mu'] for m in mean_sem],
-            [m['mean'][self.plotted_column] for m in mean_sem],
-            yerr=yerr,
-            # linestyle=inferred_linestyles[shared_breakpoint],
-            color=inferred_colour,
-            #marker=self.tools[tool]["mark"],
-            elinewidth=1)
-
+        for rho_index, rho in enumerate(recombination_rates):
+            dfp = df[np.logical_and.reduce((
+                df.length == self.datasetClass.fixed_length / 10**6,
+                df.recombination_rate == rho))]
+            group = dfp.groupby(["sample_size"])
+            #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
+            mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
+            ax2.errorbar(
+                [m['mu'] for m in mean_sem],
+                [m['mean'][self.plotted_column] for m in mean_sem],
+                yerr=[m['sem'][self.plotted_column] for m in mean_sem] if hasattr(self, 'error_bars') else None,
+                linestyle= recombination_linestyles[rho_index],
+                color=inferred_colour,
+                #elinewidth=1
+                )
+        params = [
+            pyplot.Line2D(
+                (0,0),(0,0), color= inferred_colour,
+                linestyle=recombination_linestyles[rho_index], linewidth=2)
+            for rho_index, rho in enumerate(recombination_rates)]
+        ax1.legend(
+            params, [r"$\rho$ = $\mu${}".format("" if rho==mu else r"$\times${:g}".format(rho/mu) if rho>mu else r"/{:g}".format(mu/rho))
+                for rho_index, rho in enumerate(recombination_rates)],
+            loc="lower right", fontsize=10, title="Relative rate of\nrecombination")
+    
+        pyplot.suptitle(r'Tsinfer large dataset performance for $\mu$=${}$'.format(latex_float(mu)))
         self.savefig(fig)
-
 
 
 class EdgesPerformanceFigure(PerformanceFigure):
@@ -2413,7 +2439,13 @@ class PerformanceFigure2(Figure):
         df.length /= 10**6
         # Set statistics to the ratio of observed over expected
         source_colour = "red"
-        inferred_colour = "blue"
+        inferred_colour = self.tools[TSINFER]["col"]
+        recombination_linestyles = [':', '-', '--']
+        recombination_rates = df.recombination_rate.unique()
+        mutation_rates = self.datasetClass.between_sim_params['mutation_rate']
+        assert len(recombination_linestyles) >= len(recombination_rates)
+        assert len(mutation_rates) ==1
+        mu = mutation_rates[0]
         inferred_linestyles = {False:':',True:'-'}
         fig, (ax1, ax2) = pyplot.subplots(1, 2, figsize=(12, 6), sharey=True)
         ax1.set_title("Fixed number of chromosomes ({})".format(self.datasetClass.fixed_sample_size))
@@ -2447,7 +2479,7 @@ class PerformanceFigure2(Figure):
                 color=inferred_colour,
                 linestyle="",marker="o")
 
-        pyplot.suptitle('Tsinfer large dataset performance for mu={}'.format(self.datasetClass.mutation_rate))
+        pyplot.suptitle('Tsinfer large dataset performance for mu={}'.format(mu))
         self.savefig(fig)
 
 
@@ -2622,8 +2654,8 @@ def main():
         for subclass in cls.__subclasses__():
             yield from get_subclasses(subclass)
             yield subclass
-    datasets = list(get_subclasses(Dataset))
-    figures = list(get_subclasses(Figure))
+    datasets = sorted(list(get_subclasses(Dataset)))
+    figures = sorted(list(get_subclasses(Figure)))
     name_map = dict([(d.name, d) for d in datasets + figures])
     parser = argparse.ArgumentParser(
         description="Set up base data, generate inferred datasets, process datasets and plot figures.")
