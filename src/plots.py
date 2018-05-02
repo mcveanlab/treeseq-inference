@@ -2654,8 +2654,8 @@ def main():
         for subclass in cls.__subclasses__():
             yield from get_subclasses(subclass)
             yield subclass
-    datasets = sorted(list(get_subclasses(Dataset)))
-    figures = sorted(list(get_subclasses(Figure)))
+    datasets = list(get_subclasses(Dataset))
+    figures = list(get_subclasses(Figure))
     name_map = dict([(d.name, d) for d in datasets + figures])
     parser = argparse.ArgumentParser(
         description="Set up base data, generate inferred datasets, process datasets and plot figures.")
@@ -2667,7 +2667,7 @@ def main():
     subparser = subparsers.add_parser('setup')
     subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
-        help='the dataset identifier', choices=[d.name for d in datasets])
+        help='the dataset identifier', choices=sorted([d.name for d in datasets if d.name]))
     subparser.add_argument(
         "--processes", '-p', type=int, default=1,
         help="number of worker processes, e.g. 40")
@@ -2698,7 +2698,7 @@ def main():
         help="Only run for a specific row")
     subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
-        help='the dataset identifier', choices=[d.name for d in datasets])
+        help='the dataset identifier', choices=sorted([d.name for d in datasets if d.name]))
     subparser.add_argument(
          '--force',  "-f", action='store_true',
          help="redo all the inferences, even if we have already filled out some", )
@@ -2716,7 +2716,7 @@ def main():
     subparser = subparsers.add_parser('figure')
     subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
-        help='the figure identifier', choices=[f.name for f in figures])
+        help='the figure identifier', choices=sorted([f.name for f in figures if f.name]))
     subparser.set_defaults(func=run_plot)
 
     args = parser.parse_args()
