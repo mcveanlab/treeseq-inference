@@ -772,7 +772,7 @@ def infer_worker(work):
     tool, row, sims_dir, n_threads, metric_params, metrics_only, polytomy_reps = work
     runner = InferenceRunner(tool, row, sims_dir, n_threads, metric_params, polytomy_reps)
     result = runner.run(metrics_only)
-    result['completed'] = True
+    result[tool+'_completed'] = True
     return int(row[0]), tool, result
 
 
