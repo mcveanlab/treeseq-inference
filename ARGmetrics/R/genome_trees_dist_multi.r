@@ -7,9 +7,9 @@
 #' @param weights If provided, these are treated as weights, and instead of returning a matrix
 #' with columns for each measure, and n rows, a single row is returned giving the distance
 #' measures averaged over all the different tree sequences. Set to 1 for a "standard" unweighted average
-#' @param acceptable.length.diff.pct How much difference in sequence length is allows between the 2 trees? (Default: 0.1 percent)
+#' @param acceptable.length.diff.pct How much difference in sequence length is allowed between the 2 trees? (Default: 0.1 percent)
 #' @param variant.positions A list of positions of each variant (not implemented)
-#' @param randomly.resolve.multi Should re randomly break polytomies in the multiPhylo objects passed in?
+#' @param randomly.resolve.multi Should we randomly break polytomies in the list of multiPhylo objects passed in to treeseq.multi?
 #' @export
 #' @examples
 #' genome.trees.dist.multi()

@@ -60,6 +60,7 @@ def get_metrics(true_nexus_fn, inferred_nexus_fns, variant_positions = None, ran
         m = ARGmetrics.genome_trees_dist(
             orig_tree, inferred_tree, variant_positions=variant_positions)
     else:
+        #this is a list of nexus files, not a single one
         # load the true_nexus into the R session (but don't convert it to a python obj)
         orig_tree = ape.read_nexus(true_nexus_fn, force_multi=True)
         m = ARGmetrics.genome_trees_dist_multi(
