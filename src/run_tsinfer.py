@@ -27,7 +27,7 @@ def main():
     parser.add_argument('--verbosity', '-v', action='count', default=0)
     parser.add_argument(
         "samples",
-        help="The observed haplotypes as an npz file containing 2 arrays named 'genotypes' and 'positions'")
+        help="The samples file name, as saved by tsinfer.SampleData.initialise()")
     parser.add_argument(
         "output",
         help="The path to write the output file to")
@@ -55,24 +55,15 @@ def main():
     
 
     args = parser.parse_args()
-    samples = np.load(args.samples)
-    # We need to transpose this now as
-    genotypes = samples['genotypes'].astype(np.uint8)
     if args.recombination_rate is not None:
         logging.warning("TSinfer now simply ignores recombination rate. You can omit this parameter")
     if args.error_probability is not None:
         logging.warning("TSinfer now simply ignores error probabilities. You can omit this parameter")
+
+    sample_data = tsinfer.SampleData.load(path=args.samples)
+    ancestor_data = tsinfer.AncestorData.initialise(sample_data, compressor=None)
     if args.inject_real_ancestors_from_ts is not None:
         orig_ts = msprime.load(args.inject_real_ancestors_from_ts)
-        sample_data = formats.SampleData.initialise(
-            num_samples=genotypes.shape[1], 
-            sequence_length=orig_ts.sequence_length, 
-            compressor=None)
-        # Get variants from the samples file, which may contain errors.
-        for g, p in zip(genotypes, samples['positions']):
-            sample_data.add_variant(p, ('0', '1'), g)
-        sample_data.finalise()
-        ancestor_data = formats.AncestorData.initialise(sample_data, compressor=None)
         evaluation.build_simulated_ancestors(sample_data, ancestor_data, orig_ts)
         ancestor_data.finalise()
         ancestors_ts = tsinfer.match_ancestors(
@@ -83,11 +74,16 @@ def main():
             path_compression=args.shared_recombinations,
             simplify=True)
     else:
-        ts = tsinfer.infer(
-            genotypes, samples['positions'], args.length,
-            num_threads=args.threads,
-            path_compression=args.shared_recombinations,
-            method=args.method)
+        tsinfer.build_ancestors(sample_data, ancestor_data, method=args.method)
+        ancestor_data.finalise()
+
+        ancestors_ts = tsinfer.match_ancestors(
+            sample_data, ancestor_data, method=args.method, num_threads=args.threads,
+            path_compression=args.shared_recombinations)
+
+        ts = tsinfer.match_samples(
+            sample_data, ancestors_ts, method=args.method, num_threads=args.threads,
+            path_compression=args.shared_recombinations)
     ts.dump(args.output)
 
     # # TODO add command line arg here for when we're comparing run time performance.
