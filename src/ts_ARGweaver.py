@@ -350,17 +350,17 @@ def main(args):
         smc_nex = smc.replace(".smc.gz", ".nex")
         with open(smc_nex, "w+") as smc_nex_out:
             ARGweaver_smc_to_nexus(smc, smc_nex_out)
-        arg_nex=smc.replace(".smc.gz", ".msp_nex")
+        arg_nex=smc.replace(".smc.gz", ".ts_nex")
         with open(smc.replace(".smc.gz", ".TSnodes"), "w+") as nodes, \
             open(smc.replace(".smc.gz", ".TSedges"), "w+") as edges, \
-            open(arg_nex, "w+") as msp_nex:
+            open(arg_nex, "w+") as ts_nex:
             ARGweaver_smc_to_ts_txts(
                 os.path.join(args.ARGweaver_executable_dir, args.ARGweaver_smc2arg_executable),
                 smc.replace(".smc.gz", ""),
                 nodes, edges)
 
             ts = ts_txts_to_hdf5(nodes, edges)
-            ts.write_nexus_trees(msp_nex)
+            ts.write_nexus_trees(ts_nex)
         
         smc_trees = TreeList.get(path=smc_nex, schema="nexus")
         arg_trees = TreeList.get(path=arg_nex, schema="nexus", 
