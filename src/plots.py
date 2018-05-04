@@ -186,9 +186,9 @@ def generate_samples(ts, filename, error_p=0):
             sample_data.add_site(
                 position=v.site.position, alleles=v.alleles,
                 genotypes=genotypes)
-
-    logging.info("Error injected: base error rate = {}, induced error rate = {}".format(
-        error_p, bits_flipped/(n_variants*ts.sample_size)))
+    if error_p>0:
+        logging.info("Error injected: base error rate = {}, induced error rate = {}".format(
+            error_p, bits_flipped/(n_variants*ts.sample_size)))
     sample_data.finalise()
 
     return sample_data
@@ -249,7 +249,6 @@ def mk_sim_name_from_row(row, directory=None, error_col=ERROR_COLNAME, subsample
 def add_subsample_param_to_name(sim_name, subsample_size=None):
     """
     Mark a filename as containing only a subset of the samples of the full sim
-    Can be used on msprime output files but also e.g. tsinfer output files
     """
     if subsample_size is not None and not pd.isnull(subsample_size):
         if sim_name.endswith("+") or sim_name.endswith("-"):
@@ -262,7 +261,7 @@ def add_subsample_param_to_name(sim_name, subsample_size=None):
 
 def add_error_param_to_name(sim_name, error_rate=None):
     """
-    Append the error param to the msprime simulation filename.
+    Append the error param to the simulated tree sequence filename.
     Only relevant for files downstream of the step where sequence error is added
     """
     if error_rate is not None and not pd.isnull(error_rate):
@@ -323,9 +322,9 @@ def construct_rentplus_name(sim_name):
     d,f = os.path.split(sim_name)
     return os.path.join(d,'+'.join(['rentpls', f, ""]))
 
-def rentplus_name_from_msprime_row(row, sim_dir):
+def rentplus_name_from_ts_row(row, sim_dir):
     """
-    return the rentplus name based on an msprime sim specified by row
+    return the rentplus name based on a simulated tree sequence specified by row
     """
     return construct_rentplus_name(mk_sim_name_from_row(row, sim_dir))
 
@@ -439,7 +438,8 @@ class InferenceRunner(object):
             #NB Jerome thinks it may be clearer to have get_metrics() return a single set of metrics
             #rather than an average over multiple inferred nexus files, and do the averaging in python
                 if metric & METRICS_LOCATION_VARIANTS:
-                    positions = np.load(self.orig_sim_fn + ".npz")['positions'].tolist()
+                    #get positions from the samples store, for use in metric calcs
+                    positions = tsinfer.SampleData.load(path=self.orig_sim_fn + ".samples").sites_position.tolist()
                 else:
                     positions = None
                 source_nexus_file = self.orig_sim_fn + ".nex"
@@ -485,7 +485,7 @@ class InferenceRunner(object):
         #default to no subsampling
         subsample_size = getattr(self.row,'subsample_size', None)
         #construct filenames - these can be used even if inference does not occur
-        samples_fn = self.base_fn + ".npz"
+        samples_fn = self.base_fn + ".samples"
         out_fn = construct_tsinfer_name(self.base_fn,
             subsample_size, shared_recombinations, err)
         self.inferred_filenames = [out_fn]
@@ -493,7 +493,7 @@ class InferenceRunner(object):
             return {}
         #Now perform the inference
         time = memory = fs = counts = None
-        logging.debug("reading: variant matrix & positions for msprime inference from {}".format(
+        logging.debug("loading samples for ts inference from {}".format(
             samples_fn))
         inferred_ts, time, memory = self.run_tsinfer(
             samples_fn, self.row.length, shared_recombinations, self.num_threads,
@@ -560,7 +560,7 @@ class InferenceRunner(object):
             if len(self.metric_params):
                 for fn in self.inferred_filenames:
                     with open(fn + ".nex", "w+") as out:
-                        msprime_RentPlus.RentPlus_trees_to_nexus(treefile, out, self.row.length, num_tips)
+                        ts_RentPlus.RentPlus_trees_to_nexus(treefile, out, self.row.length, num_tips)
         except ValueError as e:
             self.inferred_filenames = None
             #allow the RentPlus error described at https://github.com/mcveanlab/treeseq-inference/issues/45
@@ -619,18 +619,18 @@ class InferenceRunner(object):
             if skip_infer==False:
                 if len(self.metric_params):
                     with open(base + ".nex", "w+") as out:
-                        msprime_ARGweaver.ARGweaver_smc_to_nexus(base+".smc.gz", out)
+                        ts_ARGweaver.ARGweaver_smc_to_nexus(base+".smc.gz", out)
                 try:
-                    with open(base+".TSnodes", "w+") as msprime_nodes, \
-                            open(base+".TSedges", "w+") as msprime_edges:
-                        msprime_ARGweaver.ARGweaver_smc_to_msprime_txts(
-                            smc2arg_executable, base, msprime_nodes, msprime_edges)
+                    with open(base+".TSnodes", "w+") as ts_nodes, \
+                            open(base+".TSedges", "w+") as ts_edges:
+                        ts_ARGweaver.ARGweaver_smc_to_ts_txts(
+                            smc2arg_executable, base, ts_nodes, ts_edges)
                         inferred_ts = msprime.load_text(
-                            nodes=msprime_nodes, edges=msprime_edges).simplify()
+                            nodes=ts_nodes, edges=ts_edges).simplify()
                         inferred_ts.dump(base + ".hdf5")
                         filesizes.append(os.path.getsize(base + ".hdf5"))
                         edges.append(inferred_ts.num_edges)
-                except msprime_ARGweaver.CyclicalARGError as e:
+                except ts_ARGweaver.CyclicalARGError as e:
                     logging.warning("Cyclical ARG Exception when converting {}: {}".format(
                         base + ".msp", e))
         if skip_infer:
@@ -669,10 +669,10 @@ class InferenceRunner(object):
         with tempfile.NamedTemporaryFile("w+") as fa_out, \
                 tempfile.NamedTemporaryFile("w+") as tree, \
                 tempfile.NamedTemporaryFile("w+") as muts:
-            cmd = msprime_fastARG.get_cmd(fastARG_executable, file_name, seed)
+            cmd = ts_fastARG.get_cmd(fastARG_executable, file_name, seed)
             cpu_time, memory_use = time_cmd(cmd, fa_out)
             logging.debug("ran fastarg for seq length {} [{} s]: '{}'".format(seq_length, cpu_time, cmd))
-            var_pos = msprime_fastARG.variant_positions_from_fastARGin_name(file_name)
+            var_pos = ts_fastARG.variant_positions_from_fastARGin_name(file_name)
             inferred_ts = ts_fastARG.fastARG_out_to_ts(fa_out, var_pos, seq_len=seq_length)
             return inferred_ts, cpu_time, memory_use
 
@@ -766,8 +766,8 @@ class InferenceRunner(object):
                     shutil.copyfileobj(open(burn_prefix + ".stats"), stats)
                     print("\n", file=stats)
                 shutil.copyfileobj(open(new_prefix + ".stats"), stats)
-            #cannot translate these to msprime ts objects, as smc2arg does not work
-            #see https://github.com/mdrasmus/argweaver/issues/20
+            #To Do: translate these to treesequence objects, so that e.g. edges can be calculated
+            #as https://github.com/mdrasmus/argweaver/issues/20 is now closed
             return saved_iterations, new_stats_file_name, sum(cpu_time), max(memory_use)
         except ValueError as e:
             if 'src/argweaver/sample_thread.cpp:517:' in str(e):
@@ -1609,11 +1609,9 @@ class MetricsBySampleSizeDataset(Dataset):
                 subsampled_fn=add_subsample_param_to_name(fn, subsample_size)
                 subsampled_ts = ts.simplify(list(range(subsample_size)))
                 subsampled_ts.save_nexus_trees(subsampled_fn +".nex")
-                #save just the positions in an npz file, for metric calcs
-                ## TO DO - this should be replaced by a tsinfer routine to save the 
-                ## samples directly to the standard tsinfer (zarr) input format
-                np.savez_compressed(subsampled_fn + ".npz", 
-                    positions=np.array([v.position for v in subsampled_ts.variants()]))
+                #When we calculate metrics we require a samples file from which to extract
+                #positions. Here we forcibly create one with the subsampled data for this purpose
+                generate_samples(subsampled_ts, subsampled_fn)
                 row_data = self.save_within_sim_data(base_row_id, ts, fn, sim_params, within_sim_params)
                 base_row_id += len(row_data)
                 assert all(k not in return_data for k in row_data)
