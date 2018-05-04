@@ -187,8 +187,8 @@ def generate_samples(ts, filename, error_p=0):
                 position=v.site.position, alleles=v.alleles,
                 genotypes=genotypes)
     if error_p>0:
-        logging.info("Error injected: base error rate = {}, induced error rate = {}".format(
-            error_p, bits_flipped/(n_variants*ts.sample_size)))
+        logging.info("Error injected into {}: base error rate = {}, induced error rate = {}".format(
+            os.path.basename(filename), error_p, bits_flipped/(n_variants*ts.sample_size)))
     sample_data.finalise()
 
     return sample_data
