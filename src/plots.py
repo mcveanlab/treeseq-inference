@@ -2010,20 +2010,19 @@ class CputimeMetricByMutationRateFigure(MetricByMutationRateFigure):
         fig, ax = pyplot.subplots(1, 1)
         lines = []
         error_rate = 0
-        n = 50
         ax.set_xlabel("Mutation rate")
-        ax.set_ylabel("CPU time (sec)")
-        df_s = df[np.logical_and(df.sample_size == n, df[ERROR_COLNAME] == error_rate)]
+        ax.set_ylabel("CPU time (hours)")
+        df_s = df[df[ERROR_COLNAME] == error_rate]
         group = df_s.groupby(["mutation_rate"])
         group_mean = group.mean()
         for tool, setting in self.tools.items():
             ax.semilogx(
-                group_mean[tool + "_" + "cputime"],
+                group_mean[tool + "_" + "cputime"]/60/60,
                 color=setting["col"],
                 marker=setting["mark"],
                 label=tool)
         ax.legend(loc="center left")
-        ax.set_ylim(-20, 1000)
+        #ax.set_ylim(-20, 1000)
         self.savefig(fig)
 
 class AllMetricsByMutationRateSweepFigure(Figure):
