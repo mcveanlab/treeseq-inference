@@ -1371,7 +1371,7 @@ class MetricsByMutationRateDataset(Dataset):
     #params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
-        ERROR_COLNAME : [0, 0.001, 0.01],
+        ERROR_COLNAME : [0, 0.001*math.log2(between_sim_params['sample_size'][0])],
     }
 
     def single_sim(self, row_id, sim_params, rng):
@@ -1409,7 +1409,7 @@ class MetricsByMuRhoRatioDataset(MetricsByMutationRateDataset):
         'recombination_rate': [1e-8],
     }
     within_sim_params = {
-        ERROR_COLNAME : [0, 0.001, 0.01],
+        ERROR_COLNAME : [0, 0.001*math.log2(between_sim_params['sample_size'][0])],
     }
     
 
