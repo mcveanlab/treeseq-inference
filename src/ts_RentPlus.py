@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
-"""Various functions to convert msprime simulation files to RentPlus input format, and from RentPlus output to msprime."""
+"""Various functions to convert tree sequences to RentPlus input format, and from RentPlus output to tree seqs."""
 import sys
 from math import ceil
 import numpy as np
 import os.path
-sys.path.insert(1,os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','msprime')) # use the local copy of msprime in preference to the global one
-import msprime
 import logging
     
-def variant_matrix_to_RentPlus_in(var_matrix, var_positions, seq_length, RentPlus_filehandle, infinite_sites=True):
+def samples_to_RentPlus_in(sample_data, RentPlus_filehandle, infinite_sites=True):
     """
-    Takes an variant matrix, and outputs a file in .dat format, suitable for input 
+    Takes a SampleData object, and outputs a file in .dat format, suitable for input 
     into RentPlus (see https://github.com/SajadMirzaei/RentPlus)
     
     We could either use infinite sites, with a floating point number between 0 and 1, or
@@ -24,29 +22,29 @@ def variant_matrix_to_RentPlus_in(var_matrix, var_positions, seq_length, RentPlu
     if infinite_sites==True, then we must convert all the positions to lie between 0 and 1
     
     Note that with integer positions rentplus uses position coordinates (1,N) - i.e. [0,N). 
-    That compares to msprime which uses (0..N-1) - i.e. (0,N].
+    That compares to tree sequences which use (0..N-1) - i.e. (0,N].
     
     Compared e.g. with fastARG, the matrix is transposed, so that rows are positions,
     this is a pain when trying to merge adjacent genotypes
     """
-    n_variants, n_samples = var_matrix.shape
-    assert len(var_matrix)==n_variants
+    position = sample_data.sites_position[:] #decompress all in one go to avoid sequential unpacking
     if infinite_sites:
         #normalize to between 0 and 1
-        unique_positions = np.unique(var_positions)
-        assert unique_positions.shape[0] == n_variants, \
+        unique_positions = np.unique(position)
+        assert unique_positions.shape[0] == sample_data.num_sites, \
             'If infinite sites is assumed, positions need to be unique, but there are dups'
-        np.savetxt(RentPlus_filehandle, var_matrix.T, delimiter="", comments='',
-            header=" ".join([str(float(p)/seq_length) for p in var_positions]))
+        print(" ".join([str(float(p)/sample_data.sequence_length) for p in unique_positions]))
+        for id, haplotype in sample_data.haplotypes():
+            print((genotypes + ord('0')).tobytes().decode(),file=RentPlus_filehandle)
     else:
         #compress runlengths of integers
-        unique_positions = np.unique(np.ceil(var_positions).astype(np.uint64))
-        output = np.zeros((n_samples, unique_positions.shape[0]), dtype=np.uint8)
+        unique_positions = np.unique(np.ceil(position).astype(np.uint64))
+        output = np.zeros((sample_data.num_samples, unique_positions.shape[0]), dtype=np.uint8)
         prev_position = 0
         index=0
         ANDed_genotype = None
-        for pos, genotype in zip(var_positions, var_matrix):
-            if int(ceil(pos)) != prev_position:
+        for id, genotype in sample_data.genotypes():
+            if int(ceil(position[id])) != prev_position:
                 #this is a new position. Save the genotype at the old position, and then reset everything
                 if ANDed_genotype is not None:
                     output[:,index]=ANDed_genotype
@@ -54,7 +52,7 @@ def variant_matrix_to_RentPlus_in(var_matrix, var_positions, seq_length, RentPlu
                 ANDed_genotype = genotype
             else:
                 ANDed_genotype =  np.logical_and(ANDed_genotype, genotype)
-            prev_position = int(ceil(pos))
+            prev_position = int(ceil(position[id]))
         if ANDed_genotype is not None: # print out the last site
             output[:,index]=ANDed_genotype
         

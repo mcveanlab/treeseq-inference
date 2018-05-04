@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
-Various functions to convert msprime simulation file to ARGweaver input format,
-and from .arg files to msprime input.
+Various functions to convert a ts file to ARGweaver input format,
+and from .arg files to tree seq input.
 
 When run as a script, takes an msprime simulation in hdf5 format, saves to
 ARGweaver input format (haplotype sequences), runs ARGweaver inference on it to
-make .smc files, converts the .smc ARGweaver output files to msprime input
-files, reads these into msprime, and checks that the trees from msprime are the
-same/. We also test tree balance statistics (which are tip-label agnostic) and (if
+make .smc files, converts the .smc ARGweaver output files to ts input
+files, reads these in, and checks that the msprime ts is the
+same. We also test tree balance statistics (which are tip-label agnostic) and (if
 sample <= 5) looks at all possible tip permutations to see if the trees are
 essentially the same but with the labels lost.
 
 E.g. to look ove many small trees (seq length 1 million bases), try
 
-python3 ./src/msprime_ARGweaver.py tmp/AWtest -v -l 1000000
+python3 ./src/ts_ARGweaver.py tmp/AWtest -v -l 1000000
 
 """
 import sys
@@ -37,25 +37,25 @@ class CyclicalARGError(Exception):
     See https://github.com/mdrasmus/argweaver/issues/20
     """
 
-def msprime_hdf5_to_ARGweaver_in(msprime_hdf5, ARGweaver_filehandle):
+def ts_hdf5_to_ARGweaver_in(ts_hdf5, ARGweaver_filehandle):
     """
     take an hdf5 file, and convert it into an input file suitable for ARGweaver
     Returns the simulation parameters (Ne, mu, r) used to create the hdf5 file
     """
     logging.info("== Saving to ARGweaver input format ==")
     try:
-        ts = msprime.load(msprime_hdf5.name) #msprime_hdf5 is a fh
+        ts = msprime.load(ts_hdf5.name) #ts_hdf5 is a fh
     except AttributeError:
-        ts = msprime.load(msprime_hdf5)
-    msprime_to_ARGweaver_in(ts, ARGweaver_filehandle)
+        ts = msprime.load(ts_hdf5)
+    ts_to_ARGweaver_in(ts, ARGweaver_filehandle)
     #here we should extract the /provenance information from the hdf5 file and return {'Ne':XXX, 'mutation_rate':XXX, 'recombination_rate':XXX}
     #but this information is currently not encoded in the hdf5 file (listed as TODO)
 
     return {'Ne':None, 'mutation_rate':None, 'recombination_rate':None}
 
-def msprime_to_ARGweaver_in(ts, ARGweaver_filehandle):
+def ts_to_ARGweaver_in(ts, ARGweaver_filehandle):
     """
-    Takes an msprime TreeSequence, and outputs a file in .sites format, suitable for input
+    Takes a TreeSequence, and outputs a file in .sites format, suitable for input
     into ARGweaver (see http://mdrasmus.github.io/argweaver/doc/#sec-file-sites)
     The documentation (http://mdrasmus.github.io/argweaver/doc/#sec-prog-arg-sample)
     states that the only mutation model is Jukes-Cantor (i.e. equal mutation between
@@ -69,7 +69,7 @@ def msprime_to_ARGweaver_in(ts, ARGweaver_filehandle):
     integer position.
 
     Note that ARGweaver uses position coordinates (1,N) - i.e. [0,N).
-    That compares to msprime which uses (0..N-1) - i.e. (0,N].
+    That compares to tree sequences which use (0..N-1) - i.e. (0,N].
     """
     simple_ts = ts.simplify()
     print("\t".join(["NAMES"]+[str(x) for x in range(simple_ts.get_sample_size())]), file=ARGweaver_filehandle)
@@ -91,7 +91,7 @@ def msprime_to_ARGweaver_in(ts, ARGweaver_filehandle):
     ARGweaver_filehandle.flush()
     ARGweaver_filehandle.seek(0)
 
-def variant_matrix_to_ARGweaver_in(var_matrix, var_positions, seq_length, ARGweaver_filehandle, infinite_sites=True):
+def samples_to_ARGweaver_in(sample_data, ARGweaver_filehandle, infinite_sites=True):
     """
     Takes an variant matrix, and outputs a file in .sites format, suitable for input
     into ARGweaver (see http://mdrasmus.github.io/argweaver/doc/#sec-file-sites)
@@ -105,21 +105,21 @@ def variant_matrix_to_ARGweaver_in(var_matrix, var_positions, seq_length, ARGwea
     integer position.
 
     Note that ARGweaver uses position coordinates (1,N) - i.e. (0,N].
-    That compares to msprime which uses (0..N-1) - i.e. [0,N).
+    That compares to tree sequences which use (0..N-1) - i.e. [0,N).
     """
-    n_variants, n_samples = var_matrix.shape
-    assert len(var_matrix)==n_variants
-    print("\t".join(["NAMES"]+[str(x) for x in range(n_samples)]), file=ARGweaver_filehandle)
-    print("\t".join(["REGION", "chr", "1", str(seq_length)]), file=ARGweaver_filehandle)
-    genotypes = None
+    print("\t".join(["NAMES"]+[str(x) for x in range(sample_data.num_samples)]), file=ARGweaver_filehandle)
+    print("\t".join(["REGION", "chr", "1", str(sample_data.sequence_length)]), file=ARGweaver_filehandle)
+    
+    position = sample_data.sites_position[:] #decompress all in one go to avoid sequential unpacking
     if infinite_sites:
-        for pos, v in zip(var_positions, var_matrix):
-            print(pos+1, "".join(np.where(v==0,"A","T")), sep="\t", file=ARGweaver_filehandle)
+        for id, genotype in sample_data.genotypes():
+            print(position[id]+1, "".join(np.where(genotype==0,"A","T")),
+                sep="\t", file=ARGweaver_filehandle)
     else:
         prev_position = 0
         ANDed_genotype = None
-        for pos, genotype in zip(var_positions, var_matrix):
-            if int(math.ceil(pos)) != prev_position:
+        for id, genotype in sample_data.genotypes():
+            if int(math.ceil(position[id])) != prev_position:
                 #this is a new position. Print the genotype at the old position, and then reset everything
                 if prev_position:
                     print(prev_position, "".join(np.where(ANDed_genotype==0,"A","T")), sep="\t",
@@ -127,7 +127,7 @@ def variant_matrix_to_ARGweaver_in(var_matrix, var_positions, seq_length, ARGwea
                 ANDed_genotype = genotype
             else:
                 ANDed_genotype =  np.logical_and(ANDed_genotype, genotype)
-            prev_position = int(math.ceil(pos))
+            prev_position = int(math.ceil(position[id]))
         if ANDed_genotype is not None: # print out the last site
             print(prev_position, "".join(np.where(ANDed_genotype ==0,"A","T")), sep="\t", file=ARGweaver_filehandle)
 
@@ -135,7 +135,7 @@ def variant_matrix_to_ARGweaver_in(var_matrix, var_positions, seq_length, ARGwea
     ARGweaver_filehandle.seek(0)
 
 
-def ARGweaver_smc_to_msprime_txts(smc2bin_executable, prefix, nodes_fh, edges_fh):
+def ARGweaver_smc_to_ts_txts(smc2bin_executable, prefix, nodes_fh, edges_fh):
     """
     convert the ARGweaver smc representation to coalescence records format
     """
@@ -144,18 +144,18 @@ def ARGweaver_smc_to_msprime_txts(smc2bin_executable, prefix, nodes_fh, edges_fh
             prefix + ".smc.gz", smc2bin_executable))
     subprocess.call([smc2bin_executable, prefix + ".smc.gz", prefix + ".arg"])
     with open(prefix + ".arg", "r+") as arg_fh:
-        return ARGweaver_arg_to_msprime_txts(arg_fh, nodes_fh, edges_fh)
+        return ARGweaver_arg_to_ts_txts(arg_fh, nodes_fh, edges_fh)
 
-def ARGweaver_arg_to_msprime_txts(ARGweaver_arg_filehandle, nodes_fh, edges_fh):
+def ARGweaver_arg_to_ts_txts(ARGweaver_arg_filehandle, nodes_fh, edges_fh):
     """
-    convert the ARGweaver arg representation to msprime format
+    convert the ARGweaver arg representation to tree sequence tables
 
     We need to split ARGweaver records that extend over the whole genome into sections
     that cover just that coalescence point.
 
-    returns the mapping of ARGweaver node names to msprime node names
+    returns the mapping of ARGweaver node names to TS node names
     """
-    logging.debug("== Converting .arg output to msprime ==")
+    logging.debug("== Converting .arg output to tree seq ==")
     ARG_nodes={} #cr[X] = child1:[left,right], child2:[left,right],... : serves as intermediate ARG storage
     ARG_node_times={} #node_name => time
     node_names={} #map of ARGweaver names -> numbers
@@ -303,19 +303,19 @@ def main(args):
     import subprocess
     from dendropy import TreeList
     from dendropy.calculate import treecompare
-    import msprime_extras
-    def msprime_txts_to_hdf5(msprime_nodes, msprime_edges, hdf5_outname=None):
+    import ts_extras
+    def ts_txts_to_hdf5(ts_nodes, ts_edges, hdf5_outname=None):
         import shutil
         import msprime
-        logging.info("== Converting new msprime ARG as hdf5 ===")
+        logging.info("== Converting new ts ARG as hdf5 ===")
         try:
-            ts = msprime.load_text(nodes=msprime_nodes, edges=msprime_edges)
+            ts = msprime.load_text(nodes=ts_nodes, edges=ts_edges)
         except:
             logging.warning("Can't load the texts file properly. Saved copied to 'bad.nodes' & 'bad.edges' for inspection")
-            shutil.copyfile(msprime_nodes.name, "bad.nodes")
-            shutil.copyfile(msprime_edges.name, "bad.edges")
+            shutil.copyfile(ts_nodes.name, "bad.nodes")
+            shutil.copyfile(ts_edges.name, "bad.edges")
             raise
-        logging.info("== loaded {}, {}===".format(msprime_nodes.name, msprime_edges.name))
+        logging.info("== loaded {}, {}===".format(ts_nodes.name, ts_edges.name))
         try:
             simple_ts = ts.simplify()
         except:
@@ -326,11 +326,11 @@ def main(args):
             simple_ts.dump(hdf5_outname)
         return(simple_ts)
 
-    msprime.TreeSequence.write_nexus_trees = msprime_extras.write_nexus_trees
+    msprime.TreeSequence.write_nexus_trees = ts_extras.write_nexus_trees
     iterations = 20
     full_prefix = os.path.join(args.outputdir, os.path.splitext(os.path.basename(args.hdf5file))[0])
     with open(full_prefix+".sites", "w+") as aw_in:
-        msprime_hdf5_to_ARGweaver_in(args.hdf5file, aw_in)
+        ts_hdf5_to_ARGweaver_in(args.hdf5file, aw_in)
         cmd = [os.path.join(args.ARGweaver_executable_dir, args.ARGweaver_sample_executable),
             '--sites', aw_in.name,
             '--popsize', str(args.effective_population_size),
@@ -354,19 +354,19 @@ def main(args):
         with open(smc.replace(".smc.gz", ".TSnodes"), "w+") as nodes, \
             open(smc.replace(".smc.gz", ".TSedges"), "w+") as edges, \
             open(arg_nex, "w+") as msp_nex:
-            ARGweaver_smc_to_msprime_txts(
+            ARGweaver_smc_to_ts_txts(
                 os.path.join(args.ARGweaver_executable_dir, args.ARGweaver_smc2arg_executable),
                 smc.replace(".smc.gz", ""),
                 nodes, edges)
 
-            ts = msprime_txts_to_hdf5(nodes, edges)
+            ts = ts_txts_to_hdf5(nodes, edges)
             ts.write_nexus_trees(msp_nex)
         
         smc_trees = TreeList.get(path=smc_nex, schema="nexus")
         arg_trees = TreeList.get(path=arg_nex, schema="nexus", 
             taxon_namespace=smc_trees[0].taxon_namespace)
         #zero_based_tip_numbers assumed False)
-        #Check the smc trees against the msprime-imported equivalents
+        #Check the smc trees against the ts-imported equivalents
         #NB, the ARGweaver output does not specify where mutations occur on the ARG, so we cannot
         #reconstruct the sequences implied by this ARG for testing purposes, and thus cannot compare
         #the original sequences with the reconstructed ones

@@ -3,7 +3,7 @@
 
 When run as a script, takes an msprime simulation in hdf5 format, saves to fastARG input format (haplotype sequences), runs fastARG on it, converts fastARG output to msprime input (2 files), reads these into msprime outputs the haplotype sequences again, and checks that the
 
-E.g. ./msprime_fastARG.py ../test_files/4000.hdf5 -x ../fastARG/fastARG
+E.g. ./ts_fastARG.py ../test_files/4000.hdf5 -x ../fastARG/fastARG
 
 """
 import os
@@ -16,7 +16,7 @@ import numpy as np
 sys.path.insert(1,os.path.join(sys.path[0],'..','msprime')) # use the local copy of msprime in preference to the global one
 import msprime
 
-def msprime_to_fastARG_in(ts, fastARG_filehandle):
+def ts_to_fastARG_in(ts, fastARG_filehandle):
     # There is an odd intermittent bug in FastARG which fails unpredictably when there
     # is a trailing newline in the file, so print newlines *before* all but 1st line
     line_prefix = ""
@@ -28,21 +28,23 @@ def msprime_to_fastARG_in(ts, fastARG_filehandle):
                 sep="\t", end="", file=fastARG_filehandle)
             line_prefix = "\n"
     fastARG_filehandle.flush()
+    fastARG_filehandle.seek(0)
 
-def variant_matrix_to_fastARG_in(var_matrix, var_positions, fastARG_filehandle):
+def samples_to_fastARG_in(sample_data, fastARG_filehandle):
     # There is an odd intermittent bug in FastARG which fails unpredictably when there
     # is a trailing newline in the file, so print newlines *before* all but 1st line
     line_prefix = ""
-    assert len(var_matrix)==len(var_positions)
-    for pos, row in zip(var_positions, var_matrix):
+    position = sample_data.sites_position[:] #decompress all in one go to avoid sequential unpacking
+    for id, genotypes in sample_data.genotypes():
         #do not print out non-variable sites
-        if np.any(row) and not np.all(row):
-            s = (row + ord('0')).tobytes().decode()
+        if np.any(genotypes) and not np.all(genotypes):
+            s = (genotypes + ord('0')).tobytes().decode() #convert to string
             print(
-                line_prefix + str(pos), s, 
+                line_prefix + str(position[id]), s, 
                 sep= "\t", end="", file=fastARG_filehandle)
             line_prefix = "\n"
     fastARG_filehandle.flush()
+    fastARG_filehandle.seek(0)
 
 def get_cmd(executable, fastARG_in, seed):
     files = [fastARG_in.name if hasattr(fastARG_in, "name") else fastARG_in]
@@ -67,19 +69,19 @@ def variant_positions_from_fastARGin(fastARG_in_filehandle):
             logging.warning("Could not convert the title on the following line to a floating point value:\n {}".format(line))
     return(np.array(vp))
 
-def fastARG_out_to_msprime_txts(
+def fastARG_out_to_ts_txts(
         fastARG_out_filehandle, variant_positions,
         nodes_filehandle, edges_filehandle, sites_filehandle, mutations_filehandle,
         seq_len=None):
     """
     convert the fastARG output format (plus a list of positions) to 4 text
-    files (edges, nodes, mutations, and sites) which can be read in to msprime.
+    files (edges, nodes, mutations, and sites) which can be read in to a tree sequence.
     We need to split fastARG records that extend over the whole genome into
     sections that cover just that coalescence point.
     """
     import csv
     import numpy as np
-    logging.debug("== Converting fastARG output to msprime ==")
+    logging.debug("== Converting fastARG output to ts ==")
     fastARG_out_filehandle.seek(0) #make sure we reset to the start of the infile
     ARG_nodes={} #An[X] = child1:[left,right], child2:[left,right],... : serves as intermediate ARG storage
     mutations={}
@@ -120,7 +122,7 @@ def fastARG_out_to_msprime_txts(
             if child_node not in ARG_nodes:
                 ARG_nodes[child_node]={}
             ARG_nodes[curr_node][child_node]=[breakpoints[left], breakpoints[right]]
-            #mutations in msprime are placed as ancestral to a target node, rather than descending from a child node (as in fastARG)
+            #mutations in tree seqs are placed as ancestral to a target node, rather than descending from a child node (as in fastARG)
             #we should check that (a) mutation at the same locus does not occur twice
             # (b) the same child node is not used more than once (NB this should be a fastARG restriction)
             if n_mutations:
@@ -176,10 +178,7 @@ def fastARG_out_to_msprime_txts(
             for i in range(1,len(breaks)):
                 leftbreak = breaks[i-1]
                 rightbreak = breaks[i]
-                #NB - here we could try to input the values straight into an msprime python structure,
-                #but until this feature is implemented in msprime, we simply output to a correctly formatted msprime text input file
-                #The read_text function *does* allow `child` to be a comma-separated list of children, as a shorthand
-                #for multiple rows.
+                #NB - here we could try to input the values straight into an tree seq python structure,
                 target_children = [str(cnode) for cnode, cspan in sorted(children.items()) if cspan[0]<rightbreak and cspan[1]>leftbreak]
                 print(lines['edges'].format(left=leftbreak, right=rightbreak,
                     parent=node, child=",".join(target_children)), file=edges_filehandle)
@@ -200,7 +199,7 @@ def fastARG_out_to_msprime_txts(
         locals()[k+'_filehandle'].flush()
         locals()[k+'_filehandle'].seek(0)
 
-def fastARG_out_to_msprime(fastARG_out_filehandle, variant_positions, seq_len=None):
+def fastARG_out_to_ts(fastARG_out_filehandle, variant_positions, seq_len=None):
     """
     The same as fastARG_out_to_msprime_txts, but use temporary files and return a ts.
     """
@@ -208,7 +207,7 @@ def fastARG_out_to_msprime(fastARG_out_filehandle, variant_positions, seq_len=No
         tempfile.NamedTemporaryFile("w+") as edges, \
         tempfile.NamedTemporaryFile("w+") as sites, \
         tempfile.NamedTemporaryFile("w+") as mutations:
-        fastARG_out_to_msprime_txts(fastARG_out_filehandle, variant_positions,
+        fastARG_out_to_ts_txts(fastARG_out_filehandle, variant_positions,
             nodes, edges, sites, mutations, seq_len=seq_len)
         ts = msprime.load_text(nodes=nodes, edges=edges, sites=sites, mutations=mutations).simplify()
         return ts
@@ -220,9 +219,9 @@ def main(ts, fastARG_executable, fa_in, fa_out, nodes_fh, edges_fh, sites_fh, mu
     """
     import subprocess
     seq_len = ts.get_sequence_length()
-    msprime_to_fastARG_in(ts, fa_in)
+    ts_to_fastARG_in(ts, fa_in)
     subprocess.call([fastARG_executable, 'build', fa_in.name], stdout=fa_out)
-    fastARG_out_to_msprime_txts(fa_out, variant_positions_from_fastARGin(fa_in),
+    fastARG_out_to_ts_txts(fa_out, variant_positions_from_fastARGin(fa_in),
         nodes_fh, edges_fh, sites_fh, muts_fh, seq_len=seq_len)
 
     new_ts = msprime.load_text(nodes=nodes_fh, edges=edges_fh, sites=sites_fh, mutations=muts_fh)
