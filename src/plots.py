@@ -2076,7 +2076,7 @@ class CputimeAllToolsFigure(Figure):
     in a dedicated figure.
     """
     name = "cputime_all_tools"
-    dataset = AllToolsPerformanceDataset
+    datasetClass = AllToolsPerformanceDataset
 
     def plot(self):
         df = self.dataset.data
