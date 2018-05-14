@@ -1164,7 +1164,7 @@ class Dataset(object):
             raise ValueError("No mutations present")
         if ts_has_non_singleton_variants(ts) == False:
             raise ValueError("No non-singleton variants present ({} singletons)".format(
-                sum([np.sum(v)==1 for v in ts.variants()])))
+                sum([np.sum(v.genotypes)==1 for v in ts.variants()])))
 
         return ts, sim_fn
 
@@ -1348,15 +1348,67 @@ class Dataset(object):
                 ts_RentPlus.samples_to_RentPlus_in(s, file_in, infinite_sites=infinite_sites)
 
 
-class MetricsByMutationRateDataset(Dataset):
-    """
-    Accuracy of ARG inference (measured by various statistics)
-    tending to fully accurate as mutation rate increases
-    """
-    name = "metrics_by_mutation_rate"
 
+class AllToolsDataset(Dataset):
+    """
+    ARG inference using all tools (requires small sample
+    sizes to allow ARGweaver to run). The x-axis is centred around regions 
+    of biological interest (the mutation rate is symmetrical in log space
+    either side of mu/rho = 1). 
+    
+    For symmetry around e.g. mu = 1e-8, we can pick a lower bound x and set
+    the upper bound as (1e-8 ** 2)/x
+    """
+    name = "all_tools"
     default_replicates = 100
     default_seed = 123
+
+    def geomspace_around(middle, bound, **kwargs):
+        """
+        return a list of numbers evenly spaced in log space around a central value
+        """
+        if bound < middle:
+            return np.geomspace(bound, middle**2/bound, **kwargs)
+        else:
+            return np.geomspace(middle**2/bound, bound, **kwargs)
+    
+    #params that change BETWEEN simulations. Keys should correspond
+    # to column names in the csv file. Values should all be arrays.
+    between_sim_params = {
+        'Ne': [5000],
+        'mutation_rate': geomspace_around(1e-8, 5e-7, num=7), #gives upper bound of 5e-7 and lower of 2e-10
+        'sample_size':   [15],
+        'length':        [1000000], #1Mb ensures that low mutation rates ~2e-10 still have some variants
+        'recombination_rate': [1e-8],
+    }
+    #params that change WITHIN simulations. Keys should correspond
+    # to column names in the csv file. Values should all be arrays.
+    within_sim_params = {
+        ERROR_COLNAME : [0, 0.001*math.log2(between_sim_params['sample_size'][0])],
+    }
+    
+    def single_sim(self, row_id, sim_params, rng):
+        while True:
+            sim_params['seed'] = rng.randint(1, 2**31)
+            try:
+                # Run the simulation until we get an acceptable one
+                ts, fn = self.single_neutral_simulation(**sim_params)
+                break
+            except ValueError as e: #No non-singleton variants
+                logging.warning(e)
+        row_data = self.save_within_sim_data(row_id, ts, fn, sim_params)
+        return row_data
+
+
+class AllToolsAccuracyDataset(AllToolsDataset):
+    """
+    ARG inference using all tools, with mutation rate increasing 
+    to very high levels (relative to recombination). We expect accuracy
+    (measured by tree metrics) to increase (metrics to decrease to 0)
+    as mutation rate increases (and more data exists for inference).
+    """
+    name = "all_tools_accuracy"
+
 
     #params that change BETWEEN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
@@ -1374,54 +1426,55 @@ class MetricsByMutationRateDataset(Dataset):
         ERROR_COLNAME : [0, 0.001*math.log2(between_sim_params['sample_size'][0])],
     }
 
-    def single_sim(self, row_id, sim_params, rng):
-        while True:
-            sim_params['seed'] = rng.randint(1, 2**31)
-            try:
-                # Run the simulation until we get an acceptable one
-                ts, fn = self.single_neutral_simulation(**sim_params)
-                break
-            except ValueError as e: #No non-singleton variants
-                logging.warning(e)
-        row_data = self.save_within_sim_data(row_id, ts, fn, sim_params)
-        return row_data
+class AllToolsPerformanceDataset(AllToolsDataset):
+    """
+    ARG inference using all tools, with various sample sizes so that we 
+    can inspect the scaling properties of the algorithms. 
+    """
+    name = "all_tools_performance"
+    default_replicates = 1
 
-class MetricsByMuRhoRatioDataset(MetricsByMutationRateDataset):
-    """
-    Accuracy of ARG inference (measured by various statistics) around
-    regions of interest (symmetrical in log space either side of mu/rho = 1
-    
-    For symmetry around e.g. mu = 1e-8, we can pick a lower bound x and set
-    the upper bound as (1e-8 ** 2)/x
-    """
-    def geomspace_around(middle, bound, **kwargs):
-        if bound < middle:
-            return np.geomspace(bound, middle**2/bound, **kwargs)
-        else:
-            return np.geomspace(middle**2/bound, bound, **kwargs)
-    
-    name = "metrics_by_mu_rho_ratio"
+    fixed_sample_size = 10
+    fixed_length = 10**5
+    num_points = 6
+    #Ensure sample sizes are even so we can output diploid VCF.
+    sample_sizes = [5, 10, 15, 20]
+    lengths = np.linspace(fixed_length / 10, 2 * fixed_length, num_points).astype(int)
+
+    #params that change BETWEEN simulations. Keys should correspond
+    # to column names in the csv file. Values should all be arrays.
     between_sim_params = {
-        'Ne': [5000],
-        'mutation_rate': geomspace_around(1e-8, 5e-7, num=7),
-        'sample_size':   [15],
-        'length':        [1000000], #increase to 1Mb
+        'Ne':            [5000],
+        'mutation_rate': [1e-8],
+        #Ensure sample sizes are even so we can output diploid VCF.
+        'sample_size':   np.unique(np.append(sample_sizes, fixed_sample_size)),
+        'length':        np.unique(np.append(lengths, fixed_length)),
         'recombination_rate': [1e-8],
     }
-    within_sim_params = {
-        ERROR_COLNAME : [0, 0.001*math.log2(between_sim_params['sample_size'][0])],
-    }
-    
 
-class TsinferPerformance(Dataset):
+    #params that change WITHIN simulations. Keys should correspond
+    # to column names in the csv file. Values should all be arrays.
+    within_sim_params = {
+        ERROR_COLNAME : [0, 0.001],
+    }
+
+    def filter_between_sim_params(self, params):
+        """
+        We want to only use cases where the sample_size OR the length are at the fixed values
+        """
+        keyed_params = dict(zip(['replicates']+list(self.between_sim_params.keys()), params))
+        return (keyed_params['sample_size']==self.fixed_sample_size) or \
+            (keyed_params['length']==self.fixed_length)
+
+
+
+class TsinferPerformanceDataset(AllToolsPerformanceDataset):
     """
     The performance of tsinfer in terms of CPU time, memory usage and
     compression rates for large scale datasets. Contains data for
     the two main dimensions of sample size and sequence length.
     """
     name = "tsinfer_performance"
-    default_replicates = 5
-    default_seed = 123
     tools_and_metrics = {TSINFER:[]} #run tsinfer, but switch metrics off (too slow)
 
     fixed_sample_size = 50000
@@ -1448,17 +1501,14 @@ class TsinferPerformance(Dataset):
         ERROR_COLNAME : [0],
     }
 
-    extra_sim_cols = ["sites", "ts_filesize", "vcf_filesize", "vcfgz_filesize"]
+    extra_sim_cols = ["ts_filesize", "vcf_filesize", "vcfgz_filesize"]
 
-    def filter_between_sim_params(self, params):
-        """
-        We want to only use cases where the sample_size OR the length are at the fixed values
-        """
-        keyed_params = dict(zip(['replicates']+list(self.between_sim_params.keys()), params))
-        return (keyed_params['sample_size']==self.fixed_sample_size) or \
-            (keyed_params['length']==self.fixed_length)
 
     def single_sim(self, row_id, sim_params, rng):
+        """
+        Modify to include file sizes, which is useful for large dataset comparison
+        Note that the vcf files may take up *substantial* amounts of space
+        """
         while True:
             sim_params['seed'] = rng.randint(1, 2**31)
             try:
@@ -1474,22 +1524,22 @@ class TsinferPerformance(Dataset):
         vcf_filesize = os.path.getsize(vcf_filename)
         # gzip removes the original by default, so might as well save some space.
         subprocess.check_call(["gzip", vcf_filename])
-
+        vcfgz_filesize = os.path.getsize(vcfgz_filename)
+        # only need the file size, so can delete the .gz file too
+        os.remove(vcfgz_filename)
         row_data = self.save_within_sim_data(row_id, ts, fn, dict(sim_params,
-            sites=ts.num_sites,
             ts_filesize = os.path.getsize(fn + ".hdf5"),
             vcf_filesize = vcf_filesize,
-            vcfgz_filesize = os.path.getsize(vcfgz_filename)
+            vcfgz_filesize = vcfgz_filesize
             ))
-        os.remove(vcfgz_filename)
         return row_data
 
 
-class ProgramComparison(Dataset):
+class FastargTsinferComparisonDataset(Dataset):
     """
     The performance of the various programs in terms of running time and memory usage
     """
-    name = "program_comparison"
+    name = "fastarg_tsinfer_comparison"
     default_replicates = 2
     default_seed = 1000
     tools_and_metrics = {FASTARG:[], TSINFER:[]} # Everything else is too slow
@@ -1544,12 +1594,12 @@ class ProgramComparison(Dataset):
 ### The following classes are used for figures in the supplementary material
 ###
 
-class MetricsBySampleSizeDataset(Dataset):
+class SubsamplingDataset(Dataset):
     """
     Accuracy of ARG inference of a fixed subset of samples (measured by various statistics)
     as the population sample size increases.
     """
-    name = "metrics_by_sample_size"
+    name = "subsampling"
     #to make this a fair comparison, we need to calculate only at the specific variant sites
     #because different sample sizes will be based on different original variant positions
     #which are then cut down to the subsampled ones.
@@ -1571,7 +1621,7 @@ class MetricsBySampleSizeDataset(Dataset):
     within_sim_params = {
         'subsample_size':  [10],
         'sample_size': [12, 50, 100, 500, 1000],
-        'tsinfer_srb' : [True], #, False],
+        'tsinfer_srb' : [True], #, False], #should we use shared recombinations ("path compression")
         ERROR_COLNAME: [0, 0.001, 0.01]
     }
 
@@ -1618,14 +1668,14 @@ class MetricsBySampleSizeDataset(Dataset):
                 return_data.update(row_data)
         return return_data
 
-class MetricsByMutationRateWithDemographyDataset(Dataset):
+class AllToolsAccuracyWithDemographyDataset(Dataset):
     """
     Accuracy of ARG inference (measured by various statistics)
     tending to fully accurate as mutation rate increases, but with a
-    demographic (out of africa) model superimposed.
+    demographic (out of africa) rather than a neutral model.
     """
 
-    name = "metrics_by_mutation_rate_with_demography"
+    name = "all_tools_accuracy_with_demography"
 
     default_replicates = 50
     default_seed = 123
@@ -1659,7 +1709,7 @@ class MetricsByMutationRateWithDemographyDataset(Dataset):
         row_data = self.save_within_sim_data(row_id, ts, fn, sim_params)
         return row_data
 
-class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
+class AllToolsAccuracyWithSelectiveSweepDataset(Dataset):
     """
     Accuracy of ARG inference (measured by various statistics)
     tending to fully accurate as mutation rate increases, but with a
@@ -1670,7 +1720,7 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
     specific frequency, or at a given number of generations post fixation.
     """
 
-    name = "metrics_by_mutation_rate_with_selective_sweep"
+    name = "all_tools_accuracy_with_selective_sweep"
 
     default_replicates = 50
     default_seed = 123
@@ -1736,7 +1786,7 @@ class MetricsByMutationRateWithSelectiveSweepDataset(Dataset):
 ###
 
 
-class ARGweaverParamChanges(Dataset):
+class ARGweaverParamChangesDataset(Dataset):
     """
     Accuracy of ARGweaver inference (measured by various tree statistics)
     as we adjust burn-in time and number of time slices.
@@ -1858,13 +1908,13 @@ class Figure(object):
         raise NotImplementedError()
 
 
-class AllMetricsByMutationRateFigure(Figure):
+class MetricsAllToolsFigure(Figure):
     """
     Simple figure that shows all the metrics at the same time.
     Assumes at most 2 sample sizes
     """
-    datasetClass = MetricsByMutationRateDataset
-    name = "all_metrics_by_mutation_rate"
+    datasetClass = AllToolsDataset
+    name = "metrics_all_tools"
 
     def plot(self):
         from matplotlib.legend_handler import HandlerTuple
@@ -1934,17 +1984,20 @@ class AllMetricsByMutationRateFigure(Figure):
         fig.suptitle(maintitle, fontsize=16)
         self.savefig(fig)
 
-class AllMetricsByMuRhoRatioFigure(AllMetricsByMutationRateFigure):
-    datasetClass = MetricsByMuRhoRatioDataset
-    name = "all_metrics_by_mu_rho_ratio"
+class MetricsAllToolsAccuracyFigure(MetricsAllToolsFigure):
+    """
+    Show the metrics tending to 0 as mutation rate increases
+    """
+    datasetClass = AllToolsAccuracyDataset
+    name = "metrics_all_tools_accuracy"
     
 
-class MetricByMutationRateFigure(Figure):
+class MetricAllToolsFigure(Figure):
     """
-    Superclass of the metric by mutations rate figure. Each subclass should be a
+    Superclass of the metric all tools figure. Each subclass should be a
     single figure for a particular metric.
     """
-    datasetClass = MetricsByMutationRateDataset
+    datasetClass = AllToolsAccuracyDataset
 
 
     def plot(self):
@@ -2002,19 +2055,19 @@ class MetricByMutationRateFigure(Figure):
         self.savefig(fig)
 
 
-class RFRootedMetricByMutationRateFigure(MetricByMutationRateFigure):
-    name = "rf_rooted_by_mutation_rate"
+class RFRootedAllToolsFigure(MetricAllToolsFigure):
+    name = "rf_rooted_all_tools"
     metric = "RFrooted"
     ylim = None
 
 
-class KCRootedMetricByMutationRateFigure(MetricByMutationRateFigure):
-    name = "kc_rooted_by_mutation_rate"
+class KCRootedAllToolsAccuracyFigure(MetricAllToolsFigure):
+    name = "kc_rooted_all_tools"
     metric = "KCrooted"
     ylim = (0, 40)
     error_bars = True
 
-class CputimeMetricByMutationRateFigure(MetricByMutationRateFigure):
+class CputimeAllToolsFigure(Figure):
     """
     This figure is useful because we can only really get the CPU times
     for all four methods in the same scale for these tiny examples.
@@ -2022,7 +2075,8 @@ class CputimeMetricByMutationRateFigure(MetricByMutationRateFigure):
     and FastARG here and compare tsinfer and FastARG more thoroughly
     in a dedicated figure.
     """
-    name = "cputime_by_mutation_rate"
+    name = "cputime_all_tools"
+    dataset = AllToolsPerformanceDataset
 
     def plot(self):
         df = self.dataset.data
@@ -2048,13 +2102,13 @@ class CputimeMetricByMutationRateFigure(MetricByMutationRateFigure):
         #ax.set_ylim(-20, 1000)
         self.savefig(fig)
 
-class AllMetricsByMutationRateSweepFigure(Figure):
+class MetricsAllToolsAccuracySweepFigure(Figure):
     """
     Simple figure that shows all the metrics at the same time for
     a genome under a selective sweep
     """
-    datasetClass = MetricsByMutationRateWithSelectiveSweepDataset
-    name = "all_metrics_by_mutation_rate_sweep"
+    datasetClass = AllToolsAccuracyWithSelectiveSweepDataset
+    name = "metrics_all_tools_accuracy_sweep"
 
     def plot(self):
         df = self.dataset.data
@@ -2123,13 +2177,13 @@ class AllMetricsByMutationRateSweepFigure(Figure):
             figures.append(fig)
         self.savefig(*figures)
 
-class AllMetricsBySampleSizeFigure(Figure):
+class MetricsSubsamplingFigure(Figure):
     """
     Figure that shows whether increasing sample size helps with the accuracy of
     reconstructing the ARG for a fixed subsample.
     """
-    datasetClass = MetricsBySampleSizeDataset
-    name = "all_metrics_by_sample_size"
+    datasetClass = SubsamplingDataset
+    name = "metrics_subsampling"
     error_bars=True
 
     def plot(self):
@@ -2178,12 +2232,12 @@ class AllMetricsBySampleSizeFigure(Figure):
         self.savefig(fig)
 
 
-class MetricByARGweaverParametersFigure(Figure):
+class MetricARGweaverParametersFigure(Figure):
     """
     See the effect of burnin time and number of timeslices on the accuracy of ARGweaver
     as compared to TSinfer, when looking at tree metrics.
     """
-    datasetClass = ARGweaverParamChanges
+    datasetClass = ARGweaverParamChangesDataset
 
     def plot(self):
         df = self.dataset.data
@@ -2260,28 +2314,28 @@ class MetricByARGweaverParametersFigure(Figure):
             loc="upper center")
         self.savefig(fig)
 
-class KCRootedMetricByARGweaverParametersFigure(MetricByARGweaverParametersFigure):
-    name = "kc_rooted_metrics_by_argweaver_params"
+class KCRootedARGweaverParametersFigure(MetricARGweaverParametersFigure):
+    name = "kc_rooted_argweaver_params"
     metric = "KCrooted"
     ylim = (0, 4)
     error_bars = True
 
-class RFRootedMetricByARGweaverParametersFigure(MetricByARGweaverParametersFigure):
-    name = "rf_rooted_metrics_by_argweaver_params"
+class RFRootedARGweaverParametersFigure(MetricARGweaverParametersFigure):
+    name = "rf_rooted_argweaver_params"
     metric = "RFrooted"
     ylim = None
     #ylim = (0, 4)
     error_bars = True
 
 
-class PerformanceFigure(Figure):
+class TsinferPerformanceLengthSamplesFigure(Figure):
     """
     Superclass for the performance metrics figures. Each of these figures
     has two panels; one for scaling by sequence length and the other
     for scaling by sample size. Different lines are given for each
     of the different combinations of tsinfer parameters
     """
-    datasetClass = TsinferPerformance
+    datasetClass = TsinferPerformanceDataset
     plotted_column = None
     y_axis_label = None
 
@@ -2352,8 +2406,8 @@ class PerformanceFigure(Figure):
         self.savefig(fig)
 
 
-class EdgesPerformanceFigure(PerformanceFigure):
-    name = "tsinfer_edges_by_length"
+class TsinferEdgesPerformanceFigure(TsinferPerformanceLengthSamplesFigure):
+    name = "tsinfer_edges_ln"
     plotted_column = "metric"
     y_axis_label = "inferred_edges / real_edges"
     def plot(self):
@@ -2362,8 +2416,8 @@ class EdgesPerformanceFigure(PerformanceFigure):
         PerformanceFigure.plot(self)
 
 
-class FileSizePerformanceFigure(PerformanceFigure):
-    name = "tsinfer_filesize_by_length"
+class TsinferFileSizePerformanceFigure(TsinferPerformanceLengthSamplesFigure):
+    name = "tsinfer_filesize_ln"
     plotted_column = "metric"
     y_axis_label = "inferred_filesize / real_filesize"
     y_axis_label = "File size relative to original"
@@ -2373,8 +2427,8 @@ class FileSizePerformanceFigure(PerformanceFigure):
         PerformanceFigure.plot(self)
 
 
-class CompressionPerformanceFigure(PerformanceFigure):
-    name = "tsinfer_compression_by_length"
+class CompressionPerformanceFigure(TsinferPerformanceLengthSamplesFigure):
+    name = "tsinfer_compression_ln"
     plotted_column = "metric"
     y_axis_label = "inferred_filesize / real_filesize"
     y_axis_label = "Compression factor relative to vcf.gz"
@@ -2384,14 +2438,14 @@ class CompressionPerformanceFigure(PerformanceFigure):
         PerformanceFigure.plot(self)
 
 
-class PerformanceFigure2(Figure):
+class TsinferPerformanceSizesSamplesFigure(Figure):
     """
     Class for the performance metrics against sites as well as length
     (the first is the same as the LHS PerformanceFigure, but the second is the
     same using sites instead)
     """
-    name="tsinfer_edges_by_sites"
-    datasetClass = TsinferPerformance
+    name="tsinfer_edges_sn"
+    datasetClass = TsinferPerformanceDataset
     plotted_column = None
     y_axis_label = None
     error_bars = True
@@ -2438,7 +2492,7 @@ class PerformanceFigure2(Figure):
                 df.length == self.datasetClass.fixed_length / 10**6,
                 df.tsinfer_srb == shared_breakpoint))]
             ax2.plot(
-                dfp['sites'],
+                dfp['n_sites'],
                 dfp[self.plotted_column],
                 color=inferred_colour,
                 linestyle="",marker="o")
@@ -2447,13 +2501,13 @@ class PerformanceFigure2(Figure):
         self.savefig(fig)
 
 
-class ProgramComparisonFigure(Figure):
+class FastargTsinferComparisonFigure(Figure):
     """
-    Superclass for the program comparison figures. Each figure
-    has two panels; one for scaling by sequence length and the other
+    Superclass for the program comparison figures (comparing tsinfer with fastarg)
+    Each figure has two panels; one for scaling by sequence length and the other
     for scaling by sample size.
     """
-    datasetClass = ProgramComparison
+    datasetClass = FastargTsinferComparisonDataset
 
     def plot(self):
         df = self.dataset.data
@@ -2509,7 +2563,7 @@ class ProgramComparisonFigure(Figure):
         self.savefig(fig)
 
 
-class ProgramComparisonTimeFigure(ProgramComparisonFigure):
+class FastargTsinferComparisonTimeFigure(FastargTsinferComparisonFigure):
     name = "program_comparison_time"
     plotted_column = "cputime"
     y_label = "CPU time (hours)"
@@ -2518,7 +2572,7 @@ class ProgramComparisonTimeFigure(ProgramComparisonFigure):
         ax1.set_ylim(0, 2.5)
 
 
-class ProgramComparisonMemoryFigure(ProgramComparisonFigure):
+class FastargTsinferComparisonMemoryFigure(FastargTsinferComparisonFigure):
     name = "program_comparison_memory"
     plotted_column = "memory"
     y_label = "Memory (GiB)"
