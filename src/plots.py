@@ -160,36 +160,35 @@ def generate_samples(ts, filename, error_p=0):
     """
     record_rate = logging.getLogger().isEnabledFor(logging.INFO)
     n_variants = bits_flipped = 0
-    sample_data = tsinfer.SampleData.initialise(path=filename + ".samples",
-        num_samples=ts.sample_size, sequence_length=ts.get_sequence_length())
+    with tsinfer.SampleData(path=filename + ".samples",
+        sequence_length=ts.get_sequence_length()) as sample_data:
 
-    for v in ts.variants():
-        n_variants += 1
-        if error_p<=0:
-            sample_data.add_site(
-                position=v.site.position, alleles=v.alleles,
-                genotypes=v.genotypes)
-        else:
-            #make new genotypes with error
-            # Reject any columns that have no 1s or no zeros.
-            # Unless the original also has them, as occasionally we have
-            # some sims (e.g. under selection) where a variant is fixed
-            while True:
-                genotypes = make_errors(v.genotypes, error_p)
-                s = np.sum(genotypes)
-                if 0 < s < ts.sample_size:
-                    break
-                if s == np.sum(v.genotypes):
-                    break
-            if record_rate:
-                bits_flipped += np.sum(np.logical_xor(genotypes, v.genotypes))
-            sample_data.add_site(
-                position=v.site.position, alleles=v.alleles,
-                genotypes=genotypes)
-    if error_p>0:
-        logging.info("Error injected into {}: base error rate = {}, induced error rate = {}".format(
-            os.path.basename(filename), error_p, bits_flipped/(n_variants*ts.sample_size)))
-    sample_data.finalise()
+        for v in ts.variants():
+            n_variants += 1
+            if error_p<=0:
+                sample_data.add_site(
+                    position=v.site.position, alleles=v.alleles,
+                    genotypes=v.genotypes)
+            else:
+                #make new genotypes with error
+                # Reject any columns that have no 1s or no zeros.
+                # Unless the original also has them, as occasionally we have
+                # some sims (e.g. under selection) where a variant is fixed
+                while True:
+                    genotypes = make_errors(v.genotypes, error_p)
+                    s = np.sum(genotypes)
+                    if 0 < s < ts.sample_size:
+                        break
+                    if s == np.sum(v.genotypes):
+                        break
+                if record_rate:
+                    bits_flipped += np.sum(np.logical_xor(genotypes, v.genotypes))
+                sample_data.add_site(
+                    position=v.site.position, alleles=v.alleles,
+                    genotypes=genotypes)
+        if error_p>0:
+            logging.info("Error injected into {}: base error rate = {}, induced error rate = {}".format(
+                os.path.basename(filename), error_p, bits_flipped/(n_variants*ts.sample_size)))
 
     return sample_data
 
@@ -1435,7 +1434,7 @@ class AllToolsPerformanceDataset(AllToolsDataset):
     default_replicates = 1
 
     fixed_sample_size = 10
-    fixed_length = 10**5
+    fixed_length = 10**6
     num_points = 6
     #Ensure sample sizes are even so we can output diploid VCF.
     sample_sizes = [5, 10, 15, 20]
@@ -2081,16 +2080,16 @@ class CputimeAllToolsFigure(Figure):
     def plot(self):
         df = self.dataset.data
         sample_sizes = df.sample_size.unique()
-
         linestyles = ["-", ":"]
 
         fig, ax = pyplot.subplots(1, 1)
         lines = []
         error_rate = 0
-        ax.set_xlabel("Mutation rate")
+        ax.set_xlabel("Sample size")
         ax.set_ylabel("CPU time (hours)")
+        ax.set_xlim(sample_sizes.min(), sample_sizes.max())
         df_s = df[df[ERROR_COLNAME] == error_rate]
-        group = df_s.groupby(["mutation_rate"])
+        group = df_s.groupby(["sample_size"])
         group_mean = group.mean()
         for tool, setting in self.tools.items():
             ax.semilogx(
