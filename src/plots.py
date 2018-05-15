@@ -438,7 +438,7 @@ class InferenceRunner(object):
             #rather than an average over multiple inferred nexus files, and do the averaging in python
                 if metric & METRICS_LOCATION_VARIANTS:
                     #get positions from the samples store, for use in metric calcs
-                    positions = tsinfer.SampleData.load(path=self.orig_sim_fn + ".samples").sites_position.tolist()
+                    positions = tsinfer.SampleData.load(path=self.orig_sim_fn + ".samples").sites_position[:].tolist()
                 else:
                     positions = None
                 source_nexus_file = self.orig_sim_fn + ".nex"
