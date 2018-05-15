@@ -1431,13 +1431,13 @@ class AllToolsPerformanceDataset(AllToolsDataset):
     can inspect the scaling properties of the algorithms. 
     """
     name = "all_tools_performance"
-    default_replicates = 1
+    default_replicates = 5
 
     fixed_sample_size = 10
-    fixed_length = 10**6
-    num_points = 6
+    fixed_length = 2 * 10**5
+    num_points = 4
     #Ensure sample sizes are even so we can output diploid VCF.
-    sample_sizes = [5, 10, 15, 20]
+    sample_sizes = [10, 15, 20, 25]
     lengths = np.linspace(fixed_length / 10, 2 * fixed_length, num_points).astype(int)
 
     #params that change BETWEEN simulations. Keys should correspond
@@ -2082,23 +2082,49 @@ class CputimeAllToolsFigure(Figure):
         sample_sizes = df.sample_size.unique()
         linestyles = ["-", ":"]
 
-        fig, ax = pyplot.subplots(1, 1)
+        fig, (ax_hi, ax_lo) = pyplot.subplots(2, 1, sharex=True)
         lines = []
         error_rate = 0
-        ax.set_xlabel("Sample size")
-        ax.set_ylabel("CPU time (hours)")
-        ax.set_xlim(sample_sizes.min(), sample_sizes.max())
-        df_s = df[df[ERROR_COLNAME] == error_rate]
+        ax_lo.set_xlabel("Sample Size")
+        ax_hi.set_ylabel("CPU time (hours)")
+        #ax_lo.set_xlim(sample_sizes.min(), sample_sizes.max())
+
+        # zoom-in / limit the view to different portions of the data
+        ax_hi.set_ylim(1.95, 2.7)  # outliers only
+        ax_lo.set_ylim(0, 0.0024)  # most of the data
+        #ax_hi.set_ylim(0.01, 3)  # outliers only
+        #ax_lo.set_ylim(0, 0.002)  # most of the data
+        
+        # hide the spines between ax and ax2
+        ax_hi.spines['bottom'].set_visible(False)
+        ax_lo.spines['top'].set_visible(False)
+        ax_hi.xaxis.tick_top()
+        ax_hi.tick_params(labeltop='off')  # don't put tick labels at the top
+        ax_lo.xaxis.tick_bottom()
+
+        df_s = df[np.logical_and(
+            df[ERROR_COLNAME] == error_rate, 
+            df['length'] == self.dataset.fixed_length)]
         group = df_s.groupby(["sample_size"])
         group_mean = group.mean()
         for tool, setting in self.tools.items():
-            ax.semilogx(
-                group_mean[tool + "_" + "cputime"]/60/60,
-                color=setting["col"],
-                marker=setting["mark"],
-                label=tool)
-        ax.legend(loc="center left")
-        #ax.set_ylim(-20, 1000)
+            for ax in (ax_lo, ax_hi):
+                ax.plot(
+                    group_mean[tool + "_" + "cputime"]/60/60,
+                    color=setting["col"],
+                    marker=setting["mark"],
+                    label=tool)
+        d = .015  # how big to make the diagonal lines in axes coordinates
+        # arguments to pass to plot, just so we don't keep repeating them
+        kwargs = dict(transform=ax_hi.transAxes, color='k', clip_on=False)
+        ax_hi.plot((-d, +d), (-d, +d), **kwargs)        # top-left diagonal
+        ax_hi.plot((1 - d, 1 + d), (-d, +d), **kwargs)  # top-right diagonal
+        
+        kwargs.update(transform=ax_lo.transAxes)  # switch to the bottom axes
+        ax_lo.plot((-d, +d), (1 - d, 1 + d), **kwargs)  # bottom-left diagonal
+        ax_lo.plot((1 - d, 1 + d), (1 - d, 1 + d), **kwargs)  # bottom-right diagonal
+
+        ax_hi.legend(loc="upper left")
         self.savefig(fig)
 
 class MetricsAllToolsAccuracySweepFigure(Figure):
