@@ -152,12 +152,15 @@ def make_errors(g, p):
         w[samples] = errors
     return w
 
-def generate_samples(ts, filename, error_p=0):
+def generate_samples(ts, filename, real_error_rate=0):
     """
     Generate a samples file from a simulated ts
     Samples may have bits flipped with a specified probability.
     (reject any variants that result in a fixed column)
     """
+    if real_error_rate > 0:
+        logging.debug("converting real error rate to an error param by multiplying by log(n)")
+    error_param = real_error_rate * math.log(ts.num_samples)
     record_rate = logging.getLogger().isEnabledFor(logging.INFO)
     n_variants = bits_flipped = 0
     with tsinfer.SampleData(path=filename + ".samples",
@@ -165,7 +168,7 @@ def generate_samples(ts, filename, error_p=0):
 
         for v in ts.variants():
             n_variants += 1
-            if error_p<=0:
+            if error_param <=0:
                 sample_data.add_site(
                     position=v.site.position, alleles=v.alleles,
                     genotypes=v.genotypes)
@@ -175,7 +178,7 @@ def generate_samples(ts, filename, error_p=0):
                 # Unless the original also has them, as occasionally we have
                 # some sims (e.g. under selection) where a variant is fixed
                 while True:
-                    genotypes = make_errors(v.genotypes, error_p)
+                    genotypes = make_errors(v.genotypes, error_param)
                     s = np.sum(genotypes)
                     if 0 < s < ts.sample_size:
                         break
@@ -186,9 +189,10 @@ def generate_samples(ts, filename, error_p=0):
                 sample_data.add_site(
                     position=v.site.position, alleles=v.alleles,
                     genotypes=genotypes)
-        if error_p>0:
-            logging.info("Error injected into {}: base error rate = {}, induced error rate = {}".format(
-                os.path.basename(filename), error_p, bits_flipped/(n_variants*ts.sample_size)))
+        if real_error_rate>0:
+            logging.info("Error of {} injected into {}".format(real_error_rate, os.path.basename(filename))
+                + ": actual error rate = {} (error param = {})".format(
+                    bits_flipped/(n_variants*ts.sample_size), error_param) if record_rate else "")
 
     return sample_data
 
@@ -1383,7 +1387,7 @@ class AllToolsDataset(Dataset):
     #params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
-        ERROR_COLNAME : [0, 0.001*math.log2(between_sim_params['sample_size'][0])],
+        ERROR_COLNAME : [0, 0.001],
     }
     
     def single_sim(self, row_id, sim_params, rng):
@@ -1422,7 +1426,7 @@ class AllToolsAccuracyDataset(AllToolsDataset):
     #params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
-        ERROR_COLNAME : [0, 0.001*math.log2(between_sim_params['sample_size'][0])],
+        ERROR_COLNAME : [0, 0.001],
     }
 
 class AllToolsPerformanceDataset(AllToolsDataset):
@@ -1621,7 +1625,7 @@ class SubsamplingDataset(Dataset):
         'subsample_size':  [10],
         'sample_size': [12, 50, 100, 500, 1000],
         'tsinfer_srb' : [True], #, False], #should we use shared recombinations ("path compression")
-        ERROR_COLNAME: [0, 0.001, 0.01]
+        ERROR_COLNAME: [0, 0.001]
     }
 
     def single_sim(self, row_id, sim_params, rng):
