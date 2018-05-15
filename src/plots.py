@@ -1628,6 +1628,8 @@ class SubsamplingDataset(Dataset):
         ERROR_COLNAME: [0, 0.001]
     }
 
+    extra_sim_cols = [SUBSAMPLE_COLNAME]
+
     def single_sim(self, row_id, sim_params, rng):
         assert all([sss <= min(self.within_sim_params['sample_size']) for sss in self.within_sim_params['subsample_size']])
         base_row_id = row_id
