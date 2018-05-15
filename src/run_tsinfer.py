@@ -60,9 +60,9 @@ def main():
     if args.error_probability is not None:
         logging.warning("TSinfer now simply ignores error probabilities. You can omit this parameter")
 
-    sample_data = tsinfer.SampleData.load(path=args.samples)
-    ancestor_data = tsinfer.AncestorData.initialise(sample_data, compressor=None)
+    sample_data = tsinfer.load(args.samples)
     if args.inject_real_ancestors_from_ts is not None:
+        ancestor_data = tsinfer.AncestorData.initialise(sample_data, compressor=None)
         orig_ts = msprime.load(args.inject_real_ancestors_from_ts)
         evaluation.build_simulated_ancestors(sample_data, ancestor_data, orig_ts)
         ancestor_data.finalise()
@@ -74,16 +74,11 @@ def main():
             path_compression=args.shared_recombinations,
             simplify=True)
     else:
-        tsinfer.build_ancestors(sample_data, ancestor_data, method=args.method)
-        ancestor_data.finalise()
-
-        ancestors_ts = tsinfer.match_ancestors(
-            sample_data, ancestor_data, method=args.method, num_threads=args.threads,
-            path_compression=args.shared_recombinations)
-
-        ts = tsinfer.match_samples(
-            sample_data, ancestors_ts, method=args.method, num_threads=args.threads,
-            path_compression=args.shared_recombinations)
+        ts = tsinfer.infer(
+            sample_data, num_threads=args.threads,
+            path_compression=args.shared_recombinations,
+            #method=args.method
+            )
     ts.dump(args.output)
 
     # # TODO add command line arg here for when we're comparing run time performance.
