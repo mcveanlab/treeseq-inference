@@ -8,20 +8,19 @@ from rpy2.robjects.packages import importr
 # Suppress noisy warnings from R.
 warnings.simplefilter("ignore", rinterface.RRuntimeWarning)
 
-ape=importr("ape")
-importr("phangorn")
-ARGmetrics = importr("ARGmetrics")
-assert robjects.r('packageVersion("ARGmetrics") >= "0.0.1.0"')[0], (
-    "Your version of ARGmetrics installed in R is too old (requires >= 0.0.1.0). "
+try:
+	ape=importr("ape")
+	ARGmetrics = importr("ARGmetrics")
+	if not robjects.r('packageVersion("ARGmetrics") >= "0.0.1.0"')[0]:
+		raise ImportError
+except (ImportError, rinterface.RRuntimeError):
+    logging.warning("ARGmetrics in R not installed or too old (requires >= 0.0.1.0). "
     'Install the latest version from within R by syncing with git and typing e.g.\n'
     '> library(devtools)\n'
     '> setwd("{}")\n'
     '> install("ARGmetrics")\n'
-    .format(os.path.join(os.path.basename(__file__),'..')))
-#NB the above requires your version of R to have the bespoke ARGmetrics package installed
-#Open R and set the working dir to treeseq-inference, then do
-# > library(devtools)
-# > install("ARGmetrics")
+    .format(os.path.join(os.path.dirname(__file__),'..')))
+    raise
 
 
 def get_metric_names():
