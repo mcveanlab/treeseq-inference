@@ -15,8 +15,8 @@ import msprime
 from warnings import warn
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 import msprime_extras
-from msprime_fastARG import *
-from msprime_ARGweaver import *
+from ts_fastARG import *
+from ts_ARGweaver import *
 
 
 def write_variant_positions(ts, pos_file):
@@ -72,13 +72,13 @@ def test_fixed(nexus_dir, coalescence_records, n_mutations, n_sim_replicates=1):
                              NamedTemporaryFile("w+") as fa_revised, \
                              NamedTemporaryFile("w+") as mutation_file:
                             #create the fastarg input file
-                            msprime_to_fastARG_in(ts, fa_in)
+                            ts_to_fastARG_in(ts, fa_in)
                             #run fastarg
                             run_fastARG("../fastARG/fastARG", fa_in, fa_out, seed=1234*(inference_replicates+2), status_to=None)
-                            #turn the fastARG output into msprime input format
-                            fastARG_out_to_msprime_txts(fa_out, variant_positions_from_fastARGin(fa_in), tree, mutation_file, ts.get_sequence_length(), status_to=None)
-                            #read in the msprime input
-                            ts_new = msprime_txts_to_fastARG_in_revised(tree, mutation_file, fastARG_root_seq(fa_out), fa_revised, status_to=None)
+                            #turn the fastARG output into tree seq input format
+                            fastARG_out_to_ts_txts(fa_out, variant_positions_from_fastARGin(fa_in), tree, mutation_file, ts.get_sequence_length(), status_to=None)
+                            #read in the ts input
+                            ts_new = ts_txts_to_fastARG_in_revised(tree, mutation_file, fastARG_root_seq(fa_out), fa_revised, status_to=None)
                             #quick check that the generated haplotypes are the same
                             if filecmp.cmp(fa_in.name, fa_revised.name, shallow=False) == False:
                                 warn("Initial fastARG input file differs from processed fastARG file")
@@ -203,20 +203,20 @@ def test_sim(nexus_dir, mut_rates=[2e-8], sample_size=8, length=1e4, Ne=1e4, rec
                      open(os.path.join(tmp, fastarg_base + ".msmu"), "w+")  as mutation_file, \
                      open(os.path.join(nexus_dir, fastarg_base + ".nex"), "w+") as nex_g:
                     #create the fastarg input file
-                    msprime_to_fastARG_in(ts, fa_in)
+                    ts_to_fastARG_in(ts, fa_in)
                     #run fastarg
                     run_fastARG("../fastARG/fastARG", fa_in, fa_out, seed=inference_seed, status_to=None)
-                    #turn the fastARG output into msprime input format
-                    fastARG_out_to_msprime_txts(fa_out, variant_positions_from_fastARGin(fa_in), tree, mutation_file, seq_len=ts.get_sequence_length(), status_to=None)
-                    #read in the msprime input
-                    ts_fa = msprime_txts_to_fastARG_in_revised(tree, mutation_file, fastARG_root_seq(fa_out), fa_revised, status_to=None)
+                    #turn the fastARG output into tree seq input format
+                    fastARG_out_to_ts_txts(fa_out, variant_positions_from_fastARGin(fa_in), tree, mutation_file, seq_len=ts.get_sequence_length(), status_to=None)
+                    #read in the ts input
+                    ts_fa = ts_txts_to_fastARG_in_revised(tree, mutation_file, fastARG_root_seq(fa_out), fa_revised, status_to=None)
                     #quick check that the generated haplotypes are the same
                     if filecmp.cmp(fa_in.name, fa_revised.name, shallow=False) == False:
                         warn("Initial fastARG input file differs from processed fastARG file")
                     write_nexus_trees(ts_fa, nex_g, index_trees_by_variants=False, zero_based_tip_numbers=False)
                 argweaver_base = construct_argweaver_basename(simname, inference_seed)
                 with open(os.path.join(tmp, argweaver_base+".sites"), "w+") as aw_in:
-                    msprime_to_ARGweaver_in(ts, aw_in)
+                    ts_to_ARGweaver_in(ts, aw_in)
                     aw_prefix=os.path.join(tmp, argweaver_base)
                     run_ARGweaver(Ne=Ne, mut_rate=mu, recomb_rate=recombination_rate, executable="../argweaver/bin/arg-sample", \
                                   rand_seed=inference_seed, quiet=True, out_prefix=aw_prefix, iterations=100, sample_step=10, \

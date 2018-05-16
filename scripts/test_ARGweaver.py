@@ -12,7 +12,7 @@ sys.path.insert(1,os.path.join(sys.path[0],'..','msprime')) # use the local copy
 import msprime
 from warnings import warn
 from tempfile import NamedTemporaryFile
-from msprime_fastARG import *
+from ts_fastARG import *
 
 
 if __name__ == "__main__":
@@ -52,14 +52,14 @@ if __name__ == "__main__":
                          NamedTemporaryFile("w+") as tree, \
                          NamedTemporaryFile("w+") as fa_revised, \
                          NamedTemporaryFile("w+") as muts:
-                        msprime_to_fastARG_in(ts, fa_in)
+                        ts_to_fastARG_in(ts, fa_in)
                         inf_seed = seed_generator.randint(1,2**32-1)
                         start_time = time.time()
                         run_fastARG("../fastARG/fastARG", fa_in, fa_out, seed=inf_seed)
                         end_time = time.time()
                         root_seq = fastARG_root_seq(fa_out)
-                        fastARG_out_to_msprime_txts(fa_out, tree, muts)
-                        ts_new = msprime_txts_to_fastARG_in_revised(tree, muts, root_seq, fa_revised)
+                        fastARG_out_to_ts_txts(fa_out, tree, muts)
+                        ts_new = ts_txts_to_fastARG_in_revised(tree, muts, root_seq, fa_revised)
                         #quick check
                         if filecmp.cmp(fa_in.name, fa_revised.name, shallow=False) == False:
                             warn("Initial fastARG input file differs from processed fastARG file")

@@ -47,7 +47,7 @@ import sys
 sys.path.insert(0,'../msprime/') # use the local copy of msprime in preference to the global one
 import tempfile
 import msprime
-from msprime_fastARG import fastARG_out_to_msprime_txts
+from ts_fastARG import fastARG_out_to_ts_txts
 
 fa_out = """\
 E	11
