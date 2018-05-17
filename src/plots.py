@@ -196,7 +196,8 @@ def generate_samples(ts, filename, real_error_rate=0):
 
     return sample_data
 
-def mk_sim_name(n, Ne, l, rho, mu, genealogy_seed, mut_seed=None, directory=None, tool="msprime",
+def mk_sim_name(sample_size, Ne, length, recombination_rate, mutation_rate, seed, 
+    mut_seed=None, directory=None, tool="msprime",
     s=None, h=None, freq=None, post_gens=None):
     """
     Create a filename for saving an msprime simulation (without extension)
@@ -204,10 +205,10 @@ def mk_sim_name(n, Ne, l, rho, mu, genealogy_seed, mut_seed=None, directory=None
     """
     #format mut rate & recomb rate to print non-exponential notation without
     # trailing zeroes. 12 dp should be ample for these rates
-    rho = "{:.12f}".format(float(rho)).rstrip('0')
-    mu = "{:.12f}".format(float(mu)).rstrip('0')
-    file = "{}-n{}_Ne{}_l{}_rho{}_mu{}-gs{}".format(tool, int(n), \
-        Ne if isinstance(Ne, str) else float(Ne), int(l), rho, mu, int(genealogy_seed))
+    rho = "{:.12f}".format(float(recombination_rate)).rstrip('0')
+    mu = "{:.12f}".format(float(mutation_rate)).rstrip('0')
+    file = "{}-n{}_Ne{}_l{}_rho{}_mu{}-gs{}".format(tool, int(sample_size), \
+        Ne if isinstance(Ne, str) else float(Ne), int(length), rho, mu, int(seed))
     if mut_seed is not None:
         file += "_ms{}".format(int(mut_seed))
     if s is not None:
@@ -408,13 +409,14 @@ class InferenceRunner(object):
         self.num_threads = num_threads
         self.metric_params = metric_params
         self.polytomy_reps = polytomy_reps
-        #base_fn is used for haplotype matrices etc from the simulation, so must include error,
-        #but not subsample size (as subsampling happens *after* inference, when comparing trees)
-        self.base_fn = mk_sim_name_from_row(
-            row, simulations_dir, subsample_col = None)
-        #original simulation files (e.g. the TS and nex files) must use the subsampled version, if present, but not error
-        self.orig_sim_fn = mk_sim_name_from_row(
-            row, simulations_dir, error_col=None)
+        #the original simulation file does not include error or subsampling
+        self.orig_sim_fn = mk_sim_name_from_row(row, simulations_dir, subsample_col=None, error_col=None)
+        #the known tree file to compare inference against: is subset but no err
+        self.cmp_fn = mk_sim_name_from_row(
+            row, simulations_dir, subsample_col='restrict_sample_size_comparison', error_col=None)
+        #sample_fn is used for sample data from the simulation, so must include error,
+        #and (if used) the subsample size
+        self.sample_fn = mk_sim_name_from_row(row, simulations_dir)
         # This should be set by the run_inference methods. Append ".nex" to
         # get the nexus files, or ".hdf5" to get the TS files
         self.inferred_filenames = None
@@ -442,10 +444,10 @@ class InferenceRunner(object):
             #rather than an average over multiple inferred nexus files, and do the averaging in python
                 if metric & METRICS_LOCATION_VARIANTS:
                     #get positions from the samples store, for use in metric calcs
-                    positions = tsinfer.SampleData.load(path=self.orig_sim_fn + ".samples").sites_position[:].tolist()
+                    positions = tsinfer.SampleData.load(path=self.cmp_fn + ".samples").sites_position[:].tolist()
                 else:
                     positions = None
-                source_nexus_file = self.orig_sim_fn + ".nex"
+                source_nexus_file = self.cmp_fn + ".nex"
                 inferred_nexus_files = [fn + ".nex" for fn in self.inferred_filenames]
                 #here we should create a separate set of metrics for tsinfer with and without polytomy breaking
                 #we should check if it is TSINFER, and then prepend '' for the default metric and ''
@@ -487,10 +489,11 @@ class InferenceRunner(object):
         shared_recombinations = bool(getattr(self.row,'tsinfer_srb', True))
         #default to no subsampling
         subsample_size = getattr(self.row,'subsample_size', None)
+        restrict_sample_size_comparison = getattr(self.row,'restrict_sample_size_comparison', None)
         #construct filenames - these can be used even if inference does not occur
-        samples_fn = self.base_fn + ".samples"
-        out_fn = construct_tsinfer_name(self.base_fn,
-            subsample_size, shared_recombinations, err)
+        samples_fn = self.sample_fn + ".samples"
+        out_fn = construct_tsinfer_name(self.sample_fn,
+            restrict_sample_size_comparison, shared_recombinations, err)
         self.inferred_filenames = [out_fn]
         if skip_infer:
             return {}
@@ -500,18 +503,25 @@ class InferenceRunner(object):
             samples_fn))
         inferred_ts, time, memory = self.run_tsinfer(
             samples_fn, self.row.length, shared_recombinations, self.num_threads,
-            #inject_real_ancestors_from_ts_fn = self.orig_sim_fn + ".hdf5", #uncomment to inject real ancestors
+            #uncomment below to inject real ancestors - will need adjusting for subsampling
+            #inject_real_ancestors_from_ts_fn = self.orig_sim_fn + ".hdf5",
             )
         if inferred_ts:
-            if subsample_size is not None:
-                inferred_ts = inferred_ts.simplify(list(range(subsample_size)))
+            if restrict_sample_size_comparison is not None:
+                if len(self.metric_params):
+                    with open(construct_tsinfer_name(self.sample_fn, None, shared_recombinations, err) + ".nex", "w+") as out:
+                        tree_labels_between_variants=(True if subsample_size is None else False)
+                        inferred_ts.write_nexus_trees(
+                            out, tree_labels_between_variants=tree_labels_between_variants)
+                inferred_ts = inferred_ts.simplify(list(range(restrict_sample_size_comparison)))
+                
             inferred_ts.dump(out_fn + ".inferred.hdf5")
             fs = os.path.getsize(out_fn + ".inferred.hdf5")
             if len(self.metric_params):
                 with open(self.inferred_filenames[0] + ".nex", "w+") as out:
                     #For subsampled trees, the locations of trees along the
                     #genome (the breakpoints) may not correspond to variant positions
-                    #on the subsampled trees: indeed , there may be multiple trees
+                    #on the subsampled trees: indeed, there may be multiple trees
                     #between two adjacent variants, so we cannot reposition breakpoints
                     #between the nearest left and right variant positions
                     tree_labels_between_variants=(True if subsample_size is None else False)
@@ -530,10 +540,10 @@ class InferenceRunner(object):
 
     def __run_fastARG(self, skip_infer=False):
         inference_seed = self.row.seed  # TODO do we need to specify this separately?
-        self.inferred_filenames = [construct_fastarg_name(self.base_fn, inference_seed)]
+        self.inferred_filenames = [construct_fastarg_name(self.sample_fn, inference_seed)]
         if skip_infer:
             return {}
-        infile = self.base_fn + ".hap"
+        infile = self.sample_fn + ".hap"
         time = memory = None
         logging.debug("reading: {} for fastARG inference".format(infile))
         inferred_ts, time, memory = self.run_fastarg(infile, self.row.length, inference_seed)
@@ -552,10 +562,10 @@ class InferenceRunner(object):
         }
 
     def __run_RentPlus(self, skip_infer=False):
-        self.inferred_filenames = [construct_rentplus_name(self.base_fn)]
+        self.inferred_filenames = [construct_rentplus_name(self.sample_fn)]
         if skip_infer:
             return {}
-        infile = self.base_fn + ".dat"
+        infile = self.sample_fn + ".dat"
         time = memory = None
         logging.debug("reading: {} for RentPlus inference".format(infile))
         try:
@@ -600,13 +610,13 @@ class InferenceRunner(object):
         n_timesteps = getattr(self.row,'ARGweaver_ntimes', default_ARGweaver_ntimes)
         self.inferred_filenames = []
         iteration_ids = []
-        out_fn = construct_argweaver_name(self.base_fn, burnin, n_timesteps, inference_seed)
+        out_fn = construct_argweaver_name(self.sample_fn, burnin, n_timesteps, inference_seed)
         if skip_infer:
             #must get the iteration IDs off the row
             if self.row.ARGweaver_iterations:
                 iteration_ids = self.row.ARGweaver_iterations.split(",")
         else:
-            infile = self.base_fn + ".sites"
+            infile = self.sample_fn + ".sites"
             time = memory = None
             filesizes = []
             edges = []
@@ -617,7 +627,7 @@ class InferenceRunner(object):
                 out_fn, inference_seed, n_out_samples, sample_step, burnin, n_timesteps,
                 verbose = logging.getLogger().isEnabledFor(logging.DEBUG))
         for it in iteration_ids:
-            base = construct_argweaver_name(self.base_fn, burnin, n_timesteps, inference_seed, it)
+            base = construct_argweaver_name(self.sample_fn, burnin, n_timesteps, inference_seed, it)
             self.inferred_filenames.append(base)
             if skip_infer==False:
                 if len(self.metric_params):
@@ -956,6 +966,9 @@ class Dataset(object):
         return data
 
     def run_single_sim(self, runtime_information):
+        """
+        Run the routine self.single_sim() - could be as a separate process
+        """
         i, (seed_plus_params) = runtime_information
         rng_seed, params = seed_plus_params
         sim_params = dict(zip(['replicate'] + list(self.between_sim_params.keys()), params))
@@ -966,14 +979,26 @@ class Dataset(object):
 
     def save_within_sim_data(self, base_row_id, ts, base_fn, base_params, iterate_over_dict=None):
         """
-        save trees and variant matrices with error, and return the values to be save in the csv file
+        save trees, and variant matrices with error, and return the values to be save in the csv file
         iterate_over_dict can be used to pass a subset of values to iterate over, rather than the default
         of self.within_sim_params
         """
+
         if iterate_over_dict is None:
             iterate_over_dict = self.within_sim_params
         if any(self.tools_and_metrics.values()):
-            ts.save_nexus_trees(base_fn +".nex")
+            if base_params.get('restrict_sample_size_comparison'):
+                #we are not comparing the trees with all samples, but just the first n
+                n = base_params['restrict_sample_size_comparison']
+                cmp_fn = add_subsample_param_to_name(base_fn, n)
+                small_ts = ts.simplify(list(range(n)))
+                small_ts.save_nexus_trees(cmp_fn +".nex")
+                #We must also get the locations of variants out of this file, so we can compare
+                #metrics fairly (i.e. higher resolution inference with more samples doesn't
+                #have an advantage in getting more information to locate breakpoints
+                generate_samples(small_ts, cmp_fn)
+            else:
+                ts.save_nexus_trees(base_fn +".nex")
         return_value = {}
         for params in itertools.product(*iterate_over_dict.values()):
             #may be iterating here over errors, or e.g. tsinfer_srb
@@ -987,9 +1012,18 @@ class Dataset(object):
             row['edges'] = ts.num_edges
             row['n_trees'] = ts.num_trees
             row['n_sites'] = ts.num_sites
-            self.save_variant_matrices(
-                ts, base_fn, keyed_params.get('error_rate') or 0,
-                infinite_sites=False)
+            subsample = keyed_params.get(SUBSAMPLE_COLNAME)
+            if subsample:
+                self.save_variant_matrices(
+                    ts.simplify(list(range(subsample))),
+                    add_subsample_param_to_name(base_fn, subsample),
+                    keyed_params.get('error_rate') or 0,
+                    infinite_sites=False)
+            else:
+                self.save_variant_matrices(
+                    ts, base_fn, 
+                    keyed_params.get('error_rate') or 0,
+                    infinite_sites=False)
         return return_value
 
     def single_sim(self, row_id, sim_params, rng):
@@ -1329,12 +1363,15 @@ class Dataset(object):
 
 
 
-    def save_variant_matrices(self, ts, fname, error_rate=0, infinite_sites=True):
+    def save_variant_matrices(self, ts, filename, error_rate=0, infinite_sites=True):
+        """
+        Make sample data from a tree sequence
+        """
         if infinite_sites:
             #for infinite sites, assume we have discretised mutations to ints
             if not all(p.is_integer() for p in pos):
                 raise ValueError("Variant positions are not all integers")
-        filename = add_error_param_to_name(fname, error_rate)
+        filename = add_error_param_to_name(filename, error_rate)
         logging.debug("Saving samples to {}".format(filename))
         s = generate_samples(ts, filename, error_rate)
         if FASTARG in self.tools_and_metrics:
@@ -1615,62 +1652,41 @@ class SubsamplingDataset(Dataset):
     #params that change BETWEEN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     between_sim_params = {
-        'length': [10000, 100000, 1000000],
-        'Ne':              [5000],
-        'mutation_rate':   [1e-8],
-        'recombination_rate': [1e-8]
+        'sample_size':        [1000], #the maximum sample size - we will trim this down
+        'length':             [10000, 100000, 1000000],
+        'Ne':                 [5000],
+        'mutation_rate':      [1e-8],
+        'recombination_rate': [1e-8],
+         #we always simplify down to the first n samples for comparison purposes
+        'restrict_sample_size_comparison': [6],
     }
 
     within_sim_params = {
-        'subsample_size':  [10],
-        'sample_size': [12, 50, 100, 500, 1000],
         'tsinfer_srb' : [True], #, False], #should we use shared recombinations ("path compression")
+        SUBSAMPLE_COLNAME:  [12, 50, 100, 500, 1000], #we infer based on this many samples
         ERROR_COLNAME: [0, 0.001]
     }
 
-    extra_sim_cols = [SUBSAMPLE_COLNAME]
+
+    extra_sim_cols = [SUBSAMPLE_COLNAME, 'restrict_sample_size_comparison']
 
     def single_sim(self, row_id, sim_params, rng):
-        assert all([sss <= min(self.within_sim_params['sample_size']) for sss in self.within_sim_params['subsample_size']])
+        assert max(self.within_sim_params[SUBSAMPLE_COLNAME]) <= sim_params['sample_size']
         base_row_id = row_id
         while True:
             sim_params['seed'] = rng.randint(1, 2**31)
-            sim_params['sample_size'] = max(self.within_sim_params['sample_size'])
             try:
                 # Run the simulation until we get an acceptable one
-                base_ts, unused_fn = self.single_neutral_simulation(**sim_params)
+                base_ts, fn = self.single_neutral_simulation(
+                    **{k:v for k,v in sim_params.items() if k != 'restrict_sample_size_comparison'})
                 break
             except ValueError as e: #No non-singleton variants
                 logging.warning(e)
-        #Take the same base simulation and sample down to get comparable test sets
         return_data = {}
-        within_sim_params = self.within_sim_params.copy()
-        subsample_sizes = within_sim_params.pop('subsample_size') #usually only one value in this arr
-        sample_sizes = within_sim_params.pop('sample_size') #remove sample_size - we will loop over it explictly
-        #make sure the outermost loop is the sampling loop
-        for subsample_size in subsample_sizes:
-            for sample_size in sample_sizes:
-                #here we override the original sample_size and save a smaller file under a different name
-                sim_params['subsample_size'] = subsample_size
-                sim_params['sample_size'] = sample_size #override from previous definition
-                ts = base_ts.simplify(list(range(sample_size)))
-                fn = mk_sim_name(sim_params['sample_size'],
-                    sim_params['Ne'],
-                    sim_params['length'],
-                    sim_params['recombination_rate'],
-                    sim_params['mutation_rate'],
-                    sim_params['seed'], directory=self.simulations_dir)
-                #subsample to produce a nexus file for metric comparison
-                subsampled_fn=add_subsample_param_to_name(fn, subsample_size)
-                subsampled_ts = ts.simplify(list(range(subsample_size)))
-                subsampled_ts.save_nexus_trees(subsampled_fn +".nex")
-                #When we calculate metrics we require a samples file from which to extract
-                #positions. Here we forcibly create one with the subsampled data for this purpose
-                generate_samples(subsampled_ts, subsampled_fn)
-                row_data = self.save_within_sim_data(base_row_id, ts, fn, sim_params, within_sim_params)
-                base_row_id += len(row_data)
-                assert all(k not in return_data for k in row_data)
-                return_data.update(row_data)
+        #it's worth saving the full tree file for other analysis
+        base_ts.save_nexus_trees(fn + ".nex")
+        #this will loop over the subsamples and errors, saving samples files for inference
+        return_data = self.save_within_sim_data(base_row_id, base_ts, fn, sim_params)
         return return_data
 
 class AllToolsAccuracyWithDemographyDataset(Dataset):
@@ -2002,8 +2018,7 @@ class MetricAllToolsFigure(Figure):
     Superclass of the metric all tools figure. Each subclass should be a
     single figure for a particular metric.
     """
-    datasetClass = AllToolsAccuracyDataset
-
+    datasetClass = AllToolsDataset
 
     def plot(self):
         df = self.dataset.data
@@ -2059,8 +2074,26 @@ class MetricAllToolsFigure(Figure):
                 loc="upper center")
         self.savefig(fig)
 
+class MetricAllToolsAccuracyFigure(Figure):
+    """
+    Superclass of the metric all tools figure. Each subclass should be a
+    single figure for a particular metric.
+    """
+    datasetClass = AllToolsAccuracyDataset
 
 class RFRootedAllToolsFigure(MetricAllToolsFigure):
+    name = "rf_rooted_all_tools"
+    metric = "RFrooted"
+    ylim = None
+
+
+class KCRootedAllToolsFigure(MetricAllToolsFigure):
+    name = "kc_rooted_all_tools"
+    metric = "KCrooted"
+    ylim = (0, 40)
+    error_bars = True
+
+class RFRootedAllToolsAccuracyFigure(MetricAllToolsFigure):
     name = "rf_rooted_all_tools"
     metric = "RFrooted"
     ylim = None
@@ -2211,56 +2244,68 @@ class MetricsAllToolsAccuracySweepFigure(Figure):
 class MetricsSubsamplingFigure(Figure):
     """
     Figure that shows whether increasing sample size helps with the accuracy of
-    reconstructing the ARG for a fixed subsample.
+    reconstructing the ARG for a fixed subsample. We only use tsinfer for this.
     """
     datasetClass = SubsamplingDataset
     name = "metrics_subsampling"
     error_bars=True
 
     def plot(self):
+        figures = [] #save figures for putting onto a multi-page pdf
         df = self.dataset.data
         lengths = df.length.unique()
-        subsample_size = df.subsample_size.unique()
-        assert len(subsample_size) == 1
+        restrict_sample_size_comparison = df.restrict_sample_size_comparison.unique()
+        assert len(restrict_sample_size_comparison) == 1
         col="black"
-        inferred_linestyles = {False:{False:':',True:'-.'},True:{False:'--',True:'-'}}
         metrics = ARG_metrics.get_metric_names()
         topology_only_metrics = [m for m in metrics if not m.startswith('w')]
-        fig, axes = pyplot.subplots(len(topology_only_metrics),
-            len(lengths), figsize=(12, 16))
-        lines = []
-        for j, metric in enumerate(topology_only_metrics):
-            for k, length in enumerate(lengths):
-                ax = axes[j][k]
-                if j == 0:
-                    ax.set_title("Sequence length = {} Kb".format(int(length/1000)))
-                if k == 0:
-                    ax.set_ylabel(metric + " metric")
-                if j == len(topology_only_metrics) - 1:
-                    ax.set_xlabel("Original sample size")
-                for shared_breakpoint in df.tsinfer_srb.unique():
-                    dfp = df[np.logical_and.reduce((
-                        df.length == length,
-                        df.tsinfer_srb == shared_breakpoint))]
-                    group = dfp.groupby(["sample_size"])
+        for error_rate in df[ERROR_COLNAME].unique():
+            print(len(topology_only_metrics),len(lengths))
+            fig, axes = pyplot.subplots(len(topology_only_metrics),
+                len(lengths), figsize=(12, 16))
+            for j, metric in enumerate(topology_only_metrics):
+                print(metric)
+                for k, length in enumerate(lengths):
+                    ax = axes[j][k]
+                    if j == 0:
+                        ax.set_title("Sequence length = {} Kb".format(int(length/1000)))
+                    if k == 0:
+                        ax.set_ylabel(metric + " metric")
+                    if j == len(topology_only_metrics) - 1:
+                        ax.set_xlabel("Original sample size")
+                    print(self.tools_and_metrics_params)
+                    for tool_and_metrics_param, setting in self.tools_and_metrics_params.items():
+                        colname = tool_and_metrics_param + "_" + metric
+                        if colname in df.columns \
+                            and metric.startswith("RF") \
+                            and tool_and_metrics_param.startswith(TSINFER) \
+                            and (int(tool_and_metrics_param.rsplit("_",1)[1]) & METRICS_POLYTOMIES_BREAK == 0):
+                                # RF metrics are not well behaved for trees with polytomies (i.e. tsinfer trees)
+                                # so we should omit tsinfer cases where METRICS_POLYTOMIES_BREAK == 0
+                                continue
+                        dfp = df[np.logical_and(df.length == length, df[ERROR_COLNAME] == error_rate)]
+                        group = dfp.groupby(["subsample_size"])
+                        mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
                         #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
-                    mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-                    if getattr(self, 'error_bars', None):
-                        yerr=[m['sem'] for m in mean_sem]
-                    else:
-                        yerr = None
-                    ax.errorbar(
-                        [m['mu'] for m in mean_sem],
-                        [m['mean'][TSINFER + "_" + metric] for m in mean_sem],
-                        yerr=[m['sem'][TSINFER + "_" + metric] for m in mean_sem] \
-                            if getattr(self, 'error_bars', None) else None,
-                        color=col,
-                        linestyle=inferred_linestyles[shared_breakpoint],
-                        marker="o", fillstyle='none',
-                        elinewidth=1)
-        pyplot.suptitle('ARG metric for trees subsampled down to {} tips'.format(
-            subsample_size[0]))
-        self.savefig(fig)
+                        #print(mean_sem)
+                        if getattr(self, 'error_bars', None):
+                            yerr=[m['sem'][colname] for m in mean_sem]
+                        else:
+                            yerr = None
+                        ax.errorbar(
+                            [m['mu'] for m in mean_sem],
+                            [m['mean'][colname] for m in mean_sem],
+                            yerr=yerr,
+                            color= setting['col'],
+                            linestyle=setting['linestyle'],
+                            marker=setting['mark'],
+                            #elinewidth=1
+                            )
+            print(error_rate)
+            fig.suptitle('ARG metric for trees subsampled down to {} tips, error = {}'.format(
+                restrict_sample_size_comparison[0], error_rate))
+            figures.append(fig)
+        self.savefig(*figures)
 
 
 class MetricARGweaverParametersFigure(Figure):
@@ -2505,7 +2550,7 @@ class TsinferPerformanceSizesSamplesFigure(Figure):
                 df.sample_size == self.datasetClass.fixed_sample_size,
                 df.tsinfer_srb == shared_breakpoint))]
             group = dfp.groupby(["length"])
-                #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
+            #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
             mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
             ax1.errorbar(
                 [m['mu'] for m in mean_sem],
