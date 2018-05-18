@@ -2060,8 +2060,10 @@ class MetricAllToolsFigure(Figure):
             pyplot.Line2D((0,1),(0,0), color= setting["col"], fillstyle=fillstyles[0],
                 marker= setting["mark"], linestyle=setting["linestyle"])
             for tool,setting in self.tools_and_metrics_params.items()]
+        tool_labels = [(l.replace("_0", "").replace("_2"," breaking polytomies") if l.startswith(TSINFER) else l.replace("_0", "")) 
+            for l in self.tools_and_metrics_params.keys()]
         first_legend = axes[0].legend(
-            artists, self.tools_and_metrics_params.keys(), numpoints=1, loc="upper center")
+            artists, tool_labels, numpoints=1, labelspacing=0.1, loc="upper right")
             # bbox_to_anchor=(0.0, 0.1))
         # ax = pyplot.gca().add_artist(first_legend)
         if len(sample_sizes)>1:
@@ -2071,7 +2073,7 @@ class MetricAllToolsFigure(Figure):
                 for linestyle in linestyles]
             axes[-1].legend(
                 artists, ["Sample size = {}".format(n) for n in sample_sizes],
-                loc="upper center")
+                loc="upper right")
         self.savefig(fig)
 
 class MetricAllToolsAccuracyFigure(MetricAllToolsFigure):
@@ -2090,7 +2092,7 @@ class RFRootedAllToolsFigure(MetricAllToolsFigure):
 class KCRootedAllToolsFigure(MetricAllToolsFigure):
     name = "kc_rooted_all_tools"
     metric = "KCrooted"
-    ylim = (0, 40)
+    ylim = (0, 24)
     error_bars = True
 
 class RFRootedAllToolsAccuracyFigure(MetricAllToolsAccuracyFigure):
