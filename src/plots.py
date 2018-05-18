@@ -2040,7 +2040,7 @@ class MetricAllToolsFigure(Figure):
                 df_s = df[np.logical_and(df.sample_size == n, df[ERROR_COLNAME] == error_rate)]
                 group = df_s.groupby(["mutation_rate"])
                 mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-                for tool_and_metrics_param,setting in self.tool_and_metrics_params.items():
+                for tool_and_metrics_param,setting in self.tools_and_metrics_params.items():
                     if getattr(self, 'error_bars', None):
                         yerr=[m['sem'][tool_and_metrics_param + "_" + self.metric] for m in mean_sem]
                     else:
