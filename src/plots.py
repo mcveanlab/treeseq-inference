@@ -1472,7 +1472,7 @@ class AllToolsPerformanceDataset(AllToolsDataset):
     can inspect the scaling properties of the algorithms. 
     """
     name = "all_tools_performance"
-    default_replicates = 5
+    default_replicates = 10
 
     fixed_sample_size = 10
     fixed_length = 2 * 10**5
