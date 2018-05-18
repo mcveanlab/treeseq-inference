@@ -813,7 +813,7 @@ class Dataset(object):
     A dataset is some collection of simulations and associated data.
     Results for datasets are stored in a general data_dir
     """
-    data_dir = "data"
+    data_dir = os.path.join(sys.path[0],"..","data")
     """
     Each dataset has a unique name. This is used as the prefix for the data
     file and raw_data_dir directory. Within this, replicate instances of datasets
@@ -1878,7 +1878,8 @@ class Figure(object):
     """
     datasetClass = None
     name = None
-    figures_dir = "figures"
+    figures_dir = os.path.join(sys.path[0],"..","figures")
+
     tools_format = collections.OrderedDict([
         (ARGWEAVER, {"mark":"d", "col":"green"}),
         (RENTPLUS,  {"mark":"^", "col":"red"}),
@@ -2589,7 +2590,7 @@ class FastargTsinferComparisonFigure(Figure):
 
     def plot(self):
         df = self.dataset.data
-        tools = self.dataset.tools
+        tools = self.dataset.tools_and_metrics.keys()
 
         # Rescale the length to Mb
         length_scale = 10**6
@@ -2642,7 +2643,7 @@ class FastargTsinferComparisonFigure(Figure):
 
 
 class FastargTsinferComparisonTimeFigure(FastargTsinferComparisonFigure):
-    name = "program_comparison_time"
+    name = "fastarg_tsinfer_comparison_time"
     plotted_column = "cputime"
     y_label = "CPU time (hours)"
 
@@ -2651,7 +2652,7 @@ class FastargTsinferComparisonTimeFigure(FastargTsinferComparisonFigure):
 
 
 class FastargTsinferComparisonMemoryFigure(FastargTsinferComparisonFigure):
-    name = "program_comparison_memory"
+    name = "fastarg_tsinfer_comparison_memory"
     plotted_column = "memory"
     y_label = "Memory (GiB)"
 
