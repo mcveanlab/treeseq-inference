@@ -2489,7 +2489,7 @@ class TsinferEdgesPerformanceFigure(TsinferPerformanceLengthSamplesFigure):
     def plot(self):
         self.dataset.data[self.plotted_column] = (
             self.dataset.data["tsinfer_edges"] / self.dataset.data["edges"])
-        PerformanceFigure.plot(self)
+        TsinferPerformanceLengthSamplesFigure.plot(self)
 
 
 class TsinferFileSizePerformanceFigure(TsinferPerformanceLengthSamplesFigure):
@@ -2500,7 +2500,7 @@ class TsinferFileSizePerformanceFigure(TsinferPerformanceLengthSamplesFigure):
     def plot(self):
         self.dataset.data[self.plotted_column] = (
             self.dataset.data["tsinfer_ts_filesize"] / self.dataset.data["ts_filesize"])
-        PerformanceFigure.plot(self)
+        TsinferPerformanceLengthSamplesFigure.plot(self)
 
 
 class CompressionPerformanceFigure(TsinferPerformanceLengthSamplesFigure):
@@ -2511,7 +2511,7 @@ class CompressionPerformanceFigure(TsinferPerformanceLengthSamplesFigure):
     def plot(self):
         self.dataset.data[self.plotted_column] = (
              self.dataset.data["vcfgz_filesize"] / self.dataset.data["tsinfer_ts_filesize"])
-        PerformanceFigure.plot(self)
+        TsinferPerformanceLengthSamplesFigure.plot(self)
 
 
 class TsinferPerformanceSizesSamplesFigure(Figure):
