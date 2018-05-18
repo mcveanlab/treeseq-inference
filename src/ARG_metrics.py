@@ -30,7 +30,7 @@ def get_metric_names():
     # We could do it with :
     # return list(pandas.DataFrame(columns=ARGmetrics.genome_trees_dist().names))
     # but it's extremely slow. Just return the list of strings instead.
-    return list(ARGmetrics.genome_trees_dist().names)
+    return [n for n in ARGmetrics.genome_trees_dist().names if n!='rgt']
 
 
 def get_metrics(true_nexus_fn, inferred_nexus_fns, variant_positions = None, randomly_resolve_inferred=False):
