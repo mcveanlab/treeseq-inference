@@ -2093,13 +2093,13 @@ class KCRootedAllToolsFigure(MetricAllToolsFigure):
     ylim = (0, 40)
     error_bars = True
 
-class RFRootedAllToolsAccuracyFigure(MetricAllToolsFigure):
+class RFRootedAllToolsAccuracyFigure(MetricAllToolsAccuracyFigure):
     name = "rf_rooted_all_tools_accuracy"
     metric = "RFrooted"
     ylim = None
 
 
-class KCRootedAllToolsAccuracyFigure(MetricAllToolsFigure):
+class KCRootedAllToolsAccuracyFigure(MetricAllToolsAccuracyFigure):
     name = "kc_rooted_all_tools_accuracy"
     metric = "KCrooted"
     ylim = (0, 40)
