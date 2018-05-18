@@ -2074,7 +2074,7 @@ class MetricAllToolsFigure(Figure):
                 loc="upper center")
         self.savefig(fig)
 
-class MetricAllToolsAccuracyFigure(Figure):
+class MetricAllToolsAccuracyFigure(MetricAllToolsFigure):
     """
     Superclass of the metric all tools figure. Each subclass should be a
     single figure for a particular metric.
