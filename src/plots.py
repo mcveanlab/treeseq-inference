@@ -2477,7 +2477,7 @@ class TsinferPerformanceLengthSamplesFigure(Figure):
                 linestyle=recombination_linestyles[rho_index], linewidth=2)
             for rho_index, rho in enumerate(recombination_rates)]
         ax1.legend(
-            params, [r"$\rho$ = $\mu${}".format("" if rho==mu else r"$\times${:g}".format(rho/mu) if rho>mu else r"/{:g}".format(mu/rho))
+            params, [r"$\rho$ = {}".format("$\mu$" if rho==mu else r"{:g}$\mu$".format(rho/mu) if rho>mu else r"$\mu$/{:g}".format(mu/rho))
                 for rho_index, rho in enumerate(recombination_rates)],
             loc="lower right", fontsize=10, title="Relative rate of\nrecombination")
     
