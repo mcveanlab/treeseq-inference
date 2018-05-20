@@ -2453,7 +2453,7 @@ class TsinferPerformanceLengthSamplesFigure(Figure):
                 )
 
 
-        ax2.set_title("Fixed sequence length ({:.2f} Mb)".format(self.datasetClass.fixed_length / 10**6))
+        ax2.set_title("Fixed sequence length ({:g} Mb)".format(self.datasetClass.fixed_length / 10**6))
         ax2.set_xlabel("Sample size")
         ax2.set_ylabel(self.y_axis_label)
         for rho_index, rho in enumerate(recombination_rates):
