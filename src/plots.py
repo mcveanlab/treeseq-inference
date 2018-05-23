@@ -1714,7 +1714,7 @@ class AllToolsAccuracyWithDemographyDataset(Dataset):
     #params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
-        ERROR_COLNAME : [0, 0.001, 0.01],
+        ERROR_COLNAME : [0, 0.001],
     }
 
     def single_sim(self, row_id, sim_params, rng):
@@ -1759,7 +1759,7 @@ class AllToolsAccuracyWithSelectiveSweepDataset(Dataset):
     within_sim_params = {
         #NB - these are strings because they are output as part of the filename
         'stop_freqs': ['0.2', '0.5', '0.8', '1.0', ('1.0', 200), ('1.0', 1000)], #frequencies when file is saved.
-        ERROR_COLNAME : [0, 0.001, 0.01],
+        ERROR_COLNAME : [0, 0.001],
     }
 
     extra_sim_cols = [SIMTOOL_COLNAME, SELECTION_COEFF_COLNAME,
