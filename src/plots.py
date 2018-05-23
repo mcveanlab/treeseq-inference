@@ -1728,6 +1728,10 @@ class AllToolsAccuracyWithDemographyDataset(Dataset):
             except ValueError as e: #No non-singleton variants
                 logging.warning(e)
         row_data = self.save_within_sim_data(row_id, ts, fn, sim_params)
+        #set Ne to store the name 'Gutenkunst.out.of.africa' rather than a meaningless Ne param
+        #this will be used in the filenames etc.
+        for row in row_data.values():
+            row['Ne'] = row['sim_name']
         return row_data
 
 class AllToolsAccuracyWithSelectiveSweepDataset(Dataset):
