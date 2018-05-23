@@ -1575,27 +1575,25 @@ class TsinferPerformanceDataset(AllToolsPerformanceDataset):
         return row_data
 
 
-class FastargTsinferComparisonDataset(Dataset):
+class FastargTsinferComparisonDataset(AllToolsPerformanceDataset):
     """
     The performance of the various programs in terms of running time and memory usage
     """
     name = "fastarg_tsinfer_comparison"
-    default_replicates = 2
+    default_replicates = 10
     default_seed = 1000
     tools_and_metrics = {FASTARG:[], TSINFER:[]} # Everything else is too slow
     fixed_sample_size = 10000
     fixed_length = 5 * 10**6
     num_points = 20
-    #Ensure sample sizes are even so we can output diploid VCF.
     sample_sizes = np.linspace(10, 2*fixed_sample_size, num_points).astype(int)
     lengths = np.linspace(fixed_length / 10, 2 * fixed_length, num_points).astype(int)
     #params that change BETWEEN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     between_sim_params = {
         'Ne':            [5000],
-        'mutation_rate': [2.5e-8],
-        'recombination_rate': [2.5e-8],
-        #Ensure sample sizes are even so we can output diploid VCF.
+        'mutation_rate': [1e-8],
+        'recombination_rate': [1e-8],
         'sample_size':   np.unique(np.append(sample_sizes, fixed_sample_size)),
         'length':        np.unique(np.append(lengths, fixed_length)),
     }
@@ -1604,31 +1602,6 @@ class FastargTsinferComparisonDataset(Dataset):
     within_sim_params = {
         ERROR_COLNAME : [0],
     }
-
-    def filter_between_sim_params(self, between_sim_params):
-        """
-        We want to only use cases where the sample_size OR the length are at the fixed values
-        (and not both, unless e.g. the fixed length happens to be in the variable lengths array
-        """
-        keyed_params = dict(zip(['replicates']+list(self.between_sim_params.keys()), between_sim_params))
-        if (self.fixed_sample_size not in self.sample_sizes) and (self.fixed_length not in self.lengths):
-            return ((keyed_params['sample_size']==self.fixed_sample_size) ^ \
-                (keyed_params['length']==self.fixed_length))
-        else:
-            return ((keyed_params['sample_size']==self.fixed_sample_size) or \
-                (keyed_params['length']==self.fixed_length))
-
-    def single_sim(self, row_id, sim_params, rng):
-        while True:
-            sim_params['seed'] = rng.randint(1, 2**31)
-            try:
-                # Run the simulation until we get an acceptable one
-                ts, fn = self.single_neutral_simulation(**sim_params)
-                break
-            except ValueError as e: #No non-singleton variants
-                logging.warning(e)
-        row_data = self.save_within_sim_data(row_id, ts, fn, sim_params)
-        return row_data
 
 ### SUPPLEMENTARY MATERIAL
 ### The following classes are used for figures in the supplementary material
@@ -2537,8 +2510,8 @@ class CompressionPerformanceFigure(TsinferPerformanceLengthSamplesFigure):
 class TsinferPerformanceSizesSamplesFigure(Figure):
     """
     Class for the performance metrics against sites as well as length
-    (the first is the same as the LHS PerformanceFigure, but the second is the
-    same using sites instead)
+    (the first is the same as the LHS TsinferEdgesPerformanceFigure,
+    but the second is the same using sites instead)
     """
     name="tsinfer_edges_sn"
     datasetClass = TsinferPerformanceDataset
