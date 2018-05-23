@@ -1708,7 +1708,7 @@ class AllToolsAccuracyWithDemographyDataset(Dataset):
         'sample_size':   [15], #will be split across the 3 human sub pops
         'length':        [100000],
         'recombination_rate': [1e-8],
-        'sim_name': "Gutenkunst.out.of.africa"
+        'sim_name': ["Gutenkunst.out.of.africa"]
     }
 
     #params that change WITHIN simulations. Keys should correspond
