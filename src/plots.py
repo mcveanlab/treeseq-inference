@@ -1950,6 +1950,11 @@ class MetricsAllToolsFigure(Figure):
                             ax.semilogx(group_mean[colname], setting["linestyle"], 
                                 fillstyle=fillstyle, color=setting["col"], 
                                 marker=None if len(sample_sizes)==1 else setting['mark'])
+                ax.set_ylim(ymin=0)
+                ax.axvline(x=df.recombination_rate.unique()[0], 
+                    color = 'gray', zorder=-1, linestyle=":", linewidth=1)
+                ax.text(df.recombination_rate.unique()[0], ax.get_ylim()[1]/40, r'$\mu=\rho$',
+                    va = "bottom",  ha="right", color = 'gray', rotation=90)
         artists = [
             pyplot.Line2D((0,1),(0,0), color= setting["col"],
                 linewidth=2, linestyle=setting["linestyle"],
