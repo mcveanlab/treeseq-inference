@@ -1667,17 +1667,20 @@ class AllToolsAccuracyWithDemographyDataset(Dataset):
     Accuracy of ARG inference (measured by various statistics)
     tending to fully accurate as mutation rate increases, but with a
     demographic (out of africa) rather than a neutral model.
+    
+    This is faster than the non-demography simulation, as the 
+    population expansions etc mean that the Ne is slightly lower
     """
 
     name = "all_tools_accuracy_with_demography"
 
-    default_replicates = 50
+    default_replicates = 100
     default_seed = 123
 
     #params that change BETWEEN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     between_sim_params = {
-        'mutation_rate': np.geomspace(0.5e-8, 3.5e-6, num=5),
+        'mutation_rate': np.geomspace(0.5e-8, 3.5e-6, num=7),
         'sample_size':   [15], #will be split across the 3 human sub pops
         'length':        [100000],
         'recombination_rate': [1e-8],
@@ -1748,7 +1751,7 @@ class AllToolsAccuracyWithSelectiveSweepDataset(Dataset):
             return_data = {}
             sim_params['seed'] = rng.randint(1, 2**31)
             logging.info("Running simulation {} of {} in process {} with following params: {} ".format(
-                i, self.num_sims, os.getpid(), sim_params))
+                row_id, self.num_sims, os.getpid(), sim_params))
             try:
                 #we have multiple rows per simulation for results after different generations post-fixation
                 #these are returned in an iterator by the single_simulation_with_selective_sweep() method
