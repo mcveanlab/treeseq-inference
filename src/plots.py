@@ -1750,8 +1750,6 @@ class AllToolsAccuracyWithSelectiveSweepDataset(Dataset):
             base_row_id = row_id
             return_data = {}
             sim_params['seed'] = rng.randint(1, 2**31)
-            logging.info("Running simulation {} of {} in process {} with following params: {} ".format(
-                row_id, self.num_sims, os.getpid(), sim_params))
             try:
                 #we have multiple rows per simulation for results after different generations post-fixation
                 #these are returned in an iterator by the single_simulation_with_selective_sweep() method
