@@ -506,7 +506,9 @@ class InferenceRunner(object):
             #uncomment below to inject real ancestors - will need adjusting for subsampling
             #inject_real_ancestors_from_ts_fn = self.orig_sim_fn + ".hdf5",
             )
-        if inferred_ts:
+        if inferred_ts is None:
+            self.inferred_filenames = None
+        else:
             if restrict_sample_size_comparison is not None:
                 if len(self.metric_params):
                     with open(construct_tsinfer_name(self.sample_fn, None, shared_recombinations, err) + ".nex", "w+") as out:
