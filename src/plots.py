@@ -660,22 +660,30 @@ class InferenceRunner(object):
     @staticmethod
     def run_tsinfer(sample_fn, length,
         shared_recombinations, num_threads=1, inject_real_ancestors_from_ts_fn=None, rho=None, error_probability=None):
-        with tempfile.NamedTemporaryFile("w+") as ts_out:
-            cmd = [sys.executable, tsinfer_executable, sample_fn, "--length", str(int(length))]
-            if rho is not None:
-                cmd += ["--recombination-rate", str(rho)]
-            if error_probability is not None:
-                cmd += ["--error-probability", str(error_probability)]
-            cmd += ["--threads", str(num_threads), ts_out.name]
-            if inject_real_ancestors_from_ts_fn:
-                logging.debug("Injecting real ancestors constructed from {}".format(
-                    inject_real_ancestors_from_ts_fn))
-                cmd.extend(["--inject-real-ancestors-from-ts", inject_real_ancestors_from_ts_fn])
-            if shared_recombinations:
-                cmd.append("--shared-recombinations")
-            cpu_time, memory_use = time_cmd(cmd)
-            ts_simplified = msprime.load(ts_out.name)
-        return ts_simplified, cpu_time, memory_use
+        try:
+            with tempfile.NamedTemporaryFile("w+") as ts_out:
+                cmd = [sys.executable, tsinfer_executable, sample_fn, "--length", str(int(length))]
+                if rho is not None:
+                    cmd += ["--recombination-rate", str(rho)]
+                if error_probability is not None:
+                    cmd += ["--error-probability", str(error_probability)]
+                cmd += ["--threads", str(num_threads), ts_out.name]
+                if inject_real_ancestors_from_ts_fn:
+                    logging.debug("Injecting real ancestors constructed from {}".format(
+                        inject_real_ancestors_from_ts_fn))
+                    cmd.extend(["--inject-real-ancestors-from-ts", inject_real_ancestors_from_ts_fn])
+                if shared_recombinations:
+                    cmd.append("--shared-recombinations")
+                cpu_time, memory_use = time_cmd(cmd)
+                ts_simplified = msprime.load(ts_out.name)
+            return ts_simplified, cpu_time, memory_use
+        except ValueError as e:
+            # temporary hack around https://github.com/tskit-dev/tsinfer/issues/44
+            if "No inference sites" in str(e):
+                logging.warning("No inference sites in {}. Skipping".format(sample_fn))
+                return None, None, None
+            else:
+                raise
 
     @staticmethod
     def run_fastarg(file_name, seq_length, seed):
@@ -1580,7 +1588,7 @@ class FastargTsinferComparisonDataset(AllToolsPerformanceDataset):
     The performance of the various programs in terms of running time and memory usage
     """
     name = "fastarg_tsinfer_comparison"
-    default_replicates = 10
+    default_replicates = 20
     default_seed = 1000
     tools_and_metrics = {FASTARG:[], TSINFER:[]} # Everything else is too slow
     fixed_sample_size = 10000

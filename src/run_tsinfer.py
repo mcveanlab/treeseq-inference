@@ -61,6 +61,8 @@ def main():
         logging.warning("TSinfer now simply ignores error probabilities. You can omit this parameter")
 
     sample_data = tsinfer.load(args.samples)
+    if all(False for _ in sample_data.genotypes(inference_sites=True)):
+        raise ValueError("No inference sites")
     if args.inject_real_ancestors_from_ts is not None:
         ancestor_data = tsinfer.AncestorData.initialise(sample_data, compressor=None)
         orig_ts = msprime.load(args.inject_real_ancestors_from_ts)
