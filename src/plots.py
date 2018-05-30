@@ -498,17 +498,15 @@ class InferenceRunner(object):
         if skip_infer:
             return {}
         #Now perform the inference
-        time = memory = fs = counts = None
+        time = memory = fs = counts = inferred_ts = None
         logging.debug("loading samples for ts inference from {}".format(
             samples_fn))
-        inferred_ts, time, memory = self.run_tsinfer(
-            samples_fn, self.row.length, shared_recombinations, self.num_threads,
-            #uncomment below to inject real ancestors - will need adjusting for subsampling
-            #inject_real_ancestors_from_ts_fn = self.orig_sim_fn + ".hdf5",
-            )
-        if inferred_ts is None:
-            self.inferred_filenames = None
-        else:
+        try:
+            inferred_ts, time, memory = self.run_tsinfer(
+                samples_fn, self.row.length, shared_recombinations, self.num_threads,
+                #uncomment below to inject real ancestors - will need adjusting for subsampling
+                #inject_real_ancestors_from_ts_fn = self.orig_sim_fn + ".hdf5",
+                )
             if restrict_sample_size_comparison is not None:
                 if len(self.metric_params):
                     with open(construct_tsinfer_name(self.sample_fn, None, shared_recombinations, err) + ".nex", "w+") as out:
@@ -530,6 +528,13 @@ class InferenceRunner(object):
                     inferred_ts.write_nexus_trees(
                         out, tree_labels_between_variants=tree_labels_between_variants)
             unique, counts = np.unique(np.array([e.parent for e in inferred_ts.edges()], dtype="u8"), return_counts=True)
+        except ValueError as e:
+            # temporary hack around https://github.com/tskit-dev/tsinfer/issues/44
+            if "No inference sites" in str(e):
+                logging.warning("No inference sites in {}. Skipping".format(samples_fn))
+                self.inferred_filenames = None
+            else:
+                raise            
         return  {
             save_stats['cpu']: time,
             save_stats['mem']: memory,
@@ -542,20 +547,28 @@ class InferenceRunner(object):
 
     def __run_fastARG(self, skip_infer=False):
         inference_seed = self.row.seed  # TODO do we need to specify this separately?
-        self.inferred_filenames = [construct_fastarg_name(self.sample_fn, inference_seed)]
         if skip_infer:
             return {}
         infile = self.sample_fn + ".hap"
-        time = memory = None
+        time = memory = edges = fs = None
         logging.debug("reading: {} for fastARG inference".format(infile))
-        inferred_ts, time, memory = self.run_fastarg(infile, self.row.length, inference_seed)
-        edges = inferred_ts.num_edges
-        inferred_ts.dump(self.inferred_filenames[0] + ".hdf5")
-        fs = os.path.getsize(self.inferred_filenames[0] + ".hdf5")
-        if len(self.metric_params):
-            for fn in self.inferred_filenames:
-                with open(fn + ".nex", "w+") as out:
-                    inferred_ts.write_nexus_trees(out)
+        try:
+            inferred_ts, time, memory = self.run_fastarg(infile, self.row.length, inference_seed)
+            edges = inferred_ts.num_edges
+            self.inferred_filenames = [construct_fastarg_name(self.sample_fn, inference_seed)]
+            inferred_ts.dump(self.inferred_filenames[0] + ".hdf5")
+            fs = os.path.getsize(self.inferred_filenames[0] + ".hdf5")
+            if len(self.metric_params):
+                for fn in self.inferred_filenames:
+                    with open(fn + ".nex", "w+") as out:
+                        inferred_ts.write_nexus_trees(out)
+        except ValueError as e:
+            # temporary hack around https://github.com/tskit-dev/tsinfer/issues/44
+            if "0 samples;" in str(e):
+                logging.warning("No samples in {}. Skipping".format(infile))
+                self.inferred_filenames = None
+            else:
+                raise
         return {
             save_stats['cpu']: time,
             save_stats['mem']: memory,
@@ -620,53 +633,64 @@ class InferenceRunner(object):
         if skip_infer:
             #must get the iteration IDs off the row
             if self.row.ARGweaver_iterations:
-                iteration_ids = self.row.ARGweaver_iterations.split(",")
-        else:
-            infile = self.sample_fn + ".sites"
-            time = memory = None
-            filesizes = []
-            edges = []
-            stats_file = None
-            logging.debug("reading: {} for ARGweaver inference".format(infile))
+                for it in self.row.ARGweaver_iterations.split(","):
+                    self.inferred_filenames.append(
+                        construct_argweaver_name(self.sample_fn, burnin, n_timesteps, inference_seed, it))
+            return {}
+        infile = self.sample_fn + ".sites"
+        time = memory = None
+        filesizes = []
+        edges = []
+        iteration_ids = []
+        logging.debug("reading: {} for ARGweaver inference".format(infile))
+        try:
             iteration_ids, stats_file, time, memory = self.run_argweaver(
                 infile, ARGweaver_Ne, self.row.recombination_rate, self.row.mutation_rate,
                 out_fn, inference_seed, n_out_samples, sample_step, burnin, n_timesteps,
                 verbose = logging.getLogger().isEnabledFor(logging.DEBUG))
-        for it in iteration_ids:
-            base = construct_argweaver_name(self.sample_fn, burnin, n_timesteps, inference_seed, it)
-            self.inferred_filenames.append(base)
-            if skip_infer==False:
-                if len(self.metric_params):
-                    with open(base + ".nex", "w+") as out:
-                        ts_ARGweaver.ARGweaver_smc_to_nexus(base+".smc.gz", out)
-                try:
-                    with open(base+".TSnodes", "w+") as ts_nodes, \
-                            open(base+".TSedges", "w+") as ts_edges:
-                        ts_ARGweaver.ARGweaver_smc_to_ts_txts(
-                            smc2arg_executable, base, ts_nodes, ts_edges)
-                        inferred_ts = msprime.load_text(
-                            nodes=ts_nodes, edges=ts_edges).simplify()
-                        inferred_ts.dump(base + ".hdf5")
-                        filesizes.append(os.path.getsize(base + ".hdf5"))
-                        edges.append(inferred_ts.num_edges)
-                except ts_ARGweaver.CyclicalARGError as e:
-                    logging.warning("Cyclical ARG Exception when converting {}: {}".format(
-                        base + ".msp", e))
-        if skip_infer:
-            return {}
-        else:
-            return {
-                save_stats['cpu']: time,
-                save_stats['mem']: memory,
-                save_stats['n_edges']: statistics.mean(edges) if len(edges) else None,
-                save_stats['ts_filesize']: statistics.mean(filesizes) if len(filesizes) else None,
-                "iterations": ",".join(iteration_ids),
-            }
+            for it in iteration_ids:
+                base = construct_argweaver_name(self.sample_fn, burnin, n_timesteps, inference_seed, it)
+                self.inferred_filenames.append(base)
+                if skip_infer==False:
+                    if len(self.metric_params):
+                        with open(base + ".nex", "w+") as out:
+                            ts_ARGweaver.ARGweaver_smc_to_nexus(base+".smc.gz", out)
+                    try:
+                        with open(base+".TSnodes", "w+") as ts_nodes, \
+                                open(base+".TSedges", "w+") as ts_edges:
+                            ts_ARGweaver.ARGweaver_smc_to_ts_txts(
+                                smc2arg_executable, base, ts_nodes, ts_edges)
+                            inferred_ts = msprime.load_text(
+                                nodes=ts_nodes, edges=ts_edges).simplify()
+                            inferred_ts.dump(base + ".hdf5")
+                            filesizes.append(os.path.getsize(base + ".hdf5"))
+                            edges.append(inferred_ts.num_edges)
+                    except ts_ARGweaver.CyclicalARGError as e:
+                        logging.warning("Cyclical ARG Exception when converting {}: {}".format(
+                            base + ".msp", e))
+        except ValueError as e:
+            if 'src/argweaver/sample_thread.cpp:517:' in str(e):
+                logging.warning("Hit argweaver bug " \
+                "https://github.com/mcveanlab/treeseq-inference/issues/25" \
+                " for {}. Skipping".format(out_fn))
+            elif "Assertion `trans[path[i]] != 0.0' failed" in str(e):
+                logging.warning("Hit argweaver bug " \
+                "https://github.com/mcveanlab/treeseq-inference/issues/42" \
+                " for {}. Skipping".format(out_fn))
+            else:
+                raise
+
+        return {
+            save_stats['cpu']: time,
+            save_stats['mem']: memory,
+            save_stats['n_edges']: statistics.mean(edges) if len(edges) else None,
+            save_stats['ts_filesize']: statistics.mean(filesizes) if len(filesizes) else None,
+            "iterations": ",".join(iteration_ids),
+        }
 
     @staticmethod
     def run_tsinfer(sample_fn, length,
         shared_recombinations, num_threads=1, inject_real_ancestors_from_ts_fn=None, rho=None, error_probability=None):
-        try:
             with tempfile.NamedTemporaryFile("w+") as ts_out:
                 cmd = [sys.executable, tsinfer_executable, sample_fn, "--length", str(int(length))]
                 if rho is not None:
@@ -683,13 +707,6 @@ class InferenceRunner(object):
                 cpu_time, memory_use = time_cmd(cmd)
                 ts_simplified = msprime.load(ts_out.name)
             return ts_simplified, cpu_time, memory_use
-        except ValueError as e:
-            # temporary hack around https://github.com/tskit-dev/tsinfer/issues/44
-            if "No inference sites" in str(e):
-                logging.warning("No inference sites in {}. Skipping".format(sample_fn))
-                return None, None, None
-            else:
-                raise
 
     @staticmethod
     def run_fastarg(file_name, seq_length, seed):
@@ -745,70 +762,56 @@ class InferenceRunner(object):
         cpu_time = []
         memory_use = []
         burn_prefix = None
-        try:
-            exe = [ARGweaver_executable, '--sites', sites_file.name if hasattr(sites_file, "name") else sites_file,
-                   '--popsize', str(Ne),
-                   '--recombrate', str(recombination_rate),
-                   '--mutrate', str(mutation_rate),
-                   '--ntimes', str(ntimes),
-                   '--overwrite']
-            if not verbose:
-                exe += ['--quiet']
-            if seed is not None:
-                exe += ['--randseed', str(int(seed))]
-            if burnin_iterations > 0:
-                burn_in = str(int(burnin_iterations))
-                burn_prefix = path_prefix+"_burn"
-                logging.info("== Burning in ARGweaver MCMC using {} steps ==".format(burn_in))
-                logging.debug("== ARGweaver burnin command is {} ==".format(" ".join(exe)))
-                c, m = time_cmd(exe + ['--iters', burn_in,
-                                       '--sample-step', burn_in,
-                                       '--output', burn_prefix])
-                cpu_time.append(c)
-                memory_use.append(m)
-                #if burn_in, read from the burn in arg file, rather than the original .sites
-                exe += ['--arg', burn_prefix+"."+ burn_in +".smc.gz"]
-            else:
-                exe += ['--sites', sites_file]
-
-            new_prefix = path_prefix + "_i" #we append a '_i' to mark iteration number
-            iterations = int(sample_step * (MSMC_samples-1))
-            exe += ['--output', new_prefix]
-            exe += ['--iters', str(iterations)]
-            exe += ['--sample-step', str(int(sample_step))]
-            logging.info("== Running ARGweaver for {} steps to collect {} samples ==".format( \
-                int(iterations), MSMC_samples))
-            logging.debug("== ARGweaver command is {} ==".format(" ".join(exe)))
-            c, m = time_cmd(exe)
+        exe = [ARGweaver_executable, '--sites', sites_file.name if hasattr(sites_file, "name") else sites_file,
+               '--popsize', str(Ne),
+               '--recombrate', str(recombination_rate),
+               '--mutrate', str(mutation_rate),
+               '--ntimes', str(ntimes),
+               '--overwrite']
+        if not verbose:
+            exe += ['--quiet']
+        if seed is not None:
+            exe += ['--randseed', str(int(seed))]
+        if burnin_iterations > 0:
+            burn_in = str(int(burnin_iterations))
+            burn_prefix = path_prefix+"_burn"
+            logging.info("== Burning in ARGweaver MCMC using {} steps ==".format(burn_in))
+            logging.debug("== ARGweaver burnin command is {} ==".format(" ".join(exe)))
+            c, m = time_cmd(exe + ['--iters', burn_in,
+                                   '--sample-step', burn_in,
+                                   '--output', burn_prefix])
             cpu_time.append(c)
             memory_use.append(m)
+            #if burn_in, read from the burn in arg file, rather than the original .sites
+            exe += ['--arg', burn_prefix+"."+ burn_in +".smc.gz"]
+        else:
+            exe += ['--sites', sites_file]
 
-            smc_prefix = new_prefix + "." #the arg-sample program adds .iteration_num
-            saved_iterations = [f[len(smc_prefix):-7] for f in glob.glob(smc_prefix + "*" + ".smc.gz")]
-            new_stats_file_name = path_prefix+".stats"
+        new_prefix = path_prefix + "_i" #we append a '_i' to mark iteration number
+        iterations = int(sample_step * (MSMC_samples-1))
+        exe += ['--output', new_prefix]
+        exe += ['--iters', str(iterations)]
+        exe += ['--sample-step', str(int(sample_step))]
+        logging.info("== Running ARGweaver for {} steps to collect {} samples ==".format( \
+            int(iterations), MSMC_samples))
+        logging.debug("== ARGweaver command is {} ==".format(" ".join(exe)))
+        c, m = time_cmd(exe)
+        cpu_time.append(c)
+        memory_use.append(m)
 
-            #concatenate all the stats together
-            with open(new_stats_file_name, "w+") as stats:
-                if burn_prefix:
-                    shutil.copyfileobj(open(burn_prefix + ".stats"), stats)
-                    print("\n", file=stats)
-                shutil.copyfileobj(open(new_prefix + ".stats"), stats)
-            #To Do: translate these to treesequence objects, so that e.g. edges can be calculated
-            #as https://github.com/mdrasmus/argweaver/issues/20 is now closed
-            return saved_iterations, new_stats_file_name, sum(cpu_time), max(memory_use)
-        except ValueError as e:
-            if 'src/argweaver/sample_thread.cpp:517:' in str(e):
-                logging.warning("Hit argweaver bug " \
-                "https://github.com/mcveanlab/treeseq-inference/issues/25" \
-                " for {}. Skipping".format(path_prefix))
-                return [], "NA", None, None
-            elif "Assertion `trans[path[i]] != 0.0' failed" in str(e):
-                logging.warning("Hit argweaver bug " \
-                "https://github.com/mcveanlab/treeseq-inference/issues/42" \
-                " for {}. Skipping".format(path_prefix))
-                return [], "NA", None, None
-            else:
-                raise
+        smc_prefix = new_prefix + "." #the arg-sample program adds .iteration_num
+        saved_iterations = [f[len(smc_prefix):-7] for f in glob.glob(smc_prefix + "*" + ".smc.gz")]
+        new_stats_file_name = path_prefix+".stats"
+
+        #concatenate all the stats together
+        with open(new_stats_file_name, "w+") as stats:
+            if burn_prefix:
+                shutil.copyfileobj(open(burn_prefix + ".stats"), stats)
+                print("\n", file=stats)
+            shutil.copyfileobj(open(new_prefix + ".stats"), stats)
+        #To Do: translate these to treesequence objects, so that e.g. edges can be calculated
+        #as https://github.com/mdrasmus/argweaver/issues/20 is now closed
+        return saved_iterations, new_stats_file_name, sum(cpu_time), max(memory_use)
 
 
 def infer_worker(work):
