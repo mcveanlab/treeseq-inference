@@ -581,7 +581,11 @@ class InferenceRunner(object):
             #allow the RentPlus error described at https://github.com/mcveanlab/treeseq-inference/issues/45
             if "main.Main.findCompatibleRegion(Main.java:660)" in str(e):
                 logging.warning("RENTplus bug hit"\
-                    " (https://github.com/mcveanlab/treeseq-inference/issues/45),"\
+                    " (https://github.com/SajadMirzaei/RentPlus/issues/5),"\
+                    " aborting this replicate.")
+            elif "main.Main.makeDistanceMatrices(Main.java:228)":
+                logging.warning("RENTplus bug hit"\
+                    " (https://github.com/SajadMirzaei/RentPlus/issues/6),"\
                     " aborting this replicate.")
             else:
                 raise
