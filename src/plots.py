@@ -163,40 +163,38 @@ def generate_samples(ts, filename, real_error_rate=0):
     error_param = real_error_rate * math.log(ts.num_samples)
     record_rate = logging.getLogger().isEnabledFor(logging.INFO)
     n_variants = bits_flipped = 0
-    try:
-        with tsinfer.SampleData(path=filename + ".samples",
-            sequence_length=ts.sequence_length) as sample_data:
-    
-            for v in ts.variants():
-                n_variants += 1
-                if error_param <=0:
-                    sample_data.add_site(
-                        position=v.site.position, alleles=v.alleles,
-                        genotypes=v.genotypes)
-                else:
-                    #make new genotypes with error
-                    # Reject any columns that have no 1s or no zeros.
-                    # Unless the original also has them, as occasionally we have
-                    # some sims (e.g. under selection) where a variant is fixed
-                    while True:
-                        genotypes = make_errors(v.genotypes, error_param)
-                        s = np.sum(genotypes)
-                        if 0 < s < ts.sample_size:
-                            break
-                        if s == np.sum(v.genotypes):
-                            break
-                    if record_rate:
-                        bits_flipped += np.sum(np.logical_xor(genotypes, v.genotypes))
-                    sample_data.add_site(
-                        position=v.site.position, alleles=v.alleles,
-                        genotypes=genotypes)
-            if real_error_rate>0:
-                logging.info("Error of {} injected into {}".format(real_error_rate, os.path.basename(filename))
-                    + ": actual error rate = {} (error param = {})".format(
-                        bits_flipped/(n_variants*ts.sample_size), error_param) if record_rate else "")
-    except:
-        logging.warning("Error generating samples for {} samples and {} sites".format(ts.num_samples, ts.num_sites))
-        raise
+    assert ts.num_sites != 0
+    sample_data = tsinfer.SampleData(path=filename + ".samples", sequence_length=ts.sequence_length)
+
+    for v in ts.variants():
+        n_variants += 1
+        if error_param <=0:
+            sample_data.add_site(
+                position=v.site.position, alleles=v.alleles,
+                genotypes=v.genotypes)
+        else:
+            #make new genotypes with error
+            # Reject any columns that have no 1s or no zeros.
+            # Unless the original also has them, as occasionally we have
+            # some sims (e.g. under selection) where a variant is fixed
+            while True:
+                genotypes = make_errors(v.genotypes, error_param)
+                s = np.sum(genotypes)
+                if 0 < s < ts.sample_size:
+                    break
+                if s == np.sum(v.genotypes):
+                    break
+            if record_rate:
+                bits_flipped += np.sum(np.logical_xor(genotypes, v.genotypes))
+            sample_data.add_site(
+                position=v.site.position, alleles=v.alleles,
+                genotypes=genotypes)
+    if real_error_rate>0:
+        logging.info("Error of {} injected into {}".format(real_error_rate, os.path.basename(filename))
+            + ": actual error rate = {} (error param = {})".format(
+                bits_flipped/(n_variants*ts.sample_size), error_param) if record_rate else "")
+    sample_data.finalise(num_samples=ts.num_samples)
+
     return sample_data
 
 def mk_sim_name(sample_size, Ne, length, recombination_rate, mutation_rate, seed, 
