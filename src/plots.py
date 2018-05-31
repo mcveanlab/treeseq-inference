@@ -536,6 +536,9 @@ class InferenceRunner(object):
             if "No inference sites" in str(e):
                 logging.warning("No inference sites in {}. Skipping".format(samples_fn))
                 self.inferred_filenames = None
+            elif "No samples file" in  str(e):
+                logging.warning("No samples file at {}. Skipping".format(samples_fn))
+                self.inferred_filenames = None
             else:
                 raise            
         return  {

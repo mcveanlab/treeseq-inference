@@ -60,6 +60,8 @@ def main():
     if args.error_probability is not None:
         logging.warning("TSinfer now simply ignores error probabilities. You can omit this parameter")
 
+    if not os.path.isfile(args.samples):
+        raise ValueError("No samples file")
     sample_data = tsinfer.load(args.samples)
     if all(False for _ in sample_data.genotypes(inference_sites=True)):
         raise ValueError("No inference sites")
