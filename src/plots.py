@@ -1636,7 +1636,7 @@ class SubsamplingDataset(Dataset):
     tools_and_metrics = {
         TSINFER: [METRICS_LOCATION_VARIANTS| METRICS_POLYTOMIES_LEAVE, METRICS_LOCATION_VARIANTS | METRICS_POLYTOMIES_BREAK]
     }
-    default_replicates = 50
+    default_replicates = 100
     default_seed = 123
 
     #params that change BETWEEN simulations. Keys should correspond
@@ -2300,11 +2300,9 @@ class MetricsSubsamplingFigure(Figure):
         metrics = ARG_metrics.get_metric_names()
         topology_only_metrics = [m for m in metrics if not m.startswith('w')]
         for error_rate in df[ERROR_COLNAME].unique():
-            print(len(topology_only_metrics),len(lengths))
             fig, axes = pyplot.subplots(len(topology_only_metrics),
                 len(lengths), figsize=(12, 16))
             for j, metric in enumerate(topology_only_metrics):
-                print(metric)
                 for k, length in enumerate(lengths):
                     ax = axes[j][k]
                     if j == 0:
@@ -2313,7 +2311,6 @@ class MetricsSubsamplingFigure(Figure):
                         ax.set_ylabel(metric + " metric")
                     if j == len(topology_only_metrics) - 1:
                         ax.set_xlabel("Original sample size")
-                    print(self.tools_and_metrics_params)
                     for tool_and_metrics_param, setting in self.tools_and_metrics_params.items():
                         colname = tool_and_metrics_param + "_" + metric
                         if colname in df.columns \
