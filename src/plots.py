@@ -1390,20 +1390,23 @@ class Dataset(object):
             if not all(p.is_integer() for p in pos):
                 raise ValueError("Variant positions are not all integers")
         filename = add_error_param_to_name(filename, error_rate)
-        logging.debug("Saving samples to {}".format(filename))
-        s = generate_samples(ts, filename, error_rate)
-        if FASTARG in self.tools_and_metrics:
-            logging.debug("writing samples to {}.hap for fastARG".format(filename))
-            with open(filename+".hap", "w+") as file_in:
-                ts_fastARG.samples_to_fastARG_in(s, file_in)
-        if ARGWEAVER in self.tools_and_metrics:
-            logging.debug("writing samples to {}.sites for ARGweaver".format(filename))
-            with open(filename+".sites", "w+") as file_in:
-                ts_ARGweaver.samples_to_ARGweaver_in(s, file_in, infinite_sites=infinite_sites)
-        if RENTPLUS in self.tools_and_metrics:
-            logging.debug("writing samples to {}.dat for RentPlus".format(filename))
-            with open(filename+".dat", "wb+") as file_in:
-                ts_RentPlus.samples_to_RentPlus_in(s, file_in, infinite_sites=infinite_sites)
+        if ts.num_sites == 0:
+            logging.warning("No sites to save for {}".format(filename))
+        else:
+            logging.debug("Saving samples to {}".format(filename))
+            s = generate_samples(ts, filename, error_rate)
+            if FASTARG in self.tools_and_metrics:
+                logging.debug("writing samples to {}.hap for fastARG".format(filename))
+                with open(filename+".hap", "w+") as file_in:
+                    ts_fastARG.samples_to_fastARG_in(s, file_in)
+            if ARGWEAVER in self.tools_and_metrics:
+                logging.debug("writing samples to {}.sites for ARGweaver".format(filename))
+                with open(filename+".sites", "w+") as file_in:
+                    ts_ARGweaver.samples_to_ARGweaver_in(s, file_in, infinite_sites=infinite_sites)
+            if RENTPLUS in self.tools_and_metrics:
+                logging.debug("writing samples to {}.dat for RentPlus".format(filename))
+                with open(filename+".dat", "wb+") as file_in:
+                    ts_RentPlus.samples_to_RentPlus_in(s, file_in, infinite_sites=infinite_sites)
 
 
 
