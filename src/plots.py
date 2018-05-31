@@ -165,7 +165,6 @@ def generate_samples(ts, filename, real_error_rate=0):
     n_variants = bits_flipped = 0
     assert ts.num_sites != 0
     sample_data = tsinfer.SampleData(path=filename + ".samples", sequence_length=ts.sequence_length)
-
     for v in ts.variants():
         n_variants += 1
         if error_param <=0:
@@ -193,8 +192,7 @@ def generate_samples(ts, filename, real_error_rate=0):
         logging.info("Error of {} injected into {}".format(real_error_rate, os.path.basename(filename))
             + ": actual error rate = {} (error param = {})".format(
                 bits_flipped/(n_variants*ts.sample_size), error_param) if record_rate else "")
-    sample_data.finalise(num_samples=ts.num_samples)
-
+    sample_data.finalise()
     return sample_data
 
 def mk_sim_name(sample_size, Ne, length, recombination_rate, mutation_rate, seed, 
@@ -1014,7 +1012,9 @@ class Dataset(object):
                 #We must also get the locations of variants out of this file, so we can compare
                 #metrics fairly (i.e. higher resolution inference with more samples doesn't
                 #have an advantage in getting more information to locate breakpoints
-                generate_samples(small_ts, cmp_fn)
+                #Note that we might accidentally create a TS with no valid sites here
+                if small_ts.num_sites:
+                    generate_samples(small_ts, cmp_fn)
             else:
                 ts.save_nexus_trees(base_fn +".nex")
         return_value = {}
