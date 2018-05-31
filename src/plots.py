@@ -2055,19 +2055,27 @@ class MetricAllToolsFigure(Figure):
                 group = df_s.groupby(["mutation_rate"])
                 mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
                 for tool_and_metrics_param,setting in self.tools_and_metrics_params.items():
-                    if getattr(self, 'error_bars', None):
-                        yerr=[m['sem'][tool_and_metrics_param + "_" + self.metric] for m in mean_sem]
-                    else:
-                        yerr = None
+                    if self.metric.startswith("RF") \
+                        and tool_and_metrics_param.startswith(TSINFER) \
+                        and (int(tool_and_metrics_param.rsplit("_",1)[1]) & METRICS_POLYTOMIES_BREAK == 0):
+                            # RF metrics are not well behaved for trees with polytomies (i.e. tsinfer trees)
+                            # so we should omit tsinfer cases where METRICS_POLYTOMIES_BREAK == 0
+                        continue
                     ax.errorbar(
                         [m['mu'] for m in mean_sem],
                         [m['mean'][tool_and_metrics_param + "_" + self.metric] for m in mean_sem],
-                        yerr=yerr,
+                        yerr=[m['sem'][tool_and_metrics_param + "_" + self.metric] for m in mean_sem] \
+                             if getattr(self, 'error_bars', False) else None,
                         linestyle=setting["linestyle"],
                         fillstyle=fillstyle,
                         color=setting["col"],
                         marker=setting["mark"],
                         elinewidth=1)
+            ax.set_ylim(ymin=0)
+            ax.axvline(x=df.recombination_rate.unique()[0], 
+                color = 'gray', zorder=-1, linestyle=":", linewidth=1)
+            ax.text(df.recombination_rate.unique()[0], ax.get_ylim()[1]/40, r'$\mu=\rho$',
+                va = "bottom",  ha="right", color = 'gray', rotation=90)
 
         # Create legends from custom artists
         artists = [
@@ -2083,10 +2091,10 @@ class MetricAllToolsFigure(Figure):
         if len(sample_sizes)>1:
             artists = [
                 pyplot.Line2D(
-                    (0,0),(0,0), color="black", linestyle=linestyle, linewidth=2)
-                for linestyle in linestyles]
+                    (0,0),(0,0), color="black", fillstyle=fillstyle, linewidth=2)
+                for n, fillstyle in zip(sample_sizes, fillstyles)]
             axes[-1].legend(
-                artists, ["Sample size = {}".format(n) for n in sample_sizes],
+                artists, ["Sample size = {}".format(n) for n, fillstyle in zip(sample_sizes, fillstyles)],
                 loc="upper right")
         self.savefig(fig)
 
@@ -2189,6 +2197,7 @@ class MetricsAllToolsAccuracySweepFigure(Figure):
     """
     datasetClass = AllToolsAccuracyWithSelectiveSweepDataset
     name = "metrics_all_tools_accuracy_sweep"
+    error_bars = True
 
     def plot(self):
         df = self.dataset.data
@@ -2203,11 +2212,11 @@ class MetricsAllToolsAccuracySweepFigure(Figure):
             fig, axes = pyplot.subplots(len(topology_only_metrics),
                 len(output_freqs), figsize=(20, 20))
             fig.suptitle("Error-rate = {}".format(error_rate))
-            linestyles = ["-", "-.", ":"]
+            fillstyles = ['none', 'full']
             for j, metric in enumerate(topology_only_metrics):
-                for k, output_data in output_freqs.iterrows():
-                    freq = output_data[0]
-                    gens = output_data[1]
+                for k, output_data in enumerate(output_freqs.itertuples()):
+                    freq = output_data.output_frequency
+                    gens = output_data.output_after_generations
                     ax = axes[j][k]
                     ax.set_xscale('log')
                     if j == 0:
@@ -2217,7 +2226,7 @@ class MetricsAllToolsAccuracySweepFigure(Figure):
                         ax.set_ylabel(metric + " metric")
                     if j == len(topology_only_metrics) - 1:
                         ax.set_xlabel("Mutation rate")
-                    for n, linestyle in zip(sample_sizes, linestyles):
+                    for n, fillstyle in zip(sample_sizes, fillstyles):
                         df_s = df[np.logical_and.reduce((
                             df.sample_size == n,
                             df[ERROR_COLNAME] == error_rate,
@@ -2226,34 +2235,49 @@ class MetricsAllToolsAccuracySweepFigure(Figure):
                         group = df_s.groupby(["mutation_rate"])
                         #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
                         mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-                        for tool, setting in self.tools.items():
-                            if all(np.isnan(m['mean'][tool + "_" + metric]) for m in mean_sem):
+                        for tool_and_metrics_param, setting in self.tools_and_metrics_params.items():
+                            if metric.startswith("RF") \
+                                and tool_and_metrics_param.startswith(TSINFER) \
+                                and (int(tool_and_metrics_param.rsplit("_",1)[1]) & METRICS_POLYTOMIES_BREAK == 0):
+                                    # RF metrics are not well behaved for trees with polytomies (i.e. tsinfer trees)
+                                    # so we should omit tsinfer cases where METRICS_POLYTOMIES_BREAK == 0
+                                continue
+                            if all(np.isnan(m['mean'][tool_and_metrics_param + "_" + metric]) for m in mean_sem):
                                 #don't plot if all NAs
                                 continue
                             ax.errorbar(
                                 [m['mu'] for m in mean_sem],
-                                [m['mean'][tool + "_" + metric] for m in mean_sem],
-                                yerr=[m['sem'][tool + "_" + metric] for m in mean_sem] \
-                                    if getattr(self, 'error_bars') else None,
+                                [m['mean'][tool_and_metrics_param + "_" + metric] for m in mean_sem],
+                                yerr=[m['sem'][tool_and_metrics_param + "_" + metric] for m in mean_sem] \
+                                    if getattr(self, 'error_bars', False) else None,
                                 color=setting["col"],
-                                linestyle= linestyle,
-                                marker=setting["mark"], fillstyle='none',
+                                linestyle=setting["linestyle"],
+                                marker=setting["mark"],
+                                fillstyle=fillstyle,
                                 elinewidth=1)
+                    ax.set_ylim(ymin=0)
+                    ax.axvline(x=df.recombination_rate.unique()[0], 
+                        color = 'gray', zorder=-1, linestyle=":", linewidth=1)
+                    ax.text(df.recombination_rate.unique()[0], ax.get_ylim()[1]/40, r'$\mu=\rho$',
+                        va = "bottom",  ha="right", color = 'gray', rotation=90)
 
             # Create legends from custom artists
             artists = [
-                pyplot.Line2D((0,1),(0,0), color= setting["col"],
-                    marker= setting["mark"], linestyle='')
-                for tool,setting in self.tools.items()]
+                pyplot.Line2D((0,1),(0,0), color= setting["col"], fillstyle=fillstyles[0],
+                    marker= setting["mark"], linestyle=setting["linestyle"])
+                for tool,setting in self.tools_and_metrics_params.items()]
+            tool_labels = [(l.replace("_0", "").replace("_2"," breaking polytomies") if l.startswith(TSINFER) else l.replace("_0", "")) 
+                for l in self.tools_and_metrics_params.keys()]
             first_legend = axes[0][0].legend(
-                artists, self.tools.keys(), numpoints=3, loc="upper right")
-            artists = [
-                pyplot.Line2D(
-                    (0,0),(0,0), color="black", linestyle=linestyle, linewidth=2)
-                for linestyle in linestyles]
-            axes[1][0].legend(
-                artists, ["Sample size = {}".format(n) for n in sample_sizes],
-                loc="upper right")
+                artists, tool_labels, numpoints=1, labelspacing=0.1, loc="upper right")
+            if len(sample_sizes)>1:
+                artists = [
+                    pyplot.Line2D(
+                        (0,0),(0,0), color="black", fillstyle=fillstyle, linewidth=2)
+                    for n, fillstyle in zip(sample_sizes, fillstyles)]
+                axes[0][-1].legend(
+                    artists, ["Sample size = {}".format(n) for n, fillstyle in zip(sample_sizes, fillstyles)],
+                    loc="upper right")
             figures.append(fig)
         self.savefig(*figures)
 
@@ -2459,7 +2483,7 @@ class TsinferPerformanceLengthSamplesFigure(Figure):
             ax1.errorbar(
                 [m['mu'] for m in mean_sem],
                 [m['mean'][self.plotted_column] for m in mean_sem],
-                yerr=[m['sem'][self.plotted_column] for m in mean_sem] if hasattr(self, 'error_bars') else None,
+                yerr=[m['sem'][self.plotted_column] for m in mean_sem] if getattr(self, 'error_bars', False) else None,
                 linestyle= recombination_linestyles[rho_index],
                 color=inferred_colour,
                 #elinewidth=1
@@ -2479,7 +2503,7 @@ class TsinferPerformanceLengthSamplesFigure(Figure):
             ax2.errorbar(
                 [m['mu'] for m in mean_sem],
                 [m['mean'][self.plotted_column] for m in mean_sem],
-                yerr=[m['sem'][self.plotted_column] for m in mean_sem] if hasattr(self, 'error_bars') else None,
+                yerr=[m['sem'][self.plotted_column] for m in mean_sem] if getattr(self, 'error_bars', False) else None,
                 linestyle= recombination_linestyles[rho_index],
                 color=inferred_colour,
                 #elinewidth=1
