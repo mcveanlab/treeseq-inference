@@ -443,7 +443,11 @@ class InferenceRunner(object):
             #rather than an average over multiple inferred nexus files, and do the averaging in python
                 if metric & METRICS_LOCATION_VARIANTS:
                     #get positions from the samples store, for use in metric calcs
-                    positions = tsinfer.SampleData.load(path=self.cmp_fn + ".samples").sites_position[:].tolist()
+                    try:
+                        positions = tsinfer.SampleData.load(path=self.cmp_fn + ".samples").sites_position[:].tolist()
+                    except tsinfer.exceptions.FileFormatError:
+                        #no such file exists, could be a case with no sites
+                        continue
                 else:
                     positions = None
                 source_nexus_file = self.cmp_fn + ".nex"
