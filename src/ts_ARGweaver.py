@@ -91,7 +91,7 @@ def ts_to_ARGweaver_in(ts, ARGweaver_filehandle):
     ARGweaver_filehandle.flush()
     ARGweaver_filehandle.seek(0)
 
-def samples_to_ARGweaver_in(sample_data, ARGweaver_filehandle, infinite_sites=True):
+def samples_to_ARGweaver_in(sample_data, ARGweaver_filehandle, force_integer_positions=False):
     """
     Takes an variant matrix, and outputs a file in .sites format, suitable for input
     into ARGweaver (see http://mdrasmus.github.io/argweaver/doc/#sec-file-sites)
@@ -100,8 +100,8 @@ def samples_to_ARGweaver_in(sample_data, ARGweaver_filehandle, infinite_sites=Tr
     all bases). Assuming adjacent sites are treated independently, we convert variant
     format (0,1) to sequence format (A, T, G, C) by simply converting 0->A and 1->T
 
-    if infinite_sites==False, then use a basic discretising function, which simply rounds
-    upwards to the nearest int, ANDing the results if 2 or more variants end up at the same
+    if force_integer_positions==True, then use a basic discretising function, which simply rounds
+    upwards to the nearest int, toggling the results if 2 or more variants end up at the same
     integer position.
 
     Note that ARGweaver uses position coordinates (1,N) - i.e. (0,N].
@@ -111,7 +111,7 @@ def samples_to_ARGweaver_in(sample_data, ARGweaver_filehandle, infinite_sites=Tr
     print("\t".join(["REGION", "chr", "1", str(sample_data.sequence_length)]), file=ARGweaver_filehandle)
     
     position = sample_data.sites_position[:] #decompress all in one go to avoid sequential unpacking
-    if infinite_sites:
+    if not force_integer_positions:
         for id, genotype in sample_data.genotypes():
             print(position[id]+1, "".join(np.where(genotype==0,"A","T")),
                 sep="\t", file=ARGweaver_filehandle)

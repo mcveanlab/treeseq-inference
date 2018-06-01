@@ -6,7 +6,7 @@ import numpy as np
 import os.path
 import logging
     
-def samples_to_RentPlus_in(sample_data, RentPlus_filehandle, infinite_sites=True):
+def samples_to_RentPlus_in(sample_data, RentPlus_filehandle, integer_positions=False):
     """
     Takes a SampleData object, and outputs a file in .dat format, suitable for input 
     into RentPlus (see https://github.com/SajadMirzaei/RentPlus)
@@ -28,11 +28,11 @@ def samples_to_RentPlus_in(sample_data, RentPlus_filehandle, infinite_sites=True
     this is a pain when trying to merge adjacent genotypes
     """
     position = sample_data.sites_position[:] #decompress all in one go to avoid sequential unpacking
-    if infinite_sites:
+    if integer_positions == False:
         #normalize to between 0 and 1
         unique_positions = np.unique(position)
         assert unique_positions.shape[0] == sample_data.num_sites, \
-            'If infinite sites is assumed, positions need to be unique, but there are dups'
+            'If not using integer sites, positions need to be unique, but there are dups'
         print(" ".join([str(float(p)/sample_data.sequence_length) for p in unique_positions]))
         for id, haplotype in sample_data.haplotypes():
             print((genotypes + ord('0')).tobytes().decode(),file=RentPlus_filehandle)

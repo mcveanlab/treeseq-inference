@@ -152,7 +152,7 @@ def make_errors(g, p):
         w[samples] = errors
     return w
 
-def generate_samples(ts, filename, real_error_rate=0):
+def generate_samples(ts, filename, real_error_rate=0, force_integer_positions=False):
     """
     Generate a samples file from a simulated ts
     Samples may have bits flipped with a specified probability.
@@ -165,35 +165,53 @@ def generate_samples(ts, filename, real_error_rate=0):
     n_variants = bits_flipped = 0
     assert ts.num_sites != 0
     sample_data = tsinfer.SampleData(path=filename + ".samples", sequence_length=ts.sequence_length)
-    for v in ts.variants():
-        n_variants += 1
-        if error_param <=0:
-            sample_data.add_site(
-                position=v.site.position, alleles=v.alleles,
-                genotypes=v.genotypes)
-        else:
-            #make new genotypes with error
-            # Reject any columns that have no 1s or no zeros.
-            # Unless the original also has them, as occasionally we have
-            # some sims (e.g. under selection) where a variant is fixed
-            while True:
-                genotypes = make_errors(v.genotypes, error_param)
-                s = np.sum(genotypes)
-                if 0 < s < ts.sample_size:
-                    break
-                if s == np.sum(v.genotypes):
-                    break
-            if record_rate:
-                bits_flipped += np.sum(np.logical_xor(genotypes, v.genotypes))
-            sample_data.add_site(
-                position=v.site.position, alleles=v.alleles,
-                genotypes=genotypes)
+    if force_integer_positions:
+        for pos, group in itertools.groupby(ts.variants(), lambda v: math.floor(v.site.position)):
+            genotypes = alleles = None
+            for v in group:
+                assert alleles is None or v.alleles == alleles
+                genotypes = v.genotypes if genotypes is None else np.logical_and(genotypes, v.genotypes)
+                alleles = v.alleles
+            n_variants += 1
+            bits_flipped += add_to_sample_with_error(
+                sample_data, pos, alleles, genotypes, error_param, record_rate)
+    else:
+        for v in ts.variants():
+            n_variants += 1
+            bits_flipped += add_to_sample_with_error(
+                sample_data, v.sites.position, v.alleles, v.genotypes, error_param, record_rate)
+
     if real_error_rate>0:
         logging.info("Error of {} injected into {}".format(real_error_rate, os.path.basename(filename))
             + ": actual error rate = {} (error param = {})".format(
                 bits_flipped/(n_variants*ts.sample_size), error_param) if record_rate else "")
     sample_data.finalise()
     return sample_data
+
+def add_to_sample_with_error(sample_data, pos, alleles, genotypes, error_param, record_rate):
+    if error_param <=0:
+        sample_data.add_site(
+            position=pos, alleles=alleles,
+            genotypes=genotypes)
+    else:
+        #make new genotypes with error
+        # Reject any columns that have no 1s or no zeros.
+        # Unless the original also has them, as occasionally we have
+        # some sims (e.g. under selection) where a variant is fixed
+        while True:
+            new_genotypes = make_errors(genotypes, error_param)
+            s = np.sum(new_genotypes)
+            if 0 < s < genotypes.shape[0]:
+                break
+            if s == np.sum(genotypes):
+                break
+        sample_data.add_site(position=pos, alleles=alleles,genotypes=new_genotypes)
+        if record_rate:
+            #return bits flipped
+            return np.sum(np.logical_xor(new_genotypes, genotypes))
+    return 0
+    
+
 
 def mk_sim_name(sample_size, Ne, length, recombination_rate, mutation_rate, seed, 
     mut_seed=None, directory=None, tool="msprime",
@@ -1021,7 +1039,7 @@ class Dataset(object):
                 #have an advantage in getting more information to locate breakpoints
                 #Note that we might accidentally create a TS with no valid sites here
                 if small_ts.num_sites:
-                    generate_samples(small_ts, cmp_fn)
+                    generate_samples(small_ts, cmp_fn, force_integer_positions=True)
             else:
                 ts.save_nexus_trees(base_fn +".nex")
         return_value = {}
@@ -1043,12 +1061,12 @@ class Dataset(object):
                     ts.simplify(list(range(subsample))),
                     add_subsample_param_to_name(base_fn, subsample),
                     keyed_params.get('error_rate') or 0,
-                    infinite_sites=False)
+                    force_integer_positions=True)
             else:
                 self.save_variant_matrices(
                     ts, base_fn, 
                     keyed_params.get('error_rate') or 0,
-                    infinite_sites=False)
+                    force_integer_positions=True)
         return return_value
 
     def single_sim(self, row_id, sim_params, rng):
@@ -1388,32 +1406,33 @@ class Dataset(object):
 
 
 
-    def save_variant_matrices(self, ts, filename, error_rate=0, infinite_sites=True):
+    def save_variant_matrices(self, ts, filename, error_rate=0, force_integer_positions=False):
         """
-        Make sample data from a tree sequence
+        Make sample data from a tree sequence.
+        Some tools can deal with non-integer sites (tsinfer, fastarg - which doesn't account for position anyway)
+        whereas others (RentPlus, ARGweaver) require variants to be at integer positions
         """
-        if infinite_sites:
-            #for infinite sites, assume we have discretised mutations to ints
-            if not all(p.is_integer() for p in pos):
-                raise ValueError("Variant positions are not all integers")
         filename = add_error_param_to_name(filename, error_rate)
         if ts.num_sites == 0:
             logging.warning("No sites to save for {}".format(filename))
         else:
             logging.debug("Saving samples to {}".format(filename))
-            s = generate_samples(ts, filename, error_rate)
+            s = generate_samples(ts, filename, error_rate, force_integer_positions=force_integer_positions)
             if FASTARG in self.tools_and_metrics:
                 logging.debug("writing samples to {}.hap for fastARG".format(filename))
                 with open(filename+".hap", "w+") as file_in:
                     ts_fastARG.samples_to_fastARG_in(s, file_in)
-            if ARGWEAVER in self.tools_and_metrics:
-                logging.debug("writing samples to {}.sites for ARGweaver".format(filename))
-                with open(filename+".sites", "w+") as file_in:
-                    ts_ARGweaver.samples_to_ARGweaver_in(s, file_in, infinite_sites=infinite_sites)
+            # RENTPLUS deals with integer positions, so need explicit forcing if force_integer_positions==False, 
             if RENTPLUS in self.tools_and_metrics:
                 logging.debug("writing samples to {}.dat for RentPlus".format(filename))
                 with open(filename+".dat", "wb+") as file_in:
-                    ts_RentPlus.samples_to_RentPlus_in(s, file_in, infinite_sites=infinite_sites)
+                    ts_RentPlus.samples_to_RentPlus_in(s, file_in, integer_positions=force_integer_positions)
+            # ARGWEAVER cannot deal with non integer positions, so need explicit forcing if force_integer_positions==False, 
+            explictly_force_integer_pos = False if force_integer_positions else True
+            if ARGWEAVER in self.tools_and_metrics:
+                logging.debug("writing samples to {}.sites for ARGweaver".format(filename))
+                with open(filename+".sites", "w+") as file_in:
+                    ts_ARGweaver.samples_to_ARGweaver_in(s, file_in, force_integer_positions=explictly_force_integer_pos)
 
 
 
