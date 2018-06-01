@@ -23,8 +23,11 @@ import math
 import re
 import gzip
 import csv
-import numpy as np
+import itertools
 import os.path
+
+import numpy as np
+
 sys.path.insert(1,os.path.join(sys.path[0],'..','msprime')) # use the local copy of msprime in preference to the global one
 import msprime
 

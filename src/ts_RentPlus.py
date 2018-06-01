@@ -5,6 +5,7 @@ from math import ceil
 import numpy as np
 import os.path
 import logging
+import itertools
     
 def samples_to_RentPlus_in(sample_data, RentPlus_filehandle, integer_positions=False):
     """
@@ -42,22 +43,19 @@ def samples_to_RentPlus_in(sample_data, RentPlus_filehandle, integer_positions=F
         output = np.zeros((sample_data.num_samples, unique_positions.shape[0]), dtype=np.uint8)
         prev_position = 0
         index=0
-        ANDed_genotype = None
-        for id, genotype in sample_data.genotypes():
-            if int(ceil(position[id])) != prev_position:
-                #this is a new position. Save the genotype at the old position, and then reset everything
-                if ANDed_genotype is not None:
-                    output[:,index]=ANDed_genotype
-                    index += 1
-                ANDed_genotype = genotype
-            else:
-                ANDed_genotype =  np.logical_and(ANDed_genotype, genotype)
-            prev_position = int(ceil(position[id]))
-        if ANDed_genotype is not None: # print out the last site
+        for pos, group in itertools.groupby(sample_data.genotypes(), lambda id_gen: ceil(position[id_gen[0]])):
+            genotypes = alleles = None
+            ANDed_genotype = None
+            for site_id, genotype in group:
+                if ANDed_genotype is None:
+                    ANDed_genotype = genotype
+                else:
+                    ANDed_genotype =  np.logical_and(ANDed_genotype, genotype)
             output[:,index]=ANDed_genotype
+            index += 1
         
-        assert index+1 == unique_positions.shape[0], \
-            "Saved {} columns, should be {}".format(index+1, unique_positions.shape[0])
+        assert index == unique_positions.shape[0], \
+            "Saved {} columns, should be {}".format(index, unique_positions.shape[0])
         np.savetxt(RentPlus_filehandle, output, "%u", delimiter="", comments='',
             header=" ".join([str(p) for p in unique_positions]))
 

@@ -167,14 +167,17 @@ def generate_samples(ts, filename, real_error_rate=0, force_integer_positions=Fa
     sample_data = tsinfer.SampleData(path=filename + ".samples", sequence_length=ts.sequence_length)
     if force_integer_positions:
         for pos, group in itertools.groupby(ts.variants(), lambda v: math.floor(v.site.position)):
-            genotypes = alleles = None
+            ANDed_genotypes = alleles = None
             for v in group:
                 assert alleles is None or v.alleles == alleles
-                genotypes = v.genotypes if genotypes is None else np.logical_and(genotypes, v.genotypes)
                 alleles = v.alleles
+                if ANDed_genotypes is None:
+                    ANDed_genotypes = v.genotypes
+                else:
+                    ANDed_genotypes = np.logical_and(ANDed_genotypes, v.genotypes)
             n_variants += 1
             bits_flipped += add_to_sample_with_error(
-                sample_data, pos, alleles, genotypes, error_param, record_rate)
+                sample_data, pos, alleles, ANDed_genotypes, error_param, record_rate)
     else:
         for v in ts.variants():
             n_variants += 1
