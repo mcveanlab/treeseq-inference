@@ -2349,7 +2349,14 @@ class MetricsSubsamplingFigure(Figure):
                             marker=setting['mark'],
                             #elinewidth=1
                             )
-            print(error_rate)
+            artists = [
+                pyplot.Line2D((0,1),(0,0), color= setting["col"],
+                    marker= setting["mark"], linestyle=setting["linestyle"])
+                for tool,setting in self.tools_and_metrics_params.items()]
+            tool_labels = [(l.replace("_1", "").replace("_3"," breaking polytomies") if l.startswith(TSINFER) else l.replace("_0", "")) 
+                for l in self.tools_and_metrics_params.keys()]
+            first_legend = axes[0][-1].legend(
+                artists, tool_labels, numpoints=1, labelspacing=0.1, loc="lower right")
             fig.suptitle('ARG metric for trees subsampled down to {} tips, error = {}'.format(
                 restrict_sample_size_comparison[0], error_rate))
             figures.append(fig)
