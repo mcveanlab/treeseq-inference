@@ -152,21 +152,22 @@ def make_errors(g, p):
         w[samples] = errors
     return w
 
-def generate_samples(ts, filename, real_error_rate=0, discretize_mutations=0):
+def generate_samples(ts, filename, real_error_rate=0, discretize_mutation_positions=0):
     """
     Generate a samples file from a simulated ts
     Samples may have bits flipped with a specified probability.
     (reject any variants that result in a fixed column)
     
-    if discretize_mutations==0, then we allow mutations at continuous positions (infinite sites)
+    if discretize_mutation_positions==0, then we allow mutations at continuous positions 
+    (infinite sites)
 
-    if discretize_mutations==1, then use a basic discretising function, which simply rounds 
-    upwards to the nearest int, ORing the results if 2 or more variants end up at the same 
+    if discretize_mutation_positions==1, then use a basic discretising function, which simply 
+    rounds upwards to the nearest int, ORing the results if 2 or more variants end up at the same 
     integer position (having one mutation on top of another always results in the derived state).
-    This is like a poor man's finite sites model, where saturation happens slowly
+    This is like a poor man's finite sites model, where saturation happens slowly.
     
-    if discretize_mutations==2, then use a basic discretising function, which simply rounds 
-    upwards to the nearest int, XORing the results if 2 or more variants end up at the same 
+    if discretize_mutation_positions==2, then use a basic discretising function, which simply
+    rounds upwards to the nearest int, XORing the results if 2 or more variants end up at the same 
     integer position (having one mutation on top of another toggles the genotype from 0<->1)
     This is an extreme finite sites model, where saturation happens even more quickly than
     seen under a 4 state (ATCG) model
@@ -179,8 +180,8 @@ def generate_samples(ts, filename, real_error_rate=0, discretize_mutations=0):
     n_variants = bits_flipped = 0
     assert ts.num_sites != 0
     sample_data = tsinfer.SampleData(path=filename + ".samples", sequence_length=ts.sequence_length)
-    if discretize_mutations:
-        merge_func = np.logical_or if discretize_mutations==1 else np.logical_xor
+    if discretize_mutation_positions:
+        merge_func = np.logical_or if discretize_mutation_positions==1 else np.logical_xor
         for pos, group in itertools.groupby(ts.variants(), lambda v: math.floor(v.site.position)):
             merged_genotypes = alleles = None
             for v in group:
@@ -1057,7 +1058,7 @@ class Dataset(object):
                 #have an advantage in getting more information to locate breakpoints
                 #Note that we might accidentally create a TS with no valid sites here
                 if small_ts.num_sites:
-                    generate_samples(small_ts, cmp_fn, discretize_mutations=1)
+                    generate_samples(small_ts, cmp_fn, discretize_mutation_positions=1)
             else:
                 ts.save_nexus_trees(base_fn +".nex")
         return_value = {}
@@ -1079,12 +1080,12 @@ class Dataset(object):
                     ts.simplify(list(range(subsample))),
                     add_subsample_param_to_name(base_fn, subsample),
                     keyed_params.get('error_rate') or 0,
-                    discretize_mutations=1)
+                    discretize_mutation_positions=1)
             else:
                 self.save_variant_matrices(
                     ts, base_fn, 
                     keyed_params.get('error_rate') or 0,
-                    discretize_mutations=1)
+                    discretize_mutation_positions=1)
         return return_value
 
     def single_sim(self, row_id, sim_params, rng):
@@ -1424,7 +1425,7 @@ class Dataset(object):
 
 
 
-    def save_variant_matrices(self, ts, filename, error_rate=0, discretize_mutations=0):
+    def save_variant_matrices(self, ts, filename, error_rate=0, discretize_mutation_positions=0):
         """
         Make sample data from a tree sequence.
         Some tools can deal with non-integer sites (tsinfer, RentPlus, fastarg - which doesn't account for position anyway)
@@ -1436,12 +1437,12 @@ class Dataset(object):
             logging.warning("No sites to save for {}".format(filename))
         else:
             logging.debug("Saving samples to {}".format(filename))
-            s = generate_samples(ts, filename, error_rate, discretize_mutations=discretize_mutations)
+            s = generate_samples(ts, filename, error_rate, discretize_mutation_positions=discretize_mutation_positions)
             if FASTARG in self.tools_and_metrics:
                 logging.debug("writing samples to {}.hap for fastARG".format(filename))
                 with open(filename+".hap", "w+") as file_in:
                     ts_fastARG.samples_to_fastARG_in(s, file_in)
-            continuous_positions=(True if discretize_mutations==0 else False)
+            continuous_positions=(True if discretize_mutation_positions==0 else False)
             if RENTPLUS in self.tools_and_metrics:
                 logging.debug("writing samples to {}.dat for RentPlus".format(filename))
                 with open(filename+".dat", "w+") as file_in:
