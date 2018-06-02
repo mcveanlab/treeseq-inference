@@ -94,7 +94,7 @@ def ts_to_ARGweaver_in(ts, ARGweaver_filehandle):
     ARGweaver_filehandle.flush()
     ARGweaver_filehandle.seek(0)
 
-def samples_to_ARGweaver_in(sample_data, ARGweaver_filehandle, force_integer_positions=False):
+def samples_to_ARGweaver_in(sample_data, ARGweaver_filehandle, continuous_positions=True):
     """
     Takes an variant matrix, and outputs a file in .sites format, suitable for input
     into ARGweaver (see http://mdrasmus.github.io/argweaver/doc/#sec-file-sites)
@@ -103,9 +103,12 @@ def samples_to_ARGweaver_in(sample_data, ARGweaver_filehandle, force_integer_pos
     all bases). Assuming adjacent sites are treated independently, we convert variant
     format (0,1) to sequence format (A, T, G, C) by simply converting 0->A and 1->T
 
-    if force_integer_positions==True, then use a basic discretising function, which simply rounds
-    upwards to the nearest int, toggling the results if 2 or more variants end up at the same
-    integer position.
+    if continuous_positions==True, it indicates that we are passing in floating point positions
+    for sites, which ARGweaver cannot handle, so we must use a basic discretising function, 
+    which simply rounds upwards to the nearest int, and only imposes a visible mutation
+    for genotypes which have 2 sequential (invisible) mutations at the same site. This
+    effectively lowers the mutation rate, but means that we never get mutational saturation,
+    so makes this as fair a comparison as possible with tools that allow infinite sites
 
     Note that ARGweaver uses position coordinates (1,N) - i.e. (0,N].
     That compares to tree sequences which use (0..N-1) - i.e. [0,N).
@@ -114,26 +117,23 @@ def samples_to_ARGweaver_in(sample_data, ARGweaver_filehandle, force_integer_pos
     print("\t".join(["REGION", "chr", "1", str(sample_data.sequence_length)]), file=ARGweaver_filehandle)
     
     position = sample_data.sites_position[:] #decompress all in one go to avoid sequential unpacking
-    if not force_integer_positions:
+    if not continuous_positions: #should be integers
+        assert np.all(np.mod(position, 1) == 0), "All positions should be integers"
         for id, genotype in sample_data.genotypes():
             print(position[id]+1, "".join(np.where(genotype==0,"A","T")),
                 sep="\t", file=ARGweaver_filehandle)
     else:
-        prev_position = 0
-        ANDed_genotype = None
-        for id, genotype in sample_data.genotypes():
-            if int(math.ceil(position[id])) != prev_position:
-                #this is a new position. Print the genotype at the old position, and then reset everything
-                if prev_position:
-                    print(prev_position, "".join(np.where(ANDed_genotype==0,"A","T")), sep="\t",
-                        file=ARGweaver_filehandle)
-                ANDed_genotype = genotype
-            else:
-                ANDed_genotype =  np.logical_and(ANDed_genotype, genotype)
-            prev_position = int(math.ceil(position[id]))
-        if ANDed_genotype is not None: # print out the last site
-            print(prev_position, "".join(np.where(ANDed_genotype ==0,"A","T")), sep="\t", file=ARGweaver_filehandle)
-
+        merge_func = np.logical_and #see docstring comments
+        #compress runlengths of integers
+        for pos, group in itertools.groupby(sample_data.genotypes(), 
+            lambda id_gen: math.ceil(position[id_gen[0]])):
+            merged_genotypes = None
+            for site_id, genotypes in group:
+                if merged_genotypes is None:
+                    merged_genotypes = genotypes
+                else:
+                    merged_genotypes =  merge_func(merged_genotypes, genotypes)
+            print(pos, "".join(np.where(merged_genotypes==0,"A","T")), sep="\t", file=ARGweaver_filehandle)
     ARGweaver_filehandle.flush()
     ARGweaver_filehandle.seek(0)
 

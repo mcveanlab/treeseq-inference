@@ -5,9 +5,8 @@ from math import ceil
 import numpy as np
 import os.path
 import logging
-import itertools
     
-def samples_to_RentPlus_in(sample_data, RentPlus_filehandle, integer_positions=False):
+def samples_to_RentPlus_in(sample_data, RentPlus_filehandle, continuous_positions=True):
     """
     Takes a SampleData object, and outputs a file in .dat format, suitable for input 
     into RentPlus (see https://github.com/SajadMirzaei/RentPlus)
@@ -15,13 +14,7 @@ def samples_to_RentPlus_in(sample_data, RentPlus_filehandle, integer_positions=F
     We could either use infinite sites, with a floating point number between 0 and 1, or
     integer sites. If integer sites, note that RentPlus does not claim to deal well with
     recurrent mutations.
-    
-    if infinite_sites==False, then use a basic discretising function, which simply rounds 
-    upwards to the nearest int, ANDing the results if 2 or more variants end up at the same 
-    integer position.
-    
-    if infinite_sites==True, then we must convert all the positions to lie between 0 and 1
-    
+        
     Note that with integer positions rentplus uses position coordinates (1,N) - i.e. [0,N). 
     That compares to tree sequences which use (0..N-1) - i.e. (0,N].
     
@@ -29,35 +22,19 @@ def samples_to_RentPlus_in(sample_data, RentPlus_filehandle, integer_positions=F
     this is a pain when trying to merge adjacent genotypes
     """
     position = sample_data.sites_position[:] #decompress all in one go to avoid sequential unpacking
-    if integer_positions == False:
+    assert sample_data.num_sites == np.unique(position).shape[0], 'Site positions need to be unique, but there are dups'
+    if continuous_positions:
         #normalize to between 0 and 1
-        unique_positions = np.unique(position)
-        assert unique_positions.shape[0] == sample_data.num_sites, \
-            'If not using integer sites, positions need to be unique, but there are dups'
-        print(" ".join([str(float(p)/sample_data.sequence_length) for p in unique_positions]))
-        for id, haplotype in sample_data.haplotypes():
-            print((genotypes + ord('0')).tobytes().decode(),file=RentPlus_filehandle)
+        print(" ".join([str(float(p)/sample_data.sequence_length) for p in position]), 
+            file=RentPlus_filehandle)
+        for id, genotypes in sample_data.genotypes():
+            print((genotypes.astype("i1") + ord('0')).tobytes().decode(),file=RentPlus_filehandle)
     else:
-        #compress runlengths of integers
-        unique_positions = np.unique(np.ceil(position).astype(np.uint64))
-        output = np.zeros((sample_data.num_samples, unique_positions.shape[0]), dtype=np.uint8)
-        prev_position = 0
-        index=0
-        for pos, group in itertools.groupby(sample_data.genotypes(), lambda id_gen: ceil(position[id_gen[0]])):
-            genotypes = alleles = None
-            ANDed_genotype = None
-            for site_id, genotype in group:
-                if ANDed_genotype is None:
-                    ANDed_genotype = genotype
-                else:
-                    ANDed_genotype =  np.logical_and(ANDed_genotype, genotype)
-            output[:,index]=ANDed_genotype
-            index += 1
-        
-        assert index == unique_positions.shape[0], \
-            "Saved {} columns, should be {}".format(index, unique_positions.shape[0])
+        output = np.zeros((sample_data.num_samples, position.shape[0]), dtype=np.uint8)
+        for i, genotypes in sample_data.genotypes():
+            output[:,i]=genotypes
         np.savetxt(RentPlus_filehandle, output, "%u", delimiter="", comments='',
-            header=" ".join([str(p) for p in unique_positions]))
+            header=" ".join([str(p+1) for p in position]))
 
     RentPlus_filehandle.flush()
     RentPlus_filehandle.seek(0)

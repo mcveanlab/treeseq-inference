@@ -152,11 +152,25 @@ def make_errors(g, p):
         w[samples] = errors
     return w
 
-def generate_samples(ts, filename, real_error_rate=0, force_integer_positions=False):
+def generate_samples(ts, filename, real_error_rate=0, discretize_mutations=0):
     """
     Generate a samples file from a simulated ts
     Samples may have bits flipped with a specified probability.
     (reject any variants that result in a fixed column)
+    
+    if discretize_mutations==0, then we allow mutations at continuous positions (infinite sites)
+
+    if discretize_mutations==1, then use a basic discretising function, which simply rounds 
+    upwards to the nearest int, ORing the results if 2 or more variants end up at the same 
+    integer position (having one mutation on top of another always results in the derived state).
+    This is like a poor man's finite sites model, where saturation happens slowly
+    
+    if discretize_mutations==2, then use a basic discretising function, which simply rounds 
+    upwards to the nearest int, XORing the results if 2 or more variants end up at the same 
+    integer position (having one mutation on top of another toggles the genotype from 0<->1)
+    This is an extreme finite sites model, where saturation happens even more quickly than
+    seen under a 4 state (ATCG) model
+
     """
     if real_error_rate > 0:
         logging.debug("converting real error rate to an error param by multiplying by log(n)")
@@ -165,24 +179,25 @@ def generate_samples(ts, filename, real_error_rate=0, force_integer_positions=Fa
     n_variants = bits_flipped = 0
     assert ts.num_sites != 0
     sample_data = tsinfer.SampleData(path=filename + ".samples", sequence_length=ts.sequence_length)
-    if force_integer_positions:
+    if discretize_mutations:
+        merge_func = np.logical_or if discretize_mutations==1 else np.logical_xor
         for pos, group in itertools.groupby(ts.variants(), lambda v: math.floor(v.site.position)):
-            ANDed_genotypes = alleles = None
+            merged_genotypes = alleles = None
             for v in group:
                 assert alleles is None or v.alleles == alleles
                 alleles = v.alleles
-                if ANDed_genotypes is None:
-                    ANDed_genotypes = v.genotypes
+                if merged_genotypes is None:
+                    merged_genotypes = v.genotypes
                 else:
-                    ANDed_genotypes = np.logical_and(ANDed_genotypes, v.genotypes)
+                    merged_genotypes = merge_func(merged_genotypes, v.genotypes)
             n_variants += 1
             bits_flipped += add_to_sample_with_error(
-                sample_data, pos, alleles, ANDed_genotypes, error_param, record_rate)
+                sample_data, pos, alleles, merged_genotypes, error_param, record_rate)
     else:
         for v in ts.variants():
             n_variants += 1
             bits_flipped += add_to_sample_with_error(
-                sample_data, v.sites.position, v.alleles, v.genotypes, error_param, record_rate)
+                sample_data, v.site.position, v.alleles, v.genotypes, error_param, record_rate)
 
     if real_error_rate>0:
         logging.info("Error of {} injected into {}".format(real_error_rate, os.path.basename(filename))
@@ -1042,7 +1057,7 @@ class Dataset(object):
                 #have an advantage in getting more information to locate breakpoints
                 #Note that we might accidentally create a TS with no valid sites here
                 if small_ts.num_sites:
-                    generate_samples(small_ts, cmp_fn, force_integer_positions=True)
+                    generate_samples(small_ts, cmp_fn, discretize_mutations=1)
             else:
                 ts.save_nexus_trees(base_fn +".nex")
         return_value = {}
@@ -1064,12 +1079,12 @@ class Dataset(object):
                     ts.simplify(list(range(subsample))),
                     add_subsample_param_to_name(base_fn, subsample),
                     keyed_params.get('error_rate') or 0,
-                    force_integer_positions=True)
+                    discretize_mutations=1)
             else:
                 self.save_variant_matrices(
                     ts, base_fn, 
                     keyed_params.get('error_rate') or 0,
-                    force_integer_positions=True)
+                    discretize_mutations=1)
         return return_value
 
     def single_sim(self, row_id, sim_params, rng):
@@ -1409,33 +1424,32 @@ class Dataset(object):
 
 
 
-    def save_variant_matrices(self, ts, filename, error_rate=0, force_integer_positions=False):
+    def save_variant_matrices(self, ts, filename, error_rate=0, discretize_mutations=0):
         """
         Make sample data from a tree sequence.
-        Some tools can deal with non-integer sites (tsinfer, fastarg - which doesn't account for position anyway)
-        whereas others (RentPlus, ARGweaver) require variants to be at integer positions
+        Some tools can deal with non-integer sites (tsinfer, RentPlus, fastarg - which doesn't account for position anyway)
+        whereas others (ARGweaver) require variants to be at integer positions, with positions
+        needed to be forced to integers even in an infinite sites model
         """
         filename = add_error_param_to_name(filename, error_rate)
         if ts.num_sites == 0:
             logging.warning("No sites to save for {}".format(filename))
         else:
             logging.debug("Saving samples to {}".format(filename))
-            s = generate_samples(ts, filename, error_rate, force_integer_positions=force_integer_positions)
+            s = generate_samples(ts, filename, error_rate, discretize_mutations=discretize_mutations)
             if FASTARG in self.tools_and_metrics:
                 logging.debug("writing samples to {}.hap for fastARG".format(filename))
                 with open(filename+".hap", "w+") as file_in:
                     ts_fastARG.samples_to_fastARG_in(s, file_in)
-            # RENTPLUS deals with integer positions, so need explicit forcing if force_integer_positions==False, 
+            continuous_positions=(True if discretize_mutations==0 else False)
             if RENTPLUS in self.tools_and_metrics:
                 logging.debug("writing samples to {}.dat for RentPlus".format(filename))
-                with open(filename+".dat", "wb+") as file_in:
-                    ts_RentPlus.samples_to_RentPlus_in(s, file_in, integer_positions=force_integer_positions)
-            # ARGWEAVER cannot deal with non integer positions, so need explicit forcing if force_integer_positions==False, 
-            explictly_force_integer_pos = False if force_integer_positions else True
+                with open(filename+".dat", "w+") as file_in:
+                    ts_RentPlus.samples_to_RentPlus_in(s, file_in, continuous_positions=continuous_positions)
             if ARGWEAVER in self.tools_and_metrics:
                 logging.debug("writing samples to {}.sites for ARGweaver".format(filename))
                 with open(filename+".sites", "w+") as file_in:
-                    ts_ARGweaver.samples_to_ARGweaver_in(s, file_in, force_integer_positions=explictly_force_integer_pos)
+                    ts_ARGweaver.samples_to_ARGweaver_in(s, file_in, continuous_positions=continuous_positions)
 
 
 
