@@ -34,7 +34,7 @@ def samples_to_RentPlus_in(sample_data, RentPlus_filehandle, continuous_position
         for i, genotypes in sample_data.genotypes():
             output[:,i]=genotypes
         np.savetxt(RentPlus_filehandle, output, "%u", delimiter="", comments='',
-            header=" ".join([str(p+1) for p in position]))
+            header=" ".join([str(int(p+1)) for p in position]))
 
     RentPlus_filehandle.flush()
     RentPlus_filehandle.seek(0)
