@@ -169,7 +169,7 @@ def generate_samples(ts, error_p):
                 s = np.sum(S[:, variant.index])
                 if 0 < s < ts.sample_size:
                     break
-                if s == np.sum(v.genotypes):
+                if s == np.sum(variant.genotypes):
                     break
     return S
 
