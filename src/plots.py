@@ -1624,7 +1624,7 @@ class SubsamplingDataset(Dataset):
     # to column names in the csv file. Values should all be arrays.
     between_sim_params = {
         'sample_size':        [1000], #the maximum sample size - we will trim this down
-        'length':             [10000, 100000],
+        'length':             [10000, 100000, 1000000],
         'Ne':                 [5000],
         'mutation_rate':      [1e-8],
         'recombination_rate': [1e-8],
@@ -1634,7 +1634,7 @@ class SubsamplingDataset(Dataset):
 
     within_sim_params = {
         'tsinfer_srb' : [True], #, False], #should we use shared recombinations ("path compression")
-        SUBSAMPLE_COLNAME:  [12, 50, 100], #we infer based on this many samples
+        SUBSAMPLE_COLNAME:  [12, 50, 100, 500, 1000], #we infer based on this many samples
         ERROR_COLNAME: [0, 0.001]
     }
 
