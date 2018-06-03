@@ -163,12 +163,14 @@ def generate_samples(ts, error_p):
             S[:,variant.index] = variant.genotypes
     else:
         for variant in ts.variants():
-            done = False
             # Reject any columns that have no 1s or no zeros
-            while not done:
+            while True:
                 S[:,variant.index] = make_errors(variant.genotypes, error_p)
                 s = np.sum(S[:, variant.index])
-                done = 0 < s < ts.sample_size
+                if 0 < s < ts.sample_size:
+                    break
+                if s == np.sum(v.genotypes):
+                    break
     return S
 
 def mk_sim_name(sample_size, Ne, length, recombination_rate, mutation_rate, seed, 
