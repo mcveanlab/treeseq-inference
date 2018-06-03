@@ -54,7 +54,7 @@ def main():
         "-t", "--threads", default=1, type=int,
         help="The number of worker threads to use")
     parser.add_argument(
-        "-m", "--method", default="P", choices=['C','P'],
+        "-m", "--method", default="C", choices=['C','P'],
         help="Which implementation to use, [C] (faster) or [P]ython (more debuggable)")
     parser.add_argument(
         "--inject-real-ancestors-from-ts", default=None,
