@@ -59,7 +59,7 @@ fastARG_executable = os.path.join(sys.path[0],'..','fastARG','fastARG')
 ARGweaver_executable = os.path.join(sys.path[0],'..','argweaver','bin','arg-sample')
 smc2arg_executable = os.path.join(sys.path[0],'..','argweaver','bin','smc2arg')
 RentPlus_executable = os.path.join(sys.path[0],'..','RentPlus','RentPlus.jar')
-tsinfer_executable = os.path.join(sys.path[0],'run_tsinfer.py')
+tsinfer_executable = os.path.join(sys.path[0],'run_old_tsinfer.py')
 
 #monkey-patch nexus saving/writing into msprime/tskit
 msprime.TreeSequence.write_nexus_trees = ts_extras.write_nexus_trees
@@ -152,48 +152,24 @@ def make_errors(g, p):
         w[samples] = errors
     return w
 
-def generate_samples(ts, filename, real_error_rate=0):
+def generate_samples(ts, error_p):
     """
-    Generate a samples file from a simulated ts
-    Samples may have bits flipped with a specified probability.
-    (reject any variants that result in a fixed column)
+    Returns samples with a bits flipped with a specified probability.
+    Rejects any variants that result in a fixed column.
     """
-    if real_error_rate > 0:
-        logging.debug("converting real error rate to an error param by multiplying by log(n)")
-    error_param = real_error_rate * math.log(ts.num_samples)
-    record_rate = logging.getLogger().isEnabledFor(logging.INFO)
-    n_variants = bits_flipped = 0
-    assert ts.num_sites != 0
-    sample_data = tsinfer.SampleData(path=filename + ".samples", sequence_length=ts.sequence_length)
-    for v in ts.variants():
-        n_variants += 1
-        if error_param <=0:
-            sample_data.add_site(
-                position=v.site.position, alleles=v.alleles,
-                genotypes=v.genotypes)
-        else:
-            #make new genotypes with error
-            # Reject any columns that have no 1s or no zeros.
-            # Unless the original also has them, as occasionally we have
-            # some sims (e.g. under selection) where a variant is fixed
-            while True:
-                genotypes = make_errors(v.genotypes, error_param)
-                s = np.sum(genotypes)
-                if 0 < s < ts.sample_size:
-                    break
-                if s == np.sum(v.genotypes):
-                    break
-            if record_rate:
-                bits_flipped += np.sum(np.logical_xor(genotypes, v.genotypes))
-            sample_data.add_site(
-                position=v.site.position, alleles=v.alleles,
-                genotypes=genotypes)
-    if real_error_rate>0:
-        logging.info("Error of {} injected into {}".format(real_error_rate, os.path.basename(filename))
-            + ": actual error rate = {} (error param = {})".format(
-                bits_flipped/(n_variants*ts.sample_size), error_param) if record_rate else "")
-    sample_data.finalise()
-    return sample_data
+    S = np.zeros((ts.sample_size, ts.num_mutations), dtype="u1")
+    if error_p == 0:
+        for variant in ts.variants():
+            S[:,variant.index] = variant.genotypes
+    else:
+        for variant in ts.variants():
+            done = False
+            # Reject any columns that have no 1s or no zeros
+            while not done:
+                S[:,variant.index] = make_errors(variant.genotypes, error_p)
+                s = np.sum(S[:, variant.index])
+                done = 0 < s < ts.sample_size
+    return S
 
 def mk_sim_name(sample_size, Ne, length, recombination_rate, mutation_rate, seed, 
     mut_seed=None, directory=None, tool="msprime",
@@ -494,7 +470,8 @@ class InferenceRunner(object):
         subsample_size = getattr(self.row,'subsample_size', None)
         restrict_sample_size_comparison = getattr(self.row,'restrict_sample_size_comparison', None)
         #construct filenames - these can be used even if inference does not occur
-        samples_fn = self.sample_fn + ".samples"
+        samples_fn = self.sample_fn + ".npy"
+        positions_fn = self.sample_fn + ".pos.npy"
         out_fn = construct_tsinfer_name(self.sample_fn,
             restrict_sample_size_comparison, shared_recombinations, err)
         self.inferred_filenames = [out_fn]
@@ -506,7 +483,7 @@ class InferenceRunner(object):
             samples_fn))
         try:
             inferred_ts, time, memory = self.run_tsinfer(
-                samples_fn, self.row.length, shared_recombinations, self.num_threads,
+                samples_fn, positions_fn, self.row.length, shared_recombinations, self.num_threads,
                 #uncomment below to inject real ancestors - will need adjusting for subsampling
                 #inject_real_ancestors_from_ts_fn = self.orig_sim_fn + ".hdf5",
                 )
@@ -695,10 +672,10 @@ class InferenceRunner(object):
         }
 
     @staticmethod
-    def run_tsinfer(sample_fn, length,
+    def run_tsinfer(sample_fn, positions_fn, length,
         shared_recombinations, num_threads=1, inject_real_ancestors_from_ts_fn=None, rho=None, error_probability=None):
             with tempfile.NamedTemporaryFile("w+") as ts_out:
-                cmd = [sys.executable, tsinfer_executable, sample_fn, "--length", str(int(length))]
+                cmd = [sys.executable, tsinfer_executable, sample_fn, positions_fn, "--length", str(int(length))]
                 if rho is not None:
                     cmd += ["--recombination-rate", str(rho)]
                 if error_probability is not None:
@@ -1021,7 +998,7 @@ class Dataset(object):
                 #have an advantage in getting more information to locate breakpoints
                 #Note that we might accidentally create a TS with no valid sites here
                 if small_ts.num_sites:
-                    generate_samples(small_ts, cmp_fn)
+                    self.save_positions(small_ts, cmp_fn)
             else:
                 ts.save_nexus_trees(base_fn +".nex")
         return_value = {}
@@ -1387,33 +1364,26 @@ class Dataset(object):
             yield ts, fn[:-len(expected_suffix)], outfreq
 
 
+    def save_positions(self, ts, fn):
+        outfile = fn + ".pos.npy"
+        pos = np.array([v.position for v in ts.variants()])
+        logging.debug("writing variant positions to {}".format(outfile))
+        np.save(outfile, pos)
 
-    def save_variant_matrices(self, ts, filename, error_rate=0, infinite_sites=True):
-        """
-        Make sample data from a tree sequence
-        """
+
+    def save_variant_matrices(self, ts, fname, error_rate=0, infinite_sites=True):
         if infinite_sites:
             #for infinite sites, assume we have discretised mutations to ints
             if not all(p.is_integer() for p in pos):
                 raise ValueError("Variant positions are not all integers")
-        filename = add_error_param_to_name(filename, error_rate)
-        if ts.num_sites == 0:
-            logging.warning("No sites to save for {}".format(filename))
-        else:
-            logging.debug("Saving samples to {}".format(filename))
-            s = generate_samples(ts, filename, error_rate)
-            if FASTARG in self.tools_and_metrics:
-                logging.debug("writing samples to {}.hap for fastARG".format(filename))
-                with open(filename+".hap", "w+") as file_in:
-                    ts_fastARG.samples_to_fastARG_in(s, file_in)
-            if ARGWEAVER in self.tools_and_metrics:
-                logging.debug("writing samples to {}.sites for ARGweaver".format(filename))
-                with open(filename+".sites", "w+") as file_in:
-                    ts_ARGweaver.samples_to_ARGweaver_in(s, file_in, infinite_sites=infinite_sites)
-            if RENTPLUS in self.tools_and_metrics:
-                logging.debug("writing samples to {}.dat for RentPlus".format(filename))
-                with open(filename+".dat", "wb+") as file_in:
-                    ts_RentPlus.samples_to_RentPlus_in(s, file_in, infinite_sites=infinite_sites)
+        S = generate_samples(ts, error_rate)
+        pos = np.array([v.position for v in ts.variants()])
+        filename = add_error_param_to_name(fname, error_rate)
+        if TSINFER in self.tools_and_metrics:
+            outfile = filename + ".npy"
+            logging.debug("writing variant matrix to {} for tsinfer".format(outfile))
+            np.save(outfile, S)
+            self.save_positions(ts,filename)
 
 
 
@@ -1654,7 +1624,7 @@ class SubsamplingDataset(Dataset):
     # to column names in the csv file. Values should all be arrays.
     between_sim_params = {
         'sample_size':        [1000], #the maximum sample size - we will trim this down
-        'length':             [10000, 100000, 1000000],
+        'length':             [10000, 100000],
         'Ne':                 [5000],
         'mutation_rate':      [1e-8],
         'recombination_rate': [1e-8],
@@ -1664,7 +1634,7 @@ class SubsamplingDataset(Dataset):
 
     within_sim_params = {
         'tsinfer_srb' : [True], #, False], #should we use shared recombinations ("path compression")
-        SUBSAMPLE_COLNAME:  [12, 50, 100, 500, 1000], #we infer based on this many samples
+        SUBSAMPLE_COLNAME:  [12, 50, 100], #we infer based on this many samples
         ERROR_COLNAME: [0, 0.001]
     }
 
