@@ -522,7 +522,13 @@ class InferenceRunner(object):
                 logging.warning("Temporary error in tsinfer. Skipping".format(samples_fn))
                 self.inferred_filenames = None
             else:
-                raise            
+                raise
+        except AssertionError as e:
+            if "more than one root" in str(e):
+                logging.warning("More than one root. Skipping".format(samples_fn))
+                self.inferred_filenames = None
+            else:
+                raise
         return  {
             save_stats['cpu']: time,
             save_stats['mem']: memory,
