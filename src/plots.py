@@ -59,11 +59,26 @@ fastARG_executable = os.path.join(sys.path[0],'..','fastARG','fastARG')
 ARGweaver_executable = os.path.join(sys.path[0],'..','argweaver','bin','arg-sample')
 smc2arg_executable = os.path.join(sys.path[0],'..','argweaver','bin','smc2arg')
 RentPlus_executable = os.path.join(sys.path[0],'..','RentPlus','RentPlus.jar')
+#tsinfer_executable = os.path.join(sys.path[0],'run_old_tsinfer.py') #use with e.g. `tsinfer checkout b1fa4ed8`
 tsinfer_executable = os.path.join(sys.path[0],'run_tsinfer.py')
 
 #monkey-patch nexus saving/writing into msprime/tskit
 msprime.TreeSequence.write_nexus_trees = ts_extras.write_nexus_trees
 msprime.TreeSequence.save_nexus_trees = ts_extras.save_nexus_trees
+
+if 'run_old_tsinfer' in tsinfer_executable:
+    #pre-release tsinfer versions don't have sensible version numbers set
+    #and have to be called with SampleData.initialise
+    #monkey patch so that old versions of tsinfer (which use add_variant not add_site) work.
+    #This can be deleted unless you want to use old pre-release (e.g. Feb 2018) versions of tsinfer
+    tsinfer.SampleData.add_site = tsinfer.SampleData.add_variant
+    tsinfer.SampleData.sites_position = tsinfer.SampleData.position
+    def make_sample_data(path, ts):
+        return tsinfer.SampleData.initialise(
+            filename=path, sequence_length=ts.sequence_length, num_samples=ts.num_samples)
+else:
+    def make_sample_data(path, ts):
+        return tsinfer.SampleData(path=path, sequence_length=ts.sequence_length)
 
 FASTARG = "fastARG"
 ARGWEAVER = "ARGweaver"
@@ -164,7 +179,7 @@ def generate_samples(ts, filename, real_error_rate=0):
     record_rate = logging.getLogger().isEnabledFor(logging.INFO)
     n_variants = bits_flipped = 0
     assert ts.num_sites != 0
-    sample_data = tsinfer.SampleData(path=filename + ".samples", sequence_length=ts.sequence_length)
+    sample_data = make_sample_data(path=filename + ".samples", ts=ts)
     for v in ts.variants():
         n_variants += 1
         if error_param <=0:
@@ -442,12 +457,14 @@ class InferenceRunner(object):
             #NB Jerome thinks it may be clearer to have get_metrics() return a single set of metrics
             #rather than an average over multiple inferred nexus files, and do the averaging in python
                 if metric & METRICS_LOCATION_VARIANTS:
-                    #get positions from the samples store, for use in metric calcs
-                    try:
-                        positions = tsinfer.SampleData.load(path=self.cmp_fn + ".samples").sites_position[:].tolist()
-                    except tsinfer.exceptions.FileFormatError:
-                        #no such file exists, could be a case with no sites
+                    filename=self.cmp_fn + ".samples"
+                    #sometimes the file does not exist (e.g. if there are no sites
+                    #catch this here without try/except so it works regardless of tsinfer version
+                    if not os.path.isfile(filename):
+                        logging.warning("No file named {} exists with variant positions, skipping".format(filename))
                         continue
+                    #get positions from the samples store, for use in metric calcs
+                    positions = tsinfer.SampleData.load(filename).sites_position[:].tolist()
                 else:
                     positions = None
                 source_nexus_file = self.cmp_fn + ".nex"
@@ -1647,7 +1664,7 @@ class SubsamplingDataset(Dataset):
     tools_and_metrics = {
         TSINFER: [METRICS_LOCATION_VARIANTS| METRICS_POLYTOMIES_LEAVE, METRICS_LOCATION_VARIANTS | METRICS_POLYTOMIES_BREAK]
     }
-    default_replicates = 100
+    default_replicates = 500 #there's a lot of variance in the results here
     default_seed = 123
 
     #params that change BETWEEN simulations. Keys should correspond
