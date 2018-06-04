@@ -56,7 +56,7 @@ def main():
     
     args = parser.parse_args()
     try:
-        sample_data = tsinfer.SampleData.load(args.samples + "g")
+        sample_data = tsinfer.SampleData.load(args.samples)
     except dbm.error:
         raise ValueError("No samples file")
     if args.inject_real_ancestors_from_ts is not None:
