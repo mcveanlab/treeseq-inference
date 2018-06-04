@@ -558,6 +558,9 @@ class InferenceRunner(object):
             elif "No samples file" in  str(e):
                 logging.warning("No samples file at {}. Skipping".format(samples_fn))
                 self.inferred_filenames = None
+            elif "more than one root" in  str(e):
+                logging.warning("No inference sites, so no sensible tree for {}. Skipping".format(samples_fn))
+                self.inferred_filenames = None
             else:
                 raise            
         return  {
