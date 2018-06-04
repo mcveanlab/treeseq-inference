@@ -67,16 +67,19 @@ msprime.TreeSequence.write_nexus_trees = ts_extras.write_nexus_trees
 msprime.TreeSequence.save_nexus_trees = ts_extras.save_nexus_trees
 
 if 'run_old_tsinfer' in tsinfer_executable:
+    import dbm
     #pre-release tsinfer versions don't have sensible version numbers set
     #and have to be called with SampleData.initialise
     #monkey patch so that old versions of tsinfer (which use add_variant not add_site) work.
     #This can be deleted unless you want to use old pre-release (e.g. Feb 2018) versions of tsinfer
     tsinfer.SampleData.add_site = tsinfer.SampleData.add_variant
     tsinfer.SampleData.sites_position = tsinfer.SampleData.position
+    NoSuchTsinferFileError = dbm.error
     def make_sample_data(path, ts):
         return tsinfer.SampleData.initialise(
             filename=path, sequence_length=ts.sequence_length, num_samples=ts.num_samples)
 else:
+    NoSuchTsinferFileError = tsinfer.exceptions.FileFormatError
     def make_sample_data(path, ts):
         return tsinfer.SampleData(path=path, sequence_length=ts.sequence_length)
 
@@ -458,13 +461,12 @@ class InferenceRunner(object):
             #rather than an average over multiple inferred nexus files, and do the averaging in python
                 if metric & METRICS_LOCATION_VARIANTS:
                     filename=self.cmp_fn + ".samples"
-                    #sometimes the file does not exist (e.g. if there are no sites
-                    #catch this here without try/except so it works regardless of tsinfer version
-                    if not os.path.isfile(filename):
-                        logging.warning("No file named {} exists with variant positions, skipping".format(filename))
+                    try:
+                        #get positions from the samples store, for use in metric calcs
+                        positions = tsinfer.SampleData.load(filename).sites_position[:].tolist()
+                    except NoSuchTsinferFileError:
+                        #sometimes the file does not exist (e.g. if there are no sites)
                         continue
-                    #get positions from the samples store, for use in metric calcs
-                    positions = tsinfer.SampleData.load(filename).sites_position[:].tolist()
                 else:
                     positions = None
                 source_nexus_file = self.cmp_fn + ".nex"
