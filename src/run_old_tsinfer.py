@@ -1,6 +1,12 @@
 """
 Simple CLI to run tsinf on the command line to work with older versions of tsinfer 
 (e.g. via `git checkout b1fa4ed83431b46a8f910754ee9fdbad9a6ffbb1` in the tsinfer repo)
+To use the older version of tsinfer, do
+
+git checkout b1fa4ed83431b46a8f910754ee9fdbad9a6ffbb1
+
+then adjust the tsinfer_executable variable in plots.py to point to this script, rather than run_tsinfer.py
+
 """
 import sys
 import os
