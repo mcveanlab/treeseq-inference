@@ -50,15 +50,16 @@ def write_nexus_trees(
             assert av_upper_pos <= t.get_interval()[1]
             if t.num_roots > 1:
                 raise ValueError(
-                "Couldn't write Nexus to {} as Newick at interval {} has more than one root".format(
-                treefile.name, t.get_interval()))
+                    "Couldn't write Nexus to {} as Newick at interval {} has more than one root".format(
+                        treefile.name, t.get_interval()))
             print("TREE " + str(av_upper_pos) + " = [&R] " + t.newick(precision=14,time_scale=(1/4))[:-1] + ":0;", file=treefile)
     else:
         for t in ts.trees():
             # index by rightmost genome position
-            assert t.num_roots == 1, \
-                "Couldn't write Nexus to {} as Newick at interval {} has more than one root".format(
-                treefile.name, t.get_interval())
+            if t.num_roots > 1:
+                raise ValueError(
+                    "Couldn't write Nexus to {} as Newick at interval {} has more than one root".format(
+                    treefile.name, t.get_interval()))
             print("TREE " + str(t.get_interval()[1]) + " = [&R] " + t.newick(precision=14,time_scale=(1/4))[:-1] + ":0;", file=treefile)
     print("END;", file=treefile)
 
