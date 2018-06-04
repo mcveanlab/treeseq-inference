@@ -518,7 +518,7 @@ class InferenceRunner(object):
             elif "No samples file" in  str(e):
                 logging.warning("No samples file at {}. Skipping".format(samples_fn))
                 self.inferred_filenames = None
-            elif "ZeroDivisionError" in str(e)
+            elif "ZeroDivisionError" in str(e):
                 logging.warning("Temporary error in tsinfer. Skipping".format(samples_fn))
                 self.inferred_filenames = None
             else:
