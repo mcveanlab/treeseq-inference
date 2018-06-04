@@ -51,7 +51,7 @@ def write_nexus_trees(
             if t.num_roots > 1:
                 raise ValueError(
                 "Couldn't write Nexus to {} as Newick at interval {} has more than one root".format(
-                treefile.name, t.get_interval())
+                treefile.name, t.get_interval()))
             print("TREE " + str(av_upper_pos) + " = [&R] " + t.newick(precision=14,time_scale=(1/4))[:-1] + ":0;", file=treefile)
     else:
         for t in ts.trees():
