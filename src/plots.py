@@ -518,6 +518,9 @@ class InferenceRunner(object):
             elif "No samples file" in  str(e):
                 logging.warning("No samples file at {}. Skipping".format(samples_fn))
                 self.inferred_filenames = None
+            elif "ZeroDivisionError" in str(e)
+                logging.warning("Temporary error in tsinfer. Skipping".format(samples_fn))
+                self.inferred_filenames = None
             else:
                 raise            
         return  {
@@ -1619,7 +1622,7 @@ class SubsamplingDataset(Dataset):
     tools_and_metrics = {
         TSINFER: [METRICS_LOCATION_VARIANTS| METRICS_POLYTOMIES_LEAVE, METRICS_LOCATION_VARIANTS | METRICS_POLYTOMIES_BREAK]
     }
-    default_replicates = 100
+    default_replicates = 500
     default_seed = 123
 
     #params that change BETWEEN simulations. Keys should correspond
