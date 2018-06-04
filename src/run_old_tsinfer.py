@@ -6,7 +6,7 @@ import sys
 import os
 import argparse
 import logging
-
+import dbm
 import numpy as np
 
 # use the local copy of msprime in preference to the global one
@@ -55,9 +55,10 @@ def main():
         help="Instead of inferring ancestors, construct known ones from this tree sequence file path")
     
     args = parser.parse_args()
-    if not os.path.isfile(args.samples):
+    try:
+        sample_data = tsinfer.SampleData.load(args.samples + "g")
+    except dbm.error:
         raise ValueError("No samples file")
-    sample_data = tsinfer.SampleData.load(args.samples)
     if args.inject_real_ancestors_from_ts is not None:
         orig_ts = msprime.load(args.inject_real_ancestors_from_ts)
         ancestor_data = formats.AncestorData.initialise(sample_data, compressor=None)
