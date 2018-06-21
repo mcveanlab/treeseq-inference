@@ -122,7 +122,6 @@ def variants(vcf_path, show_progress=False, ancestral_states=None):
         ancestral_state = None
         try:
             if ancestral_states is not None:
-                print(row.ID)
                 aa = ancestral_states[row.ID]
             else:
                 aa = row.INFO["AA"]
@@ -214,29 +213,27 @@ def convert(vcf_file, pedigree_file, output_file,
 
     if ancestor_file is not None:
         ancestors = {}
+        sites=vcf_num_rows(ancestor_file)
         vcf = cyvcf2.VCF(ancestor_file)
         for site in tqdm.tqdm(
-            vcf, total=vcf_num_rows(ancestor_file), desc="Read ancestors", disable=not show_progress):
+            vcf, total=sites, desc="Getting ancestors", disable=not show_progress):
             if site.ID:
                 try:
                     ancestors[site.ID] = site.INFO["AA"]
                 except KeyError:
                     pass
         vcf.close()
+        if show_progress:
+            print("Read {} ancestral alleles out of {} sites from {}".format(
+                len(ancestors), sites, ancestor_file))
     else:
         ancestors = None
 
     for index, site in enumerate(variants(vcf_file, show_progress, ancestors)):
-        sample_data.add_site(site.position, site.alleles, site.genotypes, site.metadata)
+        sample_data.add_site(site.position, site.genotypes, site.alleles, site.metadata)
         if index == max_variants:
             break
     sample_data.finalise(command=sys.argv[0], parameters=sys.argv[1:])
-
-
-def worker(t):
-    vcf, output, max_variants = t
-    print("Converting", vcf)
-    convert(vcf, output, max_variants)
 
 
 def main():
