@@ -122,6 +122,7 @@ def variants(vcf_path, show_progress=False, ancestral_states=None):
         ancestral_state = None
         try:
             if ancestral_states is not None:
+                print(row.ID)
                 aa = ancestral_states[row.ID]
             else:
                 aa = row.INFO["AA"]
@@ -216,8 +217,11 @@ def convert(vcf_file, pedigree_file, output_file,
         vcf = cyvcf2.VCF(ancestor_file)
         for site in tqdm.tqdm(
             vcf, total=vcf_num_rows(ancestor_file), desc="Read ancestors", disable=not show_progress):
-            if site.ID and "AA" in site.INFO:
-                ancestors[site.ID] = site.INFO["AA"]
+            if site.ID:
+                try:
+                    ancestors[site.ID] = site.INFO["AA"]
+                except KeyError:
+                    pass
         vcf.close()
     else:
         ancestors = None
