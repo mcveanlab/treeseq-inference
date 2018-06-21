@@ -96,9 +96,12 @@ def filter_duplicates(vcf):
 
 def vcf_num_rows(vcf_path):
     """A quick way to get the number of sites in a vcf"""
-    if not os.path.exists(vcf_path + ".csi"):
+    try:
+        output = subprocess.check_output(["bcftools", "index", "--nrecords", vcf_path])
+    except subprocess.CalledProcessError:
+        #might be lacking an index
         subprocess.call(["bcftools", "index", vcf_path])
-    output = subprocess.check_output(["bcftools", "index", "--nrecords", vcf_path])
+        output = subprocess.check_output(["bcftools", "index", "--nrecords", vcf_path])
     return int(output)
 
 
