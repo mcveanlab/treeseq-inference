@@ -148,12 +148,17 @@ def variants(vcf_path, show_progress=False, ancestral_states=None):
             all_alleles = set([ancestral_state])
             # Fill in a with genotypes.
             bases = np.array(row.gt_bases)
-            for j in range(num_diploids):
-                alleles = bases[j].split("|")
-                for allele in alleles:
-                    all_alleles.add(allele)
-                a[2 * j] = alleles[0] != ancestral_state
-                a[2 * j + 1] = alleles[1] != ancestral_state
+            try:
+                for j in range(num_diploids):
+                    alleles = bases[j].split("|")
+                    for allele in alleles:
+                        all_alleles.add(allele)
+                    a[2 * j] = alleles[0] != ancestral_state
+                    a[2 * j + 1] = alleles[1] != ancestral_state
+            except IndexError:
+                print("Bad set of alleles: {} for sample {} at {} (ancestral state = {})".format(
+                    bases[j], j, row.ID, ancestral_state))
+                continue 
             if len(all_alleles) != 2:
                 non_diploid += 1
             else:
