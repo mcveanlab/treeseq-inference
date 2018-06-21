@@ -167,7 +167,7 @@ def variants(vcf_path, show_progress=False, ancestral_states=None):
     print("Used {} out of {} sites. {} non biallelic, {} without ancestors, {} with missing data, and {} not diploid".format(
         sites_used, tot_sites, non_biallelic, no_ancestral_state, missing_data, non_diploid))
 
-def add_samples(ped_file, population_id_map, individual_names, sample_data):
+def add_samples(ped_file, population_id_map, individual_names, sample_data, show_progress=False):
     """
     Reads the specified PED file to get information about the samples.
     Assumes that the population IDs have already been allocated and
@@ -176,7 +176,8 @@ def add_samples(ped_file, population_id_map, individual_names, sample_data):
     columns = next(ped_file).split("\t")
     sane_names = [col.replace(" ", "_").lower().strip() for col in columns]
     rows = {}
-    for line in tqdm.tqdm(ped_file, total=get_num_lines(ped_file.name), desc="Read population data"):
+    for line in tqdm.tqdm(ped_file, total=get_num_lines(ped_file.name), 
+        desc="Read population data", disable=not show_progress):
         metadata = dict(zip(sane_names, line.strip().split("\t")))
         metadata["population"] = population_id_map[metadata["population"]]
         name = metadata["individual_id"]
@@ -190,7 +191,7 @@ def add_samples(ped_file, population_id_map, individual_names, sample_data):
         rows[name] = nulled
 
     # Add in the metadata rows in the order of the VCF.
-    for name in tqdm.tqdm(individual_names, desc="Adding sites"):
+    for name in tqdm.tqdm(individual_names, desc="Adding sites", disable=not show_progress):
         metadata = rows[name]
         sample_data.add_individual(metadata=metadata, ploidy=2)    
 
@@ -208,7 +209,7 @@ def convert(vcf_file, pedigree_file, output_file,
     vcf.close()
 
     with open(pedigree_file, "r") as ped_file:
-        add_samples(ped_file, pop_id_map, individual_names, sample_data)
+        add_samples(ped_file, pop_id_map, individual_names, sample_data, show_progress)
 
     if ancestor_file is not None:
         ancestors = {}
