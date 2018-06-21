@@ -162,6 +162,7 @@ def variants(vcf_path, show_progress=False, ancestral_states=None):
             if len(all_alleles) != 2:
                 non_diploid += 1
             else:
+                progress.set_postfix(infer_sites=sites_used)
                 all_alleles.remove(ancestral_state)
                 alleles = [ancestral_state, all_alleles.pop()]
                 metadata = {"ID": row.ID, "INFO": dict(row.INFO)}
