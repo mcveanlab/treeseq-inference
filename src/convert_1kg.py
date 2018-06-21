@@ -107,15 +107,18 @@ def variants(vcf_path, show_progress=False, ancestral_states=None):
     Yield a tuple of position, alleles, genotypes, metadata
     If ancestral_states is given, it should be a dictionary mapping name to state
     """
-    progress = tqdm.tqdm(total=vcf_num_rows(vcf_path), desc="Read sites", disable=not show_progress)
+    tot_sites = vcf_num_rows(vcf_path)
+    progress = tqdm.tqdm(total=tot_sites, desc="Read sites", disable=not show_progress)
 
     vcf = cyvcf2.VCF(vcf_path)
 
+    sites_used = non_biallelic = non_diploid = no_ancestral_state = missing_data = 0
     num_diploids = len(vcf.samples)
     num_samples = 2 * num_diploids
     j = 0
     for row in filter_duplicates(vcf):
         progress.update()
+        skip = False
         ancestral_state = None
         try:
             if ancestral_states is not None:
@@ -131,7 +134,16 @@ def variants(vcf_path, show_progress=False, ancestral_states=None):
         except KeyError:
             pass
         #only use biallelic sites with data for all samples, where ancestral state is known
-        if len(row.ALT)==1 and row.num_called == num_diploids and ancestral_state is not None:
+        if len(row.ALT)!=1:
+            non_biallelic += 1
+            skip = True
+        if ancestral_state is None:
+            no_ancestral_state += 1
+            skip = True
+        if row.num_called != num_diploids:
+            missing_data += 1
+            skip = True
+        if not skip:
             a = np.zeros(num_samples, dtype=np.uint8)
             all_alleles = set([ancestral_state])
             # Fill in a with genotypes.
@@ -142,14 +154,18 @@ def variants(vcf_path, show_progress=False, ancestral_states=None):
                     all_alleles.add(allele)
                 a[2 * j] = alleles[0] != ancestral_state
                 a[2 * j + 1] = alleles[1] != ancestral_state
-            if len(all_alleles) == 2:
+            if len(all_alleles) != 2:
+                non_diploid += 1
+            else:
                 all_alleles.remove(ancestral_state)
                 alleles = [ancestral_state, all_alleles.pop()]
                 metadata = {"ID": row.ID, "INFO": dict(row.INFO)}
+                sites_used += 1
                 yield Site(
                     position=row.POS, alleles=alleles, genotypes=a, metadata=metadata)
-
     vcf.close()
+    print("Used {} out of {} sites. {} non biallelic, {} without ancestors, {} with missing data, and {} not diploid".format(
+        sites_used, tot_sites, non_biallelic, no_ancestral_state, missing_data, non_diploid))
 
 def add_samples(ped_file, population_id_map, individual_names, sample_data):
     """
