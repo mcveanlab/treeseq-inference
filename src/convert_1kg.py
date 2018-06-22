@@ -105,7 +105,7 @@ def vcf_num_rows(vcf_path):
     return int(output)
 
 
-def variants(vcf_path, show_progress=False, ancestral_states=None):
+def variants(vcf_path, show_progress=False, ancestral_states=None, include_all_metadata=False):
     """
     Yield a tuple of position, alleles, genotypes, metadata
     If ancestral_states is given, it should be a dictionary mapping name to state
@@ -168,7 +168,7 @@ def variants(vcf_path, show_progress=False, ancestral_states=None):
                 progress.set_postfix(infer_sites=sites_used)
                 all_alleles.remove(ancestral_state)
                 alleles = [ancestral_state, all_alleles.pop()]
-                metadata = {"ID": row.ID, "INFO": dict(row.INFO)}
+                metadata = {"ID": row.ID, "INFO": dict(row.INFO)} if include_all_metadata else {"ID": row.ID}
                 sites_used += 1
                 yield Site(
                     position=row.POS, alleles=alleles, genotypes=a, metadata=metadata)
@@ -205,7 +205,7 @@ def add_samples(ped_file, population_id_map, individual_names, sample_data, show
         sample_data.add_individual(metadata=metadata, ploidy=2)    
 
 def convert(vcf_file, pedigree_file, output_file, 
-    max_variants=None, show_progress=False, ancestor_file=None):
+    max_variants=None, show_progress=False, ancestor_file=None, include_all_metadata=False):
 
     if max_variants is None:
         max_variants = 2**32  # Arbitrary, but > defined max for VCF
@@ -238,7 +238,7 @@ def convert(vcf_file, pedigree_file, output_file,
     else:
         ancestors = None
 
-    for index, site in enumerate(variants(vcf_file, show_progress, ancestors)):
+    for index, site in enumerate(variants(vcf_file, show_progress, ancestors, include_all_metadata)):
         sample_data.add_site(site.position, site.genotypes, site.alleles, site.metadata)
         if index == max_variants:
             break
@@ -264,7 +264,10 @@ def main():
         "-n", "--max-variants", default=None, type=int,
         help="Keep only the first n variants")
     parser.add_argument(
-        "-p", "--progress", action="store_true")
+        "-p", "--progress", action="store_true",
+        help="Show progress bars and output extra information when done")
+    parser.add_argument(
+        "-m", "--include_all_metadata", action="store_true")
 
     args = parser.parse_args()
 
