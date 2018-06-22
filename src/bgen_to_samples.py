@@ -1,15 +1,19 @@
 """
-Convert UK-biobank phased BGEN files to tsinfer sample input
+Convert UK-biobank phased BGEN files to tsinfer sample input.
+
+From /well/mcvean/ukbb12788 run as
+
+bgen_to_samples.py /well/ukbb-wtchg/v2/haplotypes/ukb_hap_chr20_v2.bgen 1000G_GRCh38/H_sap_chr20.samples UK_BB/UK-BB_chr20.samples
 """
+import os
+import argparse
+
 import numpy as np
 import tsinfer
 import bgen_reader
 from tqdm import tqdm
 
-for chr in range(20,21):
-    sd =  tsinfer.load("1000G_GRCh38/H_sap_chr{}.samples".format(chr))
-    bgen_file = "/well/ukbb-wtchg/v2/haplotypes/ukb_hap_chr{}_v2.bgen".format(chr)
-    bgen = bgen_reader.read_bgen(bgen_file, verbose=False, size = 500)
+def create_datafile(sd, bgen, outpath, show_progress):
     
     GRCh38_1000G = [s['ID'] for s in sd.sites_metadata[:]]
     GRCh37_UK_BB = [s for s in bgen['variants']['rsid']]
@@ -21,13 +25,14 @@ for chr in range(20,21):
     intersection_orderUK_BB = [x for x in GRCh37_UK_BB if x in s1000G]
     assert len(intersection_order1000G) == len(intersection_orderUK_BB)
     
-    print("Chromosome {}, {} SNPs shared between 1000G GRCh38 ({} with aa) and UK-BB GRCh37 ({} total). Shared order = {}".format(
-        chr, len(intersection_order1000G), len(GRCh38_1000G), len(GRCh37_UK_BB), 
-        intersection_order1000G == intersection_orderUK_BB))
+    if show_progress:
+        print("{} SNPs shared between existing SampleData ({} with aa) and UK-BB GRCh37 ({} total). Shared order = {}".format(
+            len(intersection_order1000G), len(GRCh38_1000G), len(GRCh37_UK_BB), 
+            intersection_order1000G == intersection_orderUK_BB))
     
-    with tsinfer.SampleData(path="UK_BB/UK-BB_chr{}.samples") as sample_data:
+    with tsinfer.SampleData(path=outpath) as sample_data:
         sample_df = bgen['samples']
-        for i in tqdm(range(len(sample_df)), desc="Read sample names"):
+        for i in tqdm(range(len(sample_df)), desc="Read sample names", disable=not show_progress):
             samp_name = sample_df.iat[i,0]
             dummy = sample_data.add_individual(metadata={'name':samp_name}, ploidy=2)
         
@@ -40,7 +45,7 @@ for chr in range(20,21):
         
         for pos, md, alleles in tqdm(
             zip(sd.sites_position[:], sd.sites_metadata[:], sd.sites_alleles[:]),
-            desc="Read bgen", total=len(bgen['genotype'])):
+            desc="Read bgen", total=len(bgen['genotype']), disable=not show_progress):
             try:
                 idx, UKBBalleles = GRCh37_UK_BB_info[md['ID']]
                 if UKBBalleles==alleles:
@@ -63,5 +68,38 @@ for chr in range(20,21):
                 #can omit any rsIDs not in GRCh37_UK_BB_index
                 nomatch += 1
     
-    print("Finished: {} with ref ancestral and {} with alt ancestral. {} with neither, and {} omitted".format(
-        ref_is_ancestral, alt_is_ancestral, alleles_differ, nomatch))
+    if show_progress:
+        print("Finished: {} with ref ancestral and {} with alt ancestral. {} with neither, and {} omitted".format(
+            ref_is_ancestral, alt_is_ancestral, alleles_differ, nomatch))
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Script to convert UK BioBank bgen files into tsinfer input, " \
+            "using ancestral states and positions from another tsinfer SampleData file")
+    parser.add_argument(
+        "bgen_file",
+        help="The input bgen file containing UK BioBank genotypes.")
+    parser.add_argument(
+        "sampledata_file",
+        help="The input SampleData file containing positions and ancestral states. It must also contain rsIDs stored under the 'ID' key in the sites_metadata dictionary.")
+    parser.add_argument(
+        "outfile",
+        help="The output SampleData file.")
+    parser.add_argument(
+        "-p", "--progress", action="store_true",
+        help="Show progress bars and output extra information when done")
+
+    args = parser.parse_args()
+
+    if not os.path.exists(args.bgen_file):
+        raise ValueError("{} does not exist".format(args.bgen_file))
+    if not os.path.exists(args.sampledata_file):
+        raise ValueError("{} does not exist".format(args.sampledata_file))
+
+    bgen = bgen_reader.read_bgen(args.bgen_file, verbose=False, size = 500)
+    sample_data =  tsinfer.load(args.sampledata_file)
+    create_datafile(sample_data, bgen, args.outfile, args.progress)
+
+    
+if __name__ == "__main__":
+    main()
