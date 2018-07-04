@@ -3,7 +3,7 @@ Convert UK-biobank phased BGEN files to tsinfer sample input.
 
 From /well/mcvean/ukbb12788 run as
 
-bgen_to_samples.py /well/ukbb-wtchg/v2/haplotypes/ukb_hap_chr20_v2.bgen 1000G_GRCh38/H_sap_chr20.samples UK_BB/UK-BB_chr20.samples
+bgen_to_samples.py /well/ukbb-wtchg/v2/haplotypes/ukb_hap_chr20_v2.bgen 1000G_GRCh38/H_sap_chr20.samples UK_BB/UK-BB_chr20.samples -p
 """
 import os
 import argparse
