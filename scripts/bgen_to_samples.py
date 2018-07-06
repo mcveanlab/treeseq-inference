@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Convert UK-biobank phased BGEN files to tsinfer sample input.
 
@@ -13,7 +14,7 @@ import tsinfer
 import bgen_reader
 from tqdm import tqdm
 
-def create_datafile(sd, bgen, outpath, show_progress):
+def create_datafile(sd, bgen, outpath, use_n_samples=False, show_progress=False):
     
     GRCh38_1000G = [s['ID'] for s in sd.sites_metadata[:]]
     GRCh37_UK_BB = [s for s in bgen['variants']['rsid']]
@@ -32,7 +33,8 @@ def create_datafile(sd, bgen, outpath, show_progress):
     
     with tsinfer.SampleData(path=outpath) as sample_data:
         sample_df = bgen['samples']
-        for i in tqdm(range(len(sample_df)), desc="Read sample names", disable=not show_progress):
+        n_samp = min(use_n_samples, len(sample_df)) if use_n_samples else len(sample_df)
+        for i in tqdm(range(n_samp), desc="Read sample names", disable=not show_progress):
             samp_name = sample_df.iat[i,0]
             dummy = sample_data.add_individual(metadata={'name':samp_name}, ploidy=2)
         
@@ -52,13 +54,15 @@ def create_datafile(sd, bgen, outpath, show_progress):
                     ref_is_ancestral += 1
                     genotypes = np.where(
                         #NB: np.ravel does this in the right way, [[1,2],[3,4],[5,6]] -> [1,2,3,4,5,6]
-                        np.ravel(bgen['genotype'][idx,:,:].compute(num_workers=40)[:,allele1_indices] > 0.5),
+                        #since dask doesn't know the length of the arrays, we can't get the allele_1_indices
+                        #directly from bgen['genotype'], but have to pick them out afterwards
+                        np.ravel(bgen['genotype'][idx,0:n_samp,:].compute(num_workers=40)[:,allele1_indices] > 0.5),
                         allele1_index, allele2_index)
                     dummy = sample_data.add_site(pos, genotypes, alleles)
                 elif list(reversed(UKBBalleles))==alleles:
                     alt_is_ancestral += 1
                     genotypes = np.where(
-                        np.ravel(bgen['genotype'][idx,:,:].compute(num_workers=40)[:,allele1_indices] > 0.5),
+                        np.ravel(bgen['genotype'][idx,0:n_samp,:].compute(num_workers=40)[:,allele1_indices] > 0.5),
                         allele2_index, allele1_index) #reverse alt & ref 
                     dummy = sample_data.add_site(pos, genotypes, alleles)
                 else:
@@ -85,6 +89,9 @@ def main():
     parser.add_argument(
         "outfile",
         help="The output SampleData file.")
+    parser.add_argument(
+        "-n", "--use_first_n_samples", type=int,
+        help="Only use the first n (diploid) samples from UK-biobank")
     parser.add_argument(
         "-p", "--progress", action="store_true",
         help="Show progress bars and output extra information when done")
