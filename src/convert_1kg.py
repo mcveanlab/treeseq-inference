@@ -100,6 +100,7 @@ def vcf_num_rows(vcf_path):
         output = subprocess.check_output(["bcftools", "index", "--nrecords", vcf_path])
     except subprocess.CalledProcessError:
         #might be lacking an index
+        print("Creating an index file")
         subprocess.call(["bcftools", "index", vcf_path])
         output = subprocess.check_output(["bcftools", "index", "--nrecords", vcf_path])
     return int(output)
@@ -200,7 +201,7 @@ def add_samples(ped_file, population_id_map, individual_names, sample_data, show
         rows[name] = nulled
 
     # Add in the metadata rows in the order of the VCF.
-    for name in tqdm.tqdm(individual_names, desc="Adding sites", disable=not show_progress):
+    for name in tqdm.tqdm(individual_names, desc="Add sites", disable=not show_progress):
         metadata = rows[name]
         sample_data.add_individual(metadata=metadata, ploidy=2)    
 
@@ -225,7 +226,7 @@ def convert(vcf_file, pedigree_file, output_file,
         sites=vcf_num_rows(ancestor_file)
         vcf = cyvcf2.VCF(ancestor_file)
         for site in tqdm.tqdm(
-            vcf, total=sites, desc="Getting ancestors", disable=not show_progress):
+            vcf, total=sites, desc="Read ancestor state", disable=not show_progress):
             if site.ID:
                 try:
                     ancestors[site.ID] = site.INFO["AA"]
@@ -259,7 +260,7 @@ def main():
         help="The tsinfer output file")
     parser.add_argument(
         "-a", "--ancestors_file", default=None, 
-        help="A vcf file containing ancestral allele states. This will override ancestral alleles from the main vcf. E.g. ftp://ftp.ensembl.org/pub/release-92/variation/vcf/homo_sapiens/homo_sapiens.vcf.gz. To save time, you may want to restrict this to ")
+        help="A vcf file containing ancestral allele states. This will override ancestral alleles from the main vcf. E.g. ftp://ftp.ensembl.org/pub/release-91/variation/vcf/homo_sapiens/homo_sapiens.vcf.gz. To save time, you may want to split this into one file per chromosome, e.g. using `bcftools view homo_sapiens.vcf.gz --regions 1 -Oz -o homo_sapiens_chr1.vcf.gz`")
     parser.add_argument(
         "-n", "--max-variants", default=None, type=int,
         help="Keep only the first n variants")
