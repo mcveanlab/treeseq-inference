@@ -31,7 +31,7 @@ fname = os.path.splitext(args.infile)[0]
 if data.__class__ == tsinfer.formats.SampleData:
     #must create ancestors
     anc = tsinfer.generate_ancestors(
-        sample_data, 
+        data, 
         path=fname + ".ancestors",
         progress_monitor=tsinfer.cli.ProgressMonitor(generate_ancestors=True))
 else:
