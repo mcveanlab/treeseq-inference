@@ -21,14 +21,21 @@ def running_mean(x, N):
     return (cumsum[N:] - cumsum[:-N]) / float(N)
 
 parser = argparse.ArgumentParser(description='Plot ancestors generated from the 1000G data.')
-parser.add_argument('samples_file',
-                    help='a path to the 1000G.samples file')
+parser.add_argument('infile',
+                    help='a path to the 1000G.samples file or 1000G.ancestors file. If a sample file, the ancestors file is created and saved')
 args = parser.parse_args()
 
-sample_data = tsinfer.load(args.samples_file)
-anc = tsinfer.generate_ancestors(
-    sample_data, 
-    progress_monitor=tsinfer.cli.ProgressMonitor(generate_ancestors=True))
+
+data = tsinfer.load(args.infile)
+fname = os.path.splitext(args.infile)[0]
+if data.__class__ == tsinfer.formats.SampleData:
+    #must create ancestors
+    anc = tsinfer.generate_ancestors(
+        sample_data, 
+        path=fname + ".ancestors",
+        progress_monitor=tsinfer.cli.ProgressMonitor(generate_ancestors=True))
+else:
+    anc=data
 frequency = anc.ancestors_time[:]
 lengths = anc.ancestors_end[:]-anc.ancestors_start[:]
 
@@ -44,5 +51,5 @@ plt.ylim(0, np.max(lengths_by_anc_time['l'][0:lengths_by_anc_time.shape[0]//2]))
 plt.xlabel("Ancestors_time (=freq, youngest to oldest)")
 plt.ylabel("Length")
 plt.legend()
-plt.savefig("{}_length-time.png".format(samples_file.replace(".samples","")))
+plt.savefig("{}_length-time.png".format(os.path.basename(fname)))
 plt.clf()
