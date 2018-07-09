@@ -76,7 +76,7 @@ if args.log_yscale:
     plt.yscale("log")
 ax = plt.gca()
 ax.step(fpos[:-1], mean_by_anc_time['l'], label="Mean ancestor length", where='post', color="orange")
-ax.step(fpos[:-1], median_by_anc_time['l'], label="Median ancestor length", where='post', color="orange", linetype=":")
+ax.step(fpos[:-1], median_by_anc_time['l'], label="Median ancestor length", where='post', color="orange", linestyle=":")
 ax.set_xlim(xmin=0)
 _ = ax.tick_params(axis='x', which="major", length=0)
 _ = ax.set_xticklabels('', minor=True)
