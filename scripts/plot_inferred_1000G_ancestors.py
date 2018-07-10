@@ -68,15 +68,15 @@ sum_by_anc_time = df.iloc[df['nsites'].nonzero()].groupby('f', sort=True).sum()
 fpos = np.insert(np.cumsum(sum_by_anc_time['nsites']).values, 0, 0)
 
 fig = plt.figure(figsize=(10,10), dpi=100)
-x_jittered = df_all.mean_pos.values+np.random.uniform(-df_all.width.values/3, df_all.width.values/3, len(df_all.mean_pos.values))
+x_jittered = df_all.mean_pos.values+np.random.uniform(-df_all.width.values*9/20, df_all.width.values*9/20, len(df_all.mean_pos.values))
 #plot with jitter
-plt.scatter(x_jittered, df_all.lengths_per_site.values, marker='.', s=72./fig.dpi, alpha=0.05)
+plt.scatter(x_jittered, df_all.lengths_per_site.values, marker='.', s=72./fig.dpi, alpha=0.05, color="black")
 plt.ylim(1, np.max(mean_by_anc_time['l'][0:mean_by_anc_time.shape[0]//2])*2) #set to max of younger ancestors (we have a few very long old ancestors
 if args.log_yscale:
     plt.yscale("log")
 ax = plt.gca()
-ax.step(fpos[:-1], mean_by_anc_time['l'], label="Mean ancestor length", where='post', color="orange")
-ax.step(fpos[:-1], median_by_anc_time['l'], label="Median ancestor length", where='post', color="orange", linestyle=":")
+ax.step(fpos[:-1], mean_by_anc_time.l, label="Mean", where='post', color="orange")
+ax.step(fpos[:-1], median_by_anc_time.l, label="Median", where='post', color="orange", linestyle=":")
 ax.set_xlim(xmin=0)
 _ = ax.tick_params(axis='x', which="major", length=0)
 _ = ax.set_xticklabels('', minor=True)
