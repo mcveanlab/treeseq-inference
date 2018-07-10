@@ -41,7 +41,7 @@ if data.__class__ == tsinfer.formats.SampleData:
 else:
     anc=data
 
-frequency = anc.ancestors_time[:]
+frequency = anc.ancestors_time[:] + 1
 positions = np.append(anc.sites_position[:], anc.sequence_length)
 lengths_by_sites = anc.ancestors_end[:]-anc.ancestors_start[:]
 lengths_by_pos = (positions[anc.ancestors_end[:]]-positions[anc.ancestors_start[:]])/1000
@@ -86,7 +86,7 @@ _ = ax.set_xticklabels(np.where(
     np.isin(mean_by_anc_time.index, np.array([1,2,3,4,5,6,10,50,1000, 5000])), 
     mean_by_anc_time.index,
     ""))
-plt.xlabel("Ancestors_time (=freq, youngest to oldest)")
+plt.xlabel("Prevalance (frequency), as ancestors_time+1 (~youngest to oldest)")
 plt.ylabel("Length" + ("(kb)" if args.chromosome_positions else "(# sites)"))
 plt.legend(loc='upper center')
 plt.savefig("{}_{}_length-time.png".format(
