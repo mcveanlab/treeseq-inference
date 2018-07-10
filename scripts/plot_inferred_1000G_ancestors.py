@@ -25,8 +25,8 @@ parser.add_argument('infile',
                     help='a path to the 1000G.samples file or 1000G.ancestors file. If a sample file, the ancestors file is created and saved')
 parser.add_argument('-ly', '--log-yscale', action='store_true',
                     help='Should the y scale be logged')
-parser.add_argument('-cp', '--chromosome-positions', action='store_true',
-                    help='Should we plot the lengths in terms of chromosome positions')
+parser.add_argument('-cp', '--physical-length', action='store_true',
+                    help='Should we plot the lengths in terms of physical lengths along the chromosome or # of sites')
 args = parser.parse_args()
 
 
@@ -48,7 +48,7 @@ lengths_by_pos = (positions[anc.ancestors_end[:]]-positions[anc.ancestors_start[
 
 
 df = pd.DataFrame({
-    'l':lengths_by_pos if args.chromosome_positions else lengths_by_sites,
+    'l':lengths_by_pos if args.physical_length else lengths_by_sites,
     'f':frequency, 
     'nsites': [len(x) for x in anc.ancestors_focal_sites[:]]})
 
@@ -87,8 +87,8 @@ _ = ax.set_xticklabels(np.where(
     mean_by_anc_time.index,
     ""))
 plt.xlabel("Prevalance (frequency), as ancestors_time+1 (~youngest to oldest)")
-plt.ylabel("Length" + ("(kb)" if args.chromosome_positions else "(# sites)"))
+plt.ylabel("Length" + ("(kb)" if args.physical_length else "(# sites)"))
 plt.legend(loc='upper center')
 plt.savefig("{}_{}_length-time.png".format(
-    os.path.basename(fname),"kb" if args.chromosome_positions else "sites"), dpi=100)
+    os.path.basename(fname),"kb" if args.physical_length else "sites"), dpi=100)
 plt.clf()
