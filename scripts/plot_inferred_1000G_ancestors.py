@@ -88,7 +88,7 @@ _ = ax.set_xticklabels(np.where(
     ""))
 plt.xlabel("Ancestors_time (=freq, youngest to oldest)")
 plt.ylabel("Length" + ("(kb)" if args.chromosome_positions else "(# sites)"))
-plt.legend()
+plt.legend(loc='upper center')
 plt.savefig("{}_{}_length-time.png".format(
     os.path.basename(fname),"kb" if args.chromosome_positions else "sites"), dpi=100)
 plt.clf()
