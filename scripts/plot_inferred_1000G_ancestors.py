@@ -25,7 +25,7 @@ parser.add_argument('infile',
                     help='a path to the 1000G.samples file or 1000G.ancestors file. If a sample file, the ancestors file is created and saved')
 parser.add_argument('-logy', '--log-yscale', action='store_true',
                     help='Should the y scale be logged')
-parser.add_argument('-cp', '--physical-length', action='store_true',
+parser.add_argument('-pl', '--physical-length', action='store_true',
                     help='Should we plot the lengths in terms of physical lengths along the chromosome or # of sites')
 args = parser.parse_args()
 
