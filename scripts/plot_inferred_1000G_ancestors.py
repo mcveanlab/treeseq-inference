@@ -23,7 +23,7 @@ def running_mean(x, N):
 parser = argparse.ArgumentParser(description='Plot ancestors generated from the 1000G data.')
 parser.add_argument('infile',
                     help='a path to the 1000G.samples file or 1000G.ancestors file. If a sample file, the ancestors file is created and saved')
-parser.add_argument('-ly', '--log-yscale', action='store_true',
+parser.add_argument('-logy', '--log-yscale', action='store_true',
                     help='Should the y scale be logged')
 parser.add_argument('-cp', '--physical-length', action='store_true',
                     help='Should we plot the lengths in terms of physical lengths along the chromosome or # of sites')
@@ -71,12 +71,16 @@ fig = plt.figure(figsize=(10,10), dpi=100)
 x_jittered = df_all.mean_pos.values+np.random.uniform(-df_all.width.values*9/20, df_all.width.values*9/20, len(df_all.mean_pos.values))
 #plot with jitter
 plt.scatter(x_jittered, df_all.lengths_per_site.values, marker='.', s=72./fig.dpi, alpha=0.05, color="black")
-plt.ylim(1, np.max(mean_by_anc_time['l'][0:mean_by_anc_time.shape[0]//2])*2) #set to max of younger ancestors (we have a few very long old ancestors
+max_mean_y = np.max(mean_by_anc_time['l'][0:mean_by_anc_time.shape[0]//2]) #only use younger ancestors (we have a few very long old ancestors)
 if args.log_yscale:
+    plt.ylim(1, max_mean_y**2) 
     plt.yscale("log")
+else:
+    plt.ylim(1, max_mean_y*2) 
+
 ax = plt.gca()
 ax.step(fpos[:-1], mean_by_anc_time.l, label="Mean", where='post', color="orange")
-ax.step(fpos[:-1], median_by_anc_time.l, label="Median", where='post', color="orange", linestyle=":")
+ax.step(fpos[:-1], median_by_anc_time.l, label="Median", where='post', color="darkorange", linestyle=":")
 ax.set_xlim(xmin=0)
 _ = ax.tick_params(axis='x', which="major", length=0)
 _ = ax.set_xticklabels('', minor=True)
