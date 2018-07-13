@@ -23,10 +23,8 @@ def running_mean(x, N):
 parser = argparse.ArgumentParser(description='Plot ancestors generated from the 1000G data.')
 parser.add_argument('infile',
                     help='a path to the 1000G.samples file or 1000G.ancestors file. If a sample file, the ancestors file is created and saved')
-parser.add_argument("--length-scale", "-ls", choices=['linear', 'log'], default="linear",
+parser.add_argument("--length-scale", "-X", choices=['linear', 'log'], default="linear",
     help='Should we transform lengths when plotting')
-parser.add_argument('-pl', '--physical-length', action='store_true',
-                    help='Should we plot the lengths in terms of physical lengths along the chromosome or # of sites')
 args = parser.parse_args()
 
 
@@ -43,12 +41,11 @@ else:
 
 frequency = anc.ancestors_time[:] + 1
 positions = np.append(anc.sites_position[:], anc.sequence_length)
-lengths_by_sites = anc.ancestors_end[:]-anc.ancestors_start[:]
 lengths_by_pos = (positions[anc.ancestors_end[:]]-positions[anc.ancestors_start[:]])/1000
 
 
 df = pd.DataFrame({
-    'l':lengths_by_pos if args.physical_length else lengths_by_sites,
+    'l':lengths_by_pos,
     'f':frequency, 
     'nsites': [len(x) for x in anc.ancestors_focal_sites[:]]})
 
@@ -82,11 +79,11 @@ ax = plt.gca()
 ax.step(fpos[:-1], mean_by_anc_time.l, label="Mean", where='post', color="orange")
 ax.step(fpos[:-1], median_by_anc_time.l, label="Median", where='post', color="darkorange", linestyle=":")
 ax.set_xlim(xmin=0)
-_ = ax.tick_params(axis='x', which="major", length=0)
-_ = ax.set_xticklabels('', minor=True)
-_ = ax.set_xticks(fpos[:-1], minor=True)
-_ = ax.set_xticks(fpos[:-1]+np.diff(fpos)/2)
-_ = ax.set_xticklabels(np.where(
+ax.tick_params(axis='x', which="major", length=0)
+ax.set_xticklabels('', minor=True)
+ax.set_xticks(fpos[:-1], minor=True)
+ax.set_xticks(fpos[:-1]+np.diff(fpos)/2)
+ax.set_xticklabels(np.where(
     np.isin(mean_by_anc_time.index, np.array([1,2,3,4,5,6,10,50,1000, 5000])), 
     mean_by_anc_time.index,
     ""))
