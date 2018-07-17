@@ -14,8 +14,8 @@ import msprime
 sys.path.insert(1,os.path.join(sys.path[0],'..','tsinfer'))
 import tsinfer
 
-#tsinfer_executable = os.path.join(sys.path[0],'run_old_tsinfer.py') #use with e.g. `git checkout b1fa4ed8`
-tsinfer_executable = os.path.join(sys.path[0],'run_tsinfer.py')
+#tsinfer_executable = os.path.join(sys.path[0],'..','src','run_old_tsinfer.py') #use with e.g. `git checkout b1fa4ed8`
+tsinfer_executable = os.path.join(sys.path[0],'..','src','run_tsinfer.py')
 
 if 'run_old_tsinfer' in tsinfer_executable:
     import dbm
