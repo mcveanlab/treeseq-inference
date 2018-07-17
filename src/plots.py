@@ -84,7 +84,7 @@ def new_simplify(ts, **kwargs):
        time=tmp_tables.nodes.time,
        metadata=tmp_tables.nodes.metadata,
        metadata_offset=tmp_tables.nodes.metadata_offset)
-    return tmp_tables.tree_sequence().simplify(**kwargs)
+    return old_simplify(tmp_tables.tree_sequence(), **kwargs)
 msprime.TreeSequence.simplify = new_simplify
 
 
