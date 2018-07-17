@@ -146,7 +146,7 @@ for dataset, doc in google_files.items():
     l_inferred_ts = msprime.load("{}.trees".format(dataset))
     s_inferred_ts = msprime.load("{}_small.trees".format(dataset))
     print("For {} dataset, pos {} to {}  ({} SNPs):  inferred {} trees using all data & {} trees using {} samples".format(
-        min(a), max(a), l-1, l_inferred_ts.num_trees, s_inferred_ts.num_trees,len(focal_10)))
+        dataset, min(a), max(a), l-1, l_inferred_ts.num_trees, s_inferred_ts.num_trees,len(focal_10)))
     
     if l_names:
         node_labels={k:v for k,v in enumerate(l_names)}
