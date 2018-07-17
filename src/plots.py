@@ -65,6 +65,29 @@ tsinfer_executable = os.path.join(sys.path[0],'run_tsinfer.py')
 msprime.TreeSequence.write_nexus_trees = ts_extras.write_nexus_trees
 msprime.TreeSequence.save_nexus_trees = ts_extras.save_nexus_trees
 
+#NB - a shortcut in the simplify() method means we need remove individuals
+# here we monkey patch a hacky replacement in
+old_simplify = msprime.TreeSequence.simplify
+def new_simplify(ts, **kwargs):
+    tmp_tables = ts.dump_tables()
+    tmp_tables.nodes.clear()
+    tmp_tables.individuals.clear()
+    for node in ts.nodes():
+        if node.is_sample():
+            metadata = ts.individual(node.individual).metadata
+        else:
+            metadata = None
+        tmp_tables.nodes.add_row(
+            flags=node.flags, time=node.time, metadata=metadata)
+    tmp_tables.nodes.set_columns(
+       flags=tmp_tables.nodes.flags,
+       time=tmp_tables.nodes.time,
+       metadata=tmp_tables.nodes.metadata,
+       metadata_offset=tmp_tables.nodes.metadata_offset)
+    return tmp_tables.tree_sequence().simplify(**kwargs)
+msprime.TreeSequence.simplify = new_simplify
+
+
 FASTARG = "fastARG"
 ARGWEAVER = "ARGweaver"
 RENTPLUS = "RentPlus"
