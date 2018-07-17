@@ -68,7 +68,7 @@ msprime.TreeSequence.save_nexus_trees = ts_extras.save_nexus_trees
 #NB - a shortcut in the simplify() method means we need remove individuals
 # here we monkey patch a hacky replacement in
 old_simplify = msprime.TreeSequence.simplify
-def new_simplify(ts, **kwargs):
+def new_simplify(ts, *args, **kwargs):
     tmp_tables = ts.dump_tables()
     tmp_tables.nodes.clear()
     tmp_tables.individuals.clear()
@@ -84,7 +84,7 @@ def new_simplify(ts, **kwargs):
        time=tmp_tables.nodes.time,
        metadata=tmp_tables.nodes.metadata,
        metadata_offset=tmp_tables.nodes.metadata_offset)
-    return old_simplify(tmp_tables.tree_sequence(), **kwargs)
+    return old_simplify(tmp_tables.tree_sequence(), *args, **kwargs)
 msprime.TreeSequence.simplify = new_simplify
 
 
