@@ -1491,7 +1491,7 @@ class AllToolsAccuracyDataset(AllToolsDataset):
     #params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
-        ERROR_COLNAME : [0, 0.001],
+        ERROR_COLNAME : [0, 0.001, 0.01],
     }
 
 class AllToolsPerformanceDataset(AllToolsDataset):
