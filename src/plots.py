@@ -74,7 +74,10 @@ def new_simplify(ts, *args, **kwargs):
     tmp_tables.individuals.clear()
     for node in ts.nodes():
         if node.is_sample():
-            metadata = ts.individual(node.individual).metadata
+            try:
+                metadata = ts.individual(node.individual).metadata
+            except:
+                metadata = None
         else:
             metadata = None
         tmp_tables.nodes.add_row(
