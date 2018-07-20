@@ -140,7 +140,7 @@ for dataset, doc in google_files.items():
     large_sample_data.finalise()
     small_sample_data.finalise()
     
-    extra_params = ["--recombination-rate", str(1e-8), "--length", str(34025983), "--method", "P"]
+    extra_params = ["--recombination-rate", str(1e-8), "--length", str(34025983)]
     l_inferred_ts = subprocess.call(["python3", tsinfer_executable, lsd_fn, "{}.trees".format(dataset)] + extra_params)
     s_inferred_ts = subprocess.call(["python3", tsinfer_executable, ssd_fn, "{}_small.trees".format(dataset)] + extra_params)
     l_inferred_ts = msprime.load("{}.trees".format(dataset))
@@ -220,9 +220,9 @@ tip.match = sapply(n1$tip.label, function(n) {n %in% RaxML.tree$tip.label})
 if (all(tip.match)) {
     sapply(names, function(n) {
         c(small_with_polytomies  = treeDist(RaxML.tree, read.nexus(Sys.glob(sprintf("*_%s_small.nex", n)))),
-          small_break_polytomies = mean(replicate(50, treeDist(RaxML.tree, multi2di(read.nexus(Sys.glob(sprintf("*_%s_small.nex", n))))))),
+          small_break_polytomies = mean(replicate(1000, treeDist(RaxML.tree, multi2di(read.nexus(Sys.glob(sprintf("*_%s_small.nex", n))))))),
           subs_with_polytomies   = treeDist(RaxML.tree, read.nexus(Sys.glob(sprintf("*_%s_subs.nex", n)))),
-          subs_break_polytomies  = mean(replicate(50, treeDist(RaxML.tree, multi2di(read.nexus(Sys.glob(sprintf("*_%s_subs.nex", n)))))))
+          subs_break_polytomies  = mean(replicate(1000, treeDist(RaxML.tree, multi2di(read.nexus(Sys.glob(sprintf("*_%s_subs.nex", n)))))))
         )
     })
 } else {
@@ -251,12 +251,13 @@ filtered     full  allsnps
 7.071068 7.071068 9.756919  subs_break_polytomies  
 
 
-And for Jerome's recent modified ancestor construction in jeromekelleher/update-ancestors-alg
+And for Jerome's modified ancestor construction in jeromekelleher/update-ancestors-alg
+(tsinfer version: 0.1.3.dev53+gc8f3abf)
 
+                       filtered     full  allsnps
+small_with_polytomies  7.000000 7.615773 9.949874
+small_break_polytomies 6.687708 7.178171 9.962952
+subs_with_polytomies   7.071068 7.483315 9.643651
+subs_break_polytomies  6.805906 7.353471 9.927854
 
-                       filtered     full 
-small_with_polytomies  7.000000 7.000000 
-small_break_polytomies 6.688760 6.649623 
-subs_with_polytomies   7.071068 7.615773 
-subs_break_polytomies  6.860473 7.233332 
 """
