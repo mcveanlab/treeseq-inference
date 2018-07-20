@@ -445,7 +445,7 @@ class InferenceRunner(object):
                     #get positions from the samples store, for use in metric calcs
                     try:
                         positions = tsinfer.SampleData.load(path=self.cmp_fn + ".samples").sites_position[:].tolist()
-                    except tsinfer.exceptions.FileFormatError:
+                    except (tsinfer.exceptions.FileFormatError, FileNotFoundError):
                         #no such file exists, could be a case with no sites
                         continue
                 else:
