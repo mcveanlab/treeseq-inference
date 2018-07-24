@@ -53,8 +53,7 @@ def main():
         "--inject-real-ancestors-from-ts", default=None,
         help="Instead of inferring ancestors, construct known ones from this tree sequence file path")
     parser.add_argument(
-        "-V", "--version", action='store_true',
-        help="Show library version numbers")
+        "-V", "--version", action='version', version=description)
     
 
     args = parser.parse_args()
