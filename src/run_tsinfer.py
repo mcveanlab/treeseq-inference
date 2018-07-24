@@ -52,9 +52,16 @@ def main():
     parser.add_argument(
         "--inject-real-ancestors-from-ts", default=None,
         help="Instead of inferring ancestors, construct known ones from this tree sequence file path")
+    parser.add_argument(
+        "-V", "--version", action='store_true',
+        help="Show library version numbers")
     
 
     args = parser.parse_args()
+    if args.version:
+        print(description)
+        return
+        
     if args.recombination_rate is not None:
         logging.warning("TSinfer now simply ignores recombination rate. You can omit this parameter")
     if args.error_probability is not None:
