@@ -17,6 +17,9 @@ import tsinfer
 #tsinfer_executable = os.path.join(sys.path[0],'..','src','run_old_tsinfer.py') #use with e.g. `git checkout b1fa4ed8`
 tsinfer_executable = os.path.join(sys.path[0],'..','src','run_tsinfer.py')
 
+print("Running using")
+subprocess.call(["python3", tsinfer_executable, "--version"])
+
 if 'run_old_tsinfer' in tsinfer_executable:
     import dbm
     #pre-release tsinfer versions don't have sensible version numbers set
