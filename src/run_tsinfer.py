@@ -57,9 +57,6 @@ def main():
     
 
     args = parser.parse_args()
-    if args.version:
-        print(description)
-        return
         
     if args.recombination_rate is not None:
         logging.warning("TSinfer now simply ignores recombination rate. You can omit this parameter")
