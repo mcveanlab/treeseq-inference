@@ -151,7 +151,7 @@ for dataset, doc in google_files.items():
     if l_names:
         node_labels={k:v for k,v in enumerate(l_names)}
     else:
-        node_labels={n.id:json.loads(l_inferred_ts.individual(n.individual).metadata)['name'] for n in l_inferred_ts.nodes() if n.is_sample()}
+        node_labels={n.id:json.loads(l_inferred_ts.individual(n.individual).metadata.decode('utf-8'))['name'] for n in l_inferred_ts.nodes() if n.is_sample()}
     for tree in l_inferred_ts.trees():
         low, high = tree.interval
         if low <= 33952619 < high:
@@ -182,7 +182,7 @@ for dataset, doc in google_files.items():
     if l_names:
         node_labels={k:v for k,v in enumerate(s_names)}
     else:
-        node_labels={n.id:json.loads(n.metadata)['name'] for n in ls_inferred_ts.nodes() if n.is_sample()}
+        node_labels={n.id:json.loads(n.metadata.decode('utf-8'))['name'] for n in ls_inferred_ts.nodes() if n.is_sample()}
     for tree in ls_inferred_ts.trees():
         low, high = tree.interval
         if low <= 33952619 < high:
@@ -195,7 +195,7 @@ for dataset, doc in google_files.items():
     if l_names:
         node_labels={k:v for k,v in enumerate(s_names)}
     else:
-        node_labels={n.id:json.loads(s_inferred_ts.individual(n.individual).metadata)['name'] for n in s_inferred_ts.nodes() if n.is_sample()}
+        node_labels={n.id:json.loads(s_inferred_ts.individual(n.individual).metadata.decode('utf-8'))['name'] for n in s_inferred_ts.nodes() if n.is_sample()}
     for tree in s_inferred_ts.trees():
         low, high = tree.interval
         if low <= 33952619 < high:
@@ -219,10 +219,10 @@ n1 = read.nexus(Sys.glob(sprintf("*_%s_small.nex", "full")))
 tip.match = sapply(n1$tip.label, function(n) {n %in% RaxML.tree$tip.label})
 if (all(tip.match)) {
     sapply(names, function(n) {
-        c(small_with_polytomies  = treeDist(RaxML.tree, read.nexus(Sys.glob(sprintf("*_%s_small.nex", n)))),
-          small_break_polytomies = mean(replicate(1000, treeDist(RaxML.tree, multi2di(read.nexus(Sys.glob(sprintf("*_%s_small.nex", n))))))),
-          subs_with_polytomies   = treeDist(RaxML.tree, read.nexus(Sys.glob(sprintf("*_%s_subs.nex", n)))),
-          subs_break_polytomies  = mean(replicate(1000, treeDist(RaxML.tree, multi2di(read.nexus(Sys.glob(sprintf("*_%s_subs.nex", n)))))))
+        c(origsize10_with_poly  = treeDist(RaxML.tree, read.nexus(Sys.glob(sprintf("*_%s_small.nex", n)))),
+          origsize10_break_poly = mean(replicate(50, treeDist(RaxML.tree, multi2di(read.nexus(Sys.glob(sprintf("*_%s_small.nex", n))))))),
+          subsamp6k_with_poly   = treeDist(RaxML.tree, read.nexus(Sys.glob(sprintf("*_%s_subs.nex", n)))),
+          subsamp6k_break_poly  = mean(replicate(50, treeDist(RaxML.tree, multi2di(read.nexus(Sys.glob(sprintf("*_%s_subs.nex", n)))))))
         )
     })
 } else {
@@ -233,7 +233,7 @@ if (all(tip.match)) {
 """
 
 """
-Gives the following for the new codebase
+Gives the following for the new (MASTER) codebase (draconian stopping rule)
 
 filtered      full  allsnps                       
 7.810250  7.810250 11.09054  small_with_polytomies  
@@ -242,7 +242,7 @@ filtered      full  allsnps
 7.657892 11.815536 11.15343  subs_break_polytomies  
 
 
-And for the old codebase:
+And for the old codebase (very liberal stopping rule, nearly all ancestors v long):
 
 filtered     full  allsnps                         
 7.615773 7.615773 9.486833  small_with_polytomies  
@@ -251,13 +251,21 @@ filtered     full  allsnps
 7.071068 7.071068 9.756919  subs_break_polytomies  
 
 
-And for Jerome's modified ancestor construction in jeromekelleher/update-ancestors-alg
-(tsinfer version: 0.1.3.dev53+gc8f3abf)
+And for Jerome's recent modified ancestor construction in 
+jeromekelleher/update-ancestors-alg
 
+#revision c8f3abf (less draconian stopping rule than MASTER)
                        filtered     full  allsnps
 small_with_polytomies  7.000000 7.615773 9.949874
-small_break_polytomies 6.687708 7.178171 9.962952
+small_break_polytomies 6.719144 7.181756 9.961036
 subs_with_polytomies   7.071068 7.483315 9.643651
-subs_break_polytomies  6.805906 7.353471 9.927854
+subs_break_polytomies  6.799543 7.342762 9.916682
 
+
+#revision 00ebf1d (less draconian stopping rule, allow for some error, no trailing zeros)
+                       filtered     full   allsnps
+small_with_polytomies  7.549834 7.745967 10.000000
+small_break_polytomies 7.549834 7.745967 10.000000
+subs_with_polytomies   7.280110 6.855655  9.539392
+subs_break_polytomies  7.171893 6.661915  9.866577
 """
