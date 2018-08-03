@@ -9,6 +9,7 @@ import collections
 import numpy as np
 import msprime
 
+
 def main():
     parser = argparse.ArgumentParser(
         description=__doc__)
@@ -42,7 +43,11 @@ def main():
     count = np.bincount(np.array(list(srb.values()), dtype=np.int))
     
     print("Sharing counts for recombination breakpoints")
-    print(np.array([count[1:], np.arange(1,len(count))]).transpose())
-
+    for i, c in enumerate(count):
+        if i:
+            if i==1:
+                print(i,c, "(unshared/unique breakpoints)")
+            else:
+                print(i,c)
 if __name__ == "__main__":
     main()
