@@ -41,7 +41,7 @@ def main():
 
     count = np.bincount(np.array(list(srb.values()), dtype=np.int))
     
-    print("Sharing counts for recombination breakpoints"
+    print("Sharing counts for recombination breakpoints")
     print(np.array([count[1:], np.arange(1,len(count))]).transpose())
 
 if __name__ == "__main__":
