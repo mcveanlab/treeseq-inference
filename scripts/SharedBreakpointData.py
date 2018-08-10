@@ -10,7 +10,7 @@ import numpy as np
 import msprime
 
 def identify_SRBs(ts):
-    breakpoints = collections.defaultdict(set)
+    breakpoints = collections.defaultdict(int)
     for (left, right), edges_out, edges_in in ts.edge_diffs():
         if len(edges_out) and len(edges_in):
             child_data = collections.defaultdict(list)
@@ -21,10 +21,10 @@ def identify_SRBs(ts):
             for c, parents in child_data.items():
                 assert 0 < len(parents) < 3
                 if len(parents) == 2:
-                    breakpoints[(left, parents[0],parents[1])].add(edge.child)
+                    breakpoints[(left, parents[0],parents[1])] += 1
     # shared breakpoints have at least 2 children
     #print(breakpoints)
-    return {k:v for k,v in breakpoints.items() if len(v) > 1}
+    return {k:v for k,v in breakpoints.items() if v > 1}
 
 def main():
     parser = argparse.ArgumentParser(
@@ -63,7 +63,7 @@ def main():
     SRBs = identify_SRBs(ts)
     # print how many SRBs we have
     print("New SRB count")
-    cts = np.array([len(bp) for bp in SRBs.values()], dtype=np.int)
+    cts = np.array([(bp) for bp in SRBs.values()], dtype=np.int)
     count = np.bincount(cts)
     
     print(", ".join(["{}:{}".format(i,n) for i,n in enumerate(count) if i>1]))
