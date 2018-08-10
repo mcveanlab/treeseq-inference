@@ -9,6 +9,22 @@ import collections
 import numpy as np
 import msprime
 
+def identify_SRBs(ts):
+    breakpoints = collections.defaultdict(set)
+    for (left, right), edges_out, edges_in in ts.edge_diffs():
+        if len(edges_out) and len(edges_in):
+            child_data = collections.defaultdict(list)
+            for edge in edges_out:
+                child_data[edge.child].append(edge.parent)
+            for edge in edges_in:
+                child_data[edge.child].append(edge.parent)
+            for c, parents in child_data.items():
+                assert 0 < len(parents) < 3
+                if len(parents) == 2:
+                    breakpoints[(left, parents[0],parents[1])].add(edge.child)
+    # shared breakpoints have at least 2 children
+    #print(breakpoints)
+    return {k:v for k,v in breakpoints.items() if len(v) > 1}
 
 def main():
     parser = argparse.ArgumentParser(
@@ -46,8 +62,23 @@ def main():
     for i, c in enumerate(count):
         if i:
             if i==1:
-                print(i,c, "(unshared/unique breakpoints)")
+                print(i,c, "(unshared)")
             else:
                 print(i,c)
+                
+    SRBs = identify_SRBs(ts)
+    # print how many SRBs we have
+    print("New SRB count")
+    cts = np.array([len(bp) for bp in SRBs.values()], dtype=np.int)
+    count = np.bincount(cts)
+    
+    print("Sharing counts for recombination breakpoints")
+    for i, c in enumerate(count):
+        if i:
+            if i==1:
+                print(i,c, "(unshared)")
+            else:
+                print(i,c)
+   
 if __name__ == "__main__":
     main()
