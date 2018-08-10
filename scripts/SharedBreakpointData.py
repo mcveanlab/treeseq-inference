@@ -58,7 +58,7 @@ def main():
 
     count = np.bincount(np.array(list(breakpoints.values()), dtype=np.int))
     print("Sharing counts for recombination breakpoints")
-    print(", ".join(["{}:{}".format(i,n) for i,n in enumerate(count) if i>1]))
+    print(", ".join(["{}:{}".format(i,n) for i,n in enumerate(count) if i>1 and n>0]))
                 
     SRBs = identify_SRBs(ts)
     # print how many SRBs we have
@@ -66,7 +66,7 @@ def main():
     cts = np.array([len(bp) for bp in SRBs.values()], dtype=np.int)
     count = np.bincount(cts)
     
-    print(", ".join(["{}:{}".format(i,n) for i,n in enumerate(count) if i>1]))
+    print(", ".join(["{}:{}".format(i,n) for i,n in enumerate(count) if  i>1 and n>0]))
    
 if __name__ == "__main__":
     main()
