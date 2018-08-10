@@ -36,7 +36,7 @@ def main():
 
 
     ts = msprime.load(args.tree_sequence_file)
-    srb = collections.defaultdict(int)
+    breakpoints = collections.defaultdict(int)
     for (left, right), edges_out, edges_in in ts.edge_diffs():
         if len(edges_out) and len(edges_in):
             child_data = collections.defaultdict(list)
@@ -47,7 +47,7 @@ def main():
             for c, parents in child_data.items():
                 assert 0 < len(parents) < 3
                 if len(parents) == 2:
-                    srb[(left, parents[0],parents[1])] += 1
+                    breakpoints[(left, parents[0],parents[1])] += 1
             #for k,v in srb.items():
             #    if v>1:
             #        for c, ps in child_data.items():
@@ -56,15 +56,9 @@ def main():
             #            if tuple(ps) == k[1:]:
             #                print(k[0], c, ps)
 
-    count = np.bincount(np.array(list(srb.values()), dtype=np.int))
-    
+    count = np.bincount(np.array(list(breakpoints.values()), dtype=np.int))
     print("Sharing counts for recombination breakpoints")
-    for i, c in enumerate(count):
-        if i:
-            if i==1:
-                print(i,c, "(unshared)")
-            else:
-                print(i,c)
+    print(", ".join(["{}:{}".format(i,n) for i,n in enumerate(count) if i>1]))
                 
     SRBs = identify_SRBs(ts)
     # print how many SRBs we have
@@ -72,13 +66,7 @@ def main():
     cts = np.array([len(bp) for bp in SRBs.values()], dtype=np.int)
     count = np.bincount(cts)
     
-    print("Sharing counts for recombination breakpoints")
-    for i, c in enumerate(count):
-        if i:
-            if i==1:
-                print(i,c, "(unshared)")
-            else:
-                print(i,c)
+    print(", ".join(["{}:{}".format(i,n) for i,n in enumerate(count) if i>1]))
    
 if __name__ == "__main__":
     main()
