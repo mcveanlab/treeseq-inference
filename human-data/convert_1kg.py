@@ -1,14 +1,14 @@
 """
 Script to import 1000 genomes data
+
+Requires tsinfer >= 1.3
 """
 import argparse
 import subprocess
 import os
-import shutil
 import sys
 
 import numpy as np
-import msprime
 import tsinfer
 import attr
 import cyvcf2
@@ -21,6 +21,7 @@ class Site(object):
     alleles = attr.ib(None)
     genotypes = attr.ib(None)
     metadata = attr.ib({})
+
 
 def add_populations(sample_data):
     """
@@ -64,6 +65,7 @@ def add_populations(sample_data):
             dict(zip(["name", "description", "super_population"], pop)))
         id_map[pop[0]] = pop_id
     return id_map
+
 
 def filter_duplicates(vcf):
     """
@@ -159,8 +161,9 @@ def variants(vcf_path, ancestral_states, show_progress=False, max_sites=None):
     print(
         "Used {} out of {} sites. {} non biallelic, {} without rsid {} without ancestral state, "
         "{} with missing data, and {} not diploid".format(
-        sites_used, tot_sites, non_biallelic, no_rsid, no_ancestral_state, missing_data,
-        non_diploid))
+            sites_used, tot_sites, non_biallelic, no_rsid, no_ancestral_state, missing_data,
+            non_diploid))
+
 
 def add_samples(ped_file, population_id_map, individual_names, sample_data):
     """
@@ -171,10 +174,12 @@ def add_samples(ped_file, population_id_map, individual_names, sample_data):
     columns = next(ped_file).split("\t")
     sane_names = [col.replace(" ", "_").lower().strip() for col in columns]
     rows = {}
+    populations = {}
     for line in ped_file:
         metadata = dict(zip(sane_names, line.strip().split("\t")))
-        metadata["population"] = population_id_map[metadata["population"]]
-        name = metadata["individual_id"]
+        name = metadata.pop("individual_id")
+        population_name = metadata.pop("population")
+        populations[name] = population_id_map[population_name]
         # The value '0' seems to be used to encode missing, so insert None
         # instead to be more useful.
         nulled = {}
@@ -186,7 +191,9 @@ def add_samples(ped_file, population_id_map, individual_names, sample_data):
 
     # Add in the metadata rows in the order of the VCF.
     for name in individual_names:
-        sample_data.add_individual(metadata=rows[name], ploidy=2)
+        metadata = rows[name]
+        sample_data.add_individual(
+            metadata=metadata, population=populations[name], ploidy=2)
 
 
 def read_ancestral_states(ancestor_file, show_progress=False):
@@ -218,24 +225,33 @@ def convert(
         vcf_file, ancestral_states_file, pedigree_file, output_file, max_variants=None,
         show_progress=False):
 
-    if max_variants is None:
-        max_variants = 2**32  # Arbitrary, but > defined max for VCF
+    git_hash = subprocess.check_output(["git", "rev-parse", "HEAD"])
+    git_provenance = {
+        "repo": "git@github.com:mcveanlab/treeseq-inference.git",
+        "hash": git_hash.decode().strip(),
+        "dir": "human-data",
+        "notes:": (
+            "Use the Makefile to download and process the upstream data files")}
 
-    sample_data = tsinfer.SampleData(path=output_file, num_flush_threads=2)
-    pop_id_map = add_populations(sample_data)
+    with tsinfer.SampleData(path=output_file, num_flush_threads=2) as sample_data:
+        pop_id_map = add_populations(sample_data)
 
-    vcf = cyvcf2.VCF(vcf_file)
-    individual_names = list(vcf.samples)
-    vcf.close()
+        vcf = cyvcf2.VCF(vcf_file)
+        individual_names = list(vcf.samples)
+        vcf.close()
 
-    with open(pedigree_file, "r") as ped_file:
-        add_samples(ped_file, pop_id_map, individual_names, sample_data)
+        with open(pedigree_file, "r") as ped_file:
+            add_samples(ped_file, pop_id_map, individual_names, sample_data)
 
-    ancestral_states = read_ancestral_states(ancestral_states_file, show_progress)
-    iterator = variants(vcf_file, ancestral_states, show_progress, max_variants)
-    for site in iterator:
-        sample_data.add_site(site.position, site.genotypes, site.alleles, site.metadata)
-    sample_data.finalise(command=sys.argv[0], parameters=sys.argv[1:])
+        ancestral_states = read_ancestral_states(ancestral_states_file, show_progress)
+
+        iterator = variants(vcf_file, ancestral_states, show_progress, max_variants)
+        for site in iterator:
+            sample_data.add_site(
+                position=site.position, genotypes=site.genotypes,
+                alleles=site.alleles, metadata=site.metadata)
+        sample_data.record_provenance(
+            command=sys.argv[0], args=sys.argv[1:], git=git_provenance)
 
 
 def main():
@@ -266,7 +282,6 @@ def main():
         raise ValueError("{} does not exist".format(args.vcf_file))
     if not os.path.exists(args.pedigree_file):
         raise ValueError("{} does not exist".format(args.pedigree_file))
-
 
     convert(
         args.vcf_file, args.ancestral_states_file, args.pedigree_file, args.output_file,
