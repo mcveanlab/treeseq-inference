@@ -107,62 +107,69 @@ def variants(vcf_path, ancestral_states, show_progress=False, max_sites=None):
 
     vcf = cyvcf2.VCF(vcf_path)
 
-    sites_used = non_biallelic = non_diploid = no_ancestral_state = missing_data = no_rsid = 0
+    sites_used = 0
+    non_biallelic = 0
+    no_ancestral_state = 0
+    missing_data = 0
+    indels = 0
+    unphased = 0
+    invariant = 0
+
     num_diploids = len(vcf.samples)
     num_samples = 2 * num_diploids
     j = 0
     for row in filter_duplicates(vcf):
         progress.update()
-        skip = False
         # only use biallelic sites with data for all samples, where ancestral state is known
         # and we have an RSID.
-        if row.ID is None:
-            no_rsid += 1
-        if row.ID in ancestral_states:
-            ancestral_state = ancestral_states[row.ID]
-        else:
-            no_ancestral_state += 1
-            skip = True
         if len(row.ALT) != 1:
             non_biallelic += 1
-            skip = True
-        if row.num_called != num_diploids:
+        elif len(row.ALT[0]) != 1 or len(row.REF) != 1:
+            indels += 1
+        elif row.num_called != num_diploids:
             missing_data += 1
-            skip = True
-        if not skip:
+        elif row.ID not in ancestral_states:
+            no_ancestral_state += 1
+        else:
+            ancestral_state = ancestral_states[row.ID]
             a = np.zeros(num_samples, dtype=np.uint8)
             all_alleles = set([ancestral_state])
             # Fill in a with genotypes.
             bases = np.array(row.gt_bases)
-            try:
-                for j in range(num_diploids):
-                    alleles = bases[j].split("|")
-                    for allele in alleles:
-                        all_alleles.add(allele)
-                    a[2 * j] = alleles[0] != ancestral_state
-                    a[2 * j + 1] = alleles[1] != ancestral_state
-            except IndexError:
-                print("Bad set of alleles: {} for sample {} at {} (ancestral state = {})".format(
-                    bases[j], j, row.ID, ancestral_state))
-                continue
-            if len(all_alleles) != 2:
-                non_diploid += 1
-            else:
-                progress.set_postfix(used=sites_used)
-                all_alleles.remove(ancestral_state)
-                alleles = [ancestral_state, all_alleles.pop()]
-                metadata = {"ID": row.ID}
-                sites_used += 1
-                yield Site(position=row.POS, alleles=alleles, genotypes=a, metadata=metadata)
-                if max_sites == sites_used:
+            for j in range(num_diploids):
+                alleles = bases[j].split("|")
+                if len(alleles) != 2:
+                    unphased += 1
                     break
+                for allele in alleles:
+                    if allele == ".":
+                        missing_data += 1
+                        break
+                    all_alleles.add(allele)
+                a[2 * j] = alleles[0] != ancestral_state
+                a[2 * j + 1] = alleles[1] != ancestral_state
+            else:
+                # The loop above exited without breaking, so we have valid data.
+                if len(all_alleles) == 1:
+                    invariant += 1
+                elif len(all_alleles) > 2:
+                    non_biallelic += 1
+                else:
+                    progress.set_postfix(used=sites_used)
+                    all_alleles.remove(ancestral_state)
+                    alleles = [ancestral_state, all_alleles.pop()]
+                    metadata = {"ID": row.ID}
+                    sites_used += 1
+                    yield Site(position=row.POS, alleles=alleles, genotypes=a, metadata=metadata)
+                    if max_sites == sites_used:
+                        break
     progress.close()
     vcf.close()
     print(
-        "Used {} out of {} sites. {} non biallelic, {} without rsid {} without ancestral state, "
-        "{} with missing data, and {} not diploid".format(
-            sites_used, tot_sites, non_biallelic, no_rsid, no_ancestral_state, missing_data,
-            non_diploid))
+        "Used {} out of {} sites. {} non biallelic, {}, without ancestral state, "
+        "{} indels, {} with missing data, {} invariant, and {} unphased".format(
+            sites_used, tot_sites, non_biallelic, no_ancestral_state, indels,
+            missing_data, invariant, unphased))
 
 
 def add_samples(ped_file, population_id_map, individual_names, sample_data):
@@ -211,6 +218,7 @@ def read_ancestral_states(ancestor_file, show_progress=False):
             if aa is not None:
                 # Format: for indels = AA|REF|ALT|IndelType; for SNPs = AA
                 splits = aa.split("|")
+                # We're only interest in SNPs
                 if len(splits[0]) == 1:
                     base = splits[0].upper()
                     if base in "ACTG":
