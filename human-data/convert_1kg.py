@@ -158,7 +158,7 @@ def variants(vcf_path, ancestral_states, show_progress=False, max_sites=None):
                     progress.set_postfix(used=sites_used)
                     all_alleles.remove(ancestral_state)
                     alleles = [ancestral_state, all_alleles.pop()]
-                    metadata = {"ID": row.ID}
+                    metadata = {"ID": row.ID, "REF": row.REF}
                     sites_used += 1
                     yield Site(position=row.POS, alleles=alleles, genotypes=a, metadata=metadata)
                     if max_sites == sites_used:
