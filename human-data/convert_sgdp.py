@@ -1,7 +1,5 @@
 """
-Script to import 1000 genomes data
-
-Requires tsinfer >= 1.3
+Import the SGDP VCFs.
 """
 import argparse
 import subprocess
@@ -23,56 +21,13 @@ class Site(object):
     metadata = attr.ib({})
 
 
-def add_populations(sample_data):
-    """
-    Adds the 1000 genomes populations to the sample_data and return the mapping
-    of names (e.g. CHB) to IDs (e.g., 0).
-    """
-    # Based on
-    # http://www.internationalgenome.org/faq/which-populations-are-part-your-study/
-    populations = [
-        ["CHB", "Han Chinese in Beijing, China", "EAS"],
-        ["JPT", "Japanese in Tokyo, Japan", "EAS"],
-        ["CHS", "Southern Han Chinese", "EAS"],
-        ["CDX", "Chinese Dai in Xishuangbanna, China", "EAS"],
-        ["KHV", "Kinh in Ho Chi Minh City, Vietnam", "EAS"],
-        ["CEU", "Utah Residents (CEPH) with Northern and Western European Ancestry",
-            "EUR"],
-        ["TSI", "Toscani in Italia", "EUR"],
-        ["FIN", "Finnish in Finland", "EUR"],
-        ["GBR", "British in England and Scotland", "EUR"],
-        ["IBS", "Iberian Population in Spain", "EUR"],
-        ["YRI", "Yoruba in Ibadan, Nigeria", "AFR"],
-        ["LWK", "Luhya in Webuye, Kenya", "AFR"],
-        ["GWD", "Gambian in Western Divisions in the Gambia", "AFR"],
-        ["MSL", "Mende in Sierra Leone", "AFR"],
-        ["ESN", "Esan in Nigeria", "AFR"],
-        ["ASW", "Americans of African Ancestry in SW USA", "AFR"],
-        ["ACB", "African Caribbeans in Barbados", "AFR"],
-        ["MXL", "Mexican Ancestry from Los Angeles USA", "AMR"],
-        ["PUR", "Puerto Ricans from Puerto Rico", "AMR"],
-        ["CLM", "Colombians from Medellin, Colombia", "AMR"],
-        ["PEL", "Peruvians from Lima, Peru", "AMR"],
-        ["GIH", "Gujarati Indian from Houston, Texas", "SAS"],
-        ["PJL", "Punjabi from Lahore, Pakistan", "SAS"],
-        ["BEB", "Bengali from Bangladesh", "SAS"],
-        ["STU", "Sri Lankan Tamil from the UK", "SAS"],
-        ["ITU", "Indian Telugu from the UK", "SAS"],
-    ]
-    id_map = {}
-    for pop in populations:
-        pop_id = sample_data.add_population(
-            dict(zip(["name", "description", "super_population"], pop)))
-        id_map[pop[0]] = pop_id
-    return id_map
-
 
 def filter_duplicates(vcf):
     """
     Returns the list of variants from this specified VCF with duplicate sites filtered
     out. If any site appears more than once, throw all variants away.
     """
-    # TODO this has not been tested properly.
+    # TODO this had not been tested properly.
     row = next(vcf, None)
     bad_pos = -1
     for next_row in vcf:
@@ -120,18 +75,18 @@ def variants(vcf_path, ancestral_states, show_progress=False, max_sites=None):
     j = 0
     for row in filter_duplicates(vcf):
         progress.update()
-        # only use biallelic sites with data for all samples, where ancestral state is known
-        # and we have an RSID.
+        key = str(row.POS) + ":" + row.REF
+        # only use biallelic sites with data for all samples and where ancestral state is known
         if len(row.ALT) != 1:
             non_biallelic += 1
         elif len(row.ALT[0]) != 1 or len(row.REF) != 1:
             indels += 1
         elif row.num_called != num_diploids:
             missing_data += 1
-        elif row.ID not in ancestral_states:
+        elif key not in ancestral_states:
             no_ancestral_state += 1
         else:
-            ancestral_state = ancestral_states[row.ID]
+            ancestral_state = ancestral_states[key]
             a = np.zeros(num_samples, dtype=np.uint8)
             all_alleles = set([ancestral_state])
             # Fill in a with genotypes.
@@ -166,41 +121,53 @@ def variants(vcf_path, ancestral_states, show_progress=False, max_sites=None):
     progress.close()
     vcf.close()
     print(
-        "Used {} out of {} sites. {} non biallelic, {}, without ancestral state, "
+        "Used {} out of {} sites. {} non biallelic, {} without ancestral state, "
         "{} indels, {} with missing data, {} invariant, and {} unphased".format(
             sites_used, tot_sites, non_biallelic, no_ancestral_state, indels,
             missing_data, invariant, unphased))
 
 
-def add_samples(ped_file, population_id_map, individual_names, sample_data):
+def add_samples(ped_file, individual_names, sample_data):
     """
     Reads the specified PED file to get information about the samples.
-    Assumes that the population IDs have already been allocated and
-    the individuals are to be added in the order in the specified list.
+    Individuals are to be added in the order in the specified list.
     """
-    columns = next(ped_file).split("\t")
-    sane_names = [col.replace(" ", "_").lower().strip() for col in columns]
+    columns = next(ped_file).lstrip("#").split("\t")
+    sane_names = [col.lower().strip() for col in columns]
+    j = sane_names.index("sample_id(aliases)")
+    sane_names[j] = "aliases"
+    for j, name in enumerate(sane_names):
+        if name.startswith("\"sgdp-lite category"):
+            # There's a very long key that doesn't impart any information here. Remove it.
+            sane_names[j] = "DELETE"
     rows = {}
     populations = {}
+    population_id_map = {}
+    locations = {}
     for line in ped_file:
         metadata = dict(zip(sane_names, line.strip().split("\t")))
-        name = metadata["individual_id"]
-        population_name = metadata.pop("population")
+        del metadata["DELETE"]
+        name = metadata["sgdp_id"]
+        population_name = metadata.pop("population_id")
+        if population_name not in population_id_map:
+            sample_data.add_population(metadata={"name": population_name})
+            population_id_map[population_name] = len(population_id_map)
         populations[name] = population_id_map[population_name]
-        # The value '0' seems to be used to encode missing, so insert None
-        # instead to be more useful.
-        nulled = {}
-        for key, value in metadata.items():
-            if value == "0":
-                value = None
-            nulled[key] = value
-        rows[name] = nulled
+        rows[name] = metadata
+        location = [float(metadata.pop("latitude")), float(metadata.pop("longitude"))]
+        locations[name] = location
+        if metadata["town"] == "?":
+            metadata["town"] = None
 
     # Add in the metadata rows in the order of the VCF.
     for name in individual_names:
-        metadata = rows[name]
-        sample_data.add_individual(
-            metadata=metadata, population=populations[name], ploidy=2)
+        if name not in rows:
+            sample_data.add_individual(ploidy=2)
+        else:
+            metadata = rows[name]
+            sample_data.add_individual(
+                metadata=metadata, location=locations[name], ploidy=2,
+                population=populations[name])
 
 
 def read_ancestral_states(ancestor_file, show_progress=False):
@@ -210,19 +177,19 @@ def read_ancestral_states(ancestor_file, show_progress=False):
     iterator = tqdm.tqdm(
         vcf, total=sites, desc="Read ancestral state", disable=not show_progress)
     for site in iterator:
-        if site.ID is not None:
-            try:
-                aa = site.INFO["AA"]
-            except KeyError:
-                aa = None
-            if aa is not None:
-                # Format: for indels = AA|REF|ALT|IndelType; for SNPs = AA
-                splits = aa.split("|")
-                # We're only interest in SNPs
-                if len(splits[0]) == 1:
-                    base = splits[0].upper()
-                    if base in "ACTG":
-                        states[site.ID] = base
+        key = str(site.POS) + ":" + site.REF
+        try:
+            aa = site.INFO["AA"]
+        except KeyError:
+            aa = None
+        if aa is not None:
+            # Format: for indels = AA|REF|ALT|IndelType; for SNPs = AA
+            splits = aa.split("|")
+            # We're only interest in SNPs
+            if len(splits[0]) == 1:
+                base = splits[0].upper()
+                if base in "ACTG":
+                    states[key] = base
     vcf.close()
     print("Read {} ancestral alleles out of {} sites from {}".format(
         len(states), sites, ancestor_file))
@@ -242,14 +209,14 @@ def convert(
             "Use the Makefile to download and process the upstream data files")}
 
     with tsinfer.SampleData(path=output_file, num_flush_threads=2) as sample_data:
-        pop_id_map = add_populations(sample_data)
 
         vcf = cyvcf2.VCF(vcf_file)
         individual_names = list(vcf.samples)
         vcf.close()
 
-        with open(pedigree_file, "r") as ped_file:
-            add_samples(ped_file, pop_id_map, individual_names, sample_data)
+        # The file contains some non UTF-8 codepoints for a contributors name.
+        with open(pedigree_file, "r", encoding="ISO-8859-1") as ped_file:
+            add_samples(ped_file, individual_names, sample_data)
 
         ancestral_states = read_ancestral_states(ancestral_states_file, show_progress)
 
@@ -262,12 +229,12 @@ def convert(
             command=sys.argv[0], args=sys.argv[1:], git=git_provenance)
 
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="Script to convert VCF files into tsinfer input.")
     parser.add_argument(
-        "vcf_file",
-        help="The input VCF file.")
+        "vcf_file", help="The input VCF file pattern.")
     parser.add_argument(
         "ancestral_states_file",
         help="A vcf file containing ancestral allele states. ")
