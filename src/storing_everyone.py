@@ -34,15 +34,46 @@ def run_simulation(sample_size):
         length=length, recombination_rate=recombination_rate)
     duration = time.perf_counter() - before
     print("Simulated {} in {} hours".format(sample_size, duration / 3600))
-    ts.dump(os.path.join(data_prefix, "{}.uncompressed.hdf5".format(sample_size)))
-    ts.dump(
-        os.path.join(data_prefix, "{}.compressed.hdf5".format(sample_size)),
-        zlib_compression=True)
+    trees_file = os.path.join(data_prefix, "{}.trees".format(sample_size))
+    ts.dump(trees_file)
+    subprocess.check_call(["gzip", "-k", trees_file])
 
 
 def run_simulate():
     for k in range(1, 8):
         run_simulation(10**k)
+
+
+def run_benchmark():
+    print("msprime version:", msprime.__version__)
+
+    before = time.perf_counter()
+    filename = os.path.join(data_prefix, "{}.trees".format(10**7))
+    ts = msprime.load(filename)
+    duration = time.perf_counter() - before
+    print("loaded {} tree sequense in {:.2f}s".format(
+        humanize.naturalsize(os.path.getsize(filename)), duration))
+
+    size = ts.num_samples * ts.num_sites
+    print("Total size of genotype matrix = ", humanize.naturalsize(size))
+
+    before = time.perf_counter()
+    j = 0
+    for tree in ts.trees(sample_counts=False, sample_lists=False):
+        j += 1
+    assert j == ts.num_trees
+    duration = time.perf_counter() - before
+    print("Iterated over {} trees in {:.2f}s".format(ts.num_trees, duration))
+
+    before = time.perf_counter()
+    samples = np.arange(10**6)
+    freq = np.zeros(ts.num_sites)
+    for tree in ts.trees(tracked_samples=samples):
+        for site in tree.sites():
+            node = site.mutations[0].node
+            freq[site.id] = tree.num_tracked_samples(node)
+    duration = time.perf_counter() - before
+    print("Computed {} allele frequencies in {:.2f}s".format(ts.num_sites, duration))
 
 
 def run_process():
@@ -53,13 +84,13 @@ def run_process():
     bcf = []
     for k in range(1, 8):
         n = 10**k
-        filename = os.path.join(data_prefix, "{}.uncompressed.hdf5".format(n))
+        filename = os.path.join(data_prefix, "{}.trees".format(n))
         if not os.path.exists(filename):
             break
         sample_size.append(n)
         uncompressed.append(os.path.getsize(filename))
         ts = msprime.load(filename)
-        filename = os.path.join(data_prefix, "{}.compressed.hdf5".format(n))
+        filename += ".gz"
         compressed.append(os.path.getsize(filename))
         if k < 7:
             filename = os.path.join(data_prefix, "{}.vcf".format(n))
@@ -188,6 +219,9 @@ if __name__ == "__main__":
 
     subparser = subparsers.add_parser("process")
     subparser.set_defaults(func=run_process)
+
+    subparser = subparsers.add_parser("benchmark")
+    subparser.set_defaults(func=run_benchmark)
 
     subparser = subparsers.add_parser("plot")
     subparser.set_defaults(func=run_plot)
