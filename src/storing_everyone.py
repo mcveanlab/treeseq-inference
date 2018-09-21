@@ -14,6 +14,7 @@ import scipy.optimize as optimize
 import scipy.stats as stats
 import pandas as pd
 import humanize
+import cyvcf2
 
 import matplotlib
 matplotlib.use('Agg')
@@ -44,6 +45,53 @@ def run_simulate():
         run_simulation(10**k)
 
 
+def benchmark_bcf(ts):
+    num_sites = 10**4
+
+    tables = ts.dump_tables()
+    tables.sites.clear()
+    tables.mutations.clear()
+    for site in ts.sites():
+        if site.id == num_sites:
+            break
+        site_id = tables.sites.add_row(
+            site.position, ancestral_state=site.ancestral_state,
+            metadata=site.metadata)
+        for mutation in site.mutations:
+            tables.mutations.add_row(
+                site_id, node=mutation.node, parent=mutation.parent,
+                derived_state=mutation.derived_state,
+                metadata=mutation.metadata)
+    ts = tables.tree_sequence()
+    print("Subsetted tree sequence")
+
+    vcf_filename = os.path.join(data_prefix, "large-subset.vcf")
+    bcf_filename = os.path.join(data_prefix, "large-subset.bcf")
+
+    with open(vcf_filename, "w") as vcf_file:
+        ts.write_vcf(vcf_file, 2)
+    print("Wrote ", vcf_filename)
+    subprocess.check_call(["bcftools view -O b {} > {}".format(
+        vcf_filename, bcf_filename)], shell=True)
+    print("Wrote ", bcf_filename)
+
+    before = time.perf_counter()
+    records = cyvcf2.VCF(bcf_filename)
+    duration = time.perf_counter() - before
+    print("Read BCF header in {:.2f} seconds".format(duration))
+    before = time.perf_counter()
+    count = 0
+    for record in records:
+        count += 1
+    assert count == num_sites
+    duration = time.perf_counter() - before
+    print("Read {} records in {:.2f} seconds".format(count, duration))
+
+    estimated_time = ts.num_sites * (duration / num_sites)
+    print("Esimated time to read {} records = {:.2f} hours".format(
+        ts.num_sites, estimated_time / 3600))
+
+
 def run_benchmark():
     print("msprime version:", msprime.__version__)
 
@@ -52,10 +100,9 @@ def run_benchmark():
     ts = msprime.load(filename)
     duration = time.perf_counter() - before
     print("loaded {} tree sequense in {:.2f}s".format(
-        humanize.naturalsize(os.path.getsize(filename)), duration))
-
+        humanize.naturalsize(os.path.getsize(filename), binary=True), duration))
     size = ts.num_samples * ts.num_sites
-    print("Total size of genotype matrix = ", humanize.naturalsize(size))
+    print("Total size of genotype matrix = ", humanize.naturalsize(size, binary=True))
 
     before = time.perf_counter()
     j = 0
@@ -75,6 +122,7 @@ def run_benchmark():
     duration = time.perf_counter() - before
     print("Computed {} allele frequencies in {:.2f}s".format(ts.num_sites, duration))
 
+    benchmark_bcf(ts)
 
 def run_process():
     sample_size = []
@@ -185,7 +233,7 @@ def run_plot():
         xy=(projected_n[-1], bcf_fit[-1]), xycoords="data")
 
     line, = ax1.loglog(
-        df.sample_size, df.uncompressed, "o", label="msprime uncompressed")
+        df.sample_size, df.uncompressed, "o", label=".trees")
     ax1.loglog(projected_n, msp_fit, "--", color=line.get_color())
     ax1.annotate(
         humanize.naturalsize(msp_fit[-1] * GB, binary=True, format="%d"),
@@ -193,7 +241,7 @@ def run_plot():
         xy=(projected_n[-1], msp_fit[-1]), xycoords="data")
 
     line, = ax1.loglog(
-        df.sample_size, df.compressed, "*", label="msprime compressed")
+        df.sample_size, df.compressed, "*", label=".trees.gz")
     ax1.loglog(projected_n, mspz_fit, "--", color=line.get_color())
     ax1.annotate(
         humanize.naturalsize(mspz_fit[-1] * GB, binary=True, format="%d"),
