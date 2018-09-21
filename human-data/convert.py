@@ -1,5 +1,6 @@
 """
 Convert input data from various sources to samples format.
+
 """
 import argparse
 import subprocess
@@ -221,13 +222,213 @@ class ThousandGenomesConverter(VcfConverter):
                 metadata=metadata[name], population=populations[name], ploidy=2)
 
 
+class SgdpConverter(VcfConverter):
+    """
+    Converts data for the Simons Genome Diversity project data.
+    """
+
+    def process_metadata(self, metadata_file):
+        """
+        Adds the SGDP populations metadata.
+        """
+        # All populations in SGDP mapped to their regions.
+        region_map = {
+            "Abkhasian": "WestEurasia",
+            "Adygei": "WestEurasia",
+            "Albanian": "WestEurasia",
+            "Aleut": "CentralAsiaSiberia",
+            "Altaian": "CentralAsiaSiberia",
+            "Ami": "EastAsia",
+            "Armenian": "WestEurasia",
+            "Atayal": "EastAsia",
+            "Australian": "Oceania",
+            "Balochi": "SouthAsia",
+            "BantuHerero": "Africa",
+            "BantuKenya": "Africa",
+            "BantuTswana": "Africa",
+            "Basque": "WestEurasia",
+            "BedouinB": "WestEurasia",
+            "Bengali": "SouthAsia",
+            "Bergamo": "WestEurasia",
+            "Biaka": "Africa",
+            "Bougainville": "Oceania",
+            "Brahmin": "SouthAsia",
+            "Brahui": "SouthAsia",
+            "Bulgarian": "WestEurasia",
+            "Burmese": "EastAsia",
+            "Burusho": "SouthAsia",
+            "Cambodian": "EastAsia",
+            "Chane": "America",
+            "Chechen": "WestEurasia",
+            "Chipewyan": "America",
+            "Chukchi": "CentralAsiaSiberia",
+            "Cree": "America",
+            "Crete": "WestEurasia",
+            "Czech": "WestEurasia",
+            "Dai": "EastAsia",
+            "Daur": "EastAsia",
+            "Dinka": "Africa",
+            "Druze": "WestEurasia",
+            "Dusun": "Oceania",
+            "English": "WestEurasia",
+            "Esan": "Africa",
+            "Eskimo_Chaplin": "CentralAsiaSiberia",
+            "Eskimo_Naukan": "CentralAsiaSiberia",
+            "Eskimo_Sireniki": "CentralAsiaSiberia",
+            "Estonian": "WestEurasia",
+            "Even": "CentralAsiaSiberia",
+            "Finnish": "WestEurasia",
+            "French": "WestEurasia",
+            "Gambian": "Africa",
+            "Georgian": "WestEurasia",
+            "Greek": "WestEurasia",
+            "Han": "EastAsia",
+            "Hawaiian": "Oceania",
+            "Hazara": "SouthAsia",
+            "Hezhen": "EastAsia",
+            "Hungarian": "WestEurasia",
+            "Icelandic": "WestEurasia",
+            "Igbo": "Africa",
+            "Igorot": "Oceania",
+            "Iranian": "WestEurasia",
+            "Iraqi_Jew": "WestEurasia",
+            "Irula": "SouthAsia",
+            "Itelman": "CentralAsiaSiberia",
+            "Japanese": "EastAsia",
+            "Jordanian": "WestEurasia",
+            "Ju_hoan_North": "Africa",
+            "Kalash": "SouthAsia",
+            "Kapu": "SouthAsia",
+            "Karitiana": "America",
+            "Kashmiri_Pandit": "SouthAsia",
+            "Kharia": "SouthAsia",
+            "Khomani_San": "Africa",
+            "Khonda_Dora": "SouthAsia",
+            "Kinh": "EastAsia",
+            "Kongo": "Africa",
+            "Korean": "EastAsia",
+            "Kurumba": "SouthAsia",
+            "Kusunda": "SouthAsia",
+            "Kyrgyz": "CentralAsiaSiberia",
+            "Lahu": "EastAsia",
+            "Lemande": "Africa",
+            "Lezgin": "WestEurasia",
+            "Luhya": "Africa",
+            "Luo": "Africa",
+            "Madiga": "SouthAsia",
+            "Makrani": "SouthAsia",
+            "Mala": "SouthAsia",
+            "Mandenka": "Africa",
+            "Mansi": "CentralAsiaSiberia",
+            "Maori": "Oceania",
+            "Masai": "Africa",
+            "Mayan": "America",
+            "Mbuti": "Africa",
+            "Mende": "Africa",
+            "Miao": "EastAsia",
+            "Mixe": "America",
+            "Mixtec": "America",
+            "Mongola": "CentralAsiaSiberia",
+            "Mozabite": "Africa",
+            "Nahua": "America",
+            "Naxi": "EastAsia",
+            "North_Ossetian": "WestEurasia",
+            "Norwegian": "WestEurasia",
+            "Onge": "SouthAsia",
+            "Orcadian": "WestEurasia",
+            "Oroqen": "EastAsia",
+            "Palestinian": "WestEurasia",
+            "Papuan": "Oceania",
+            "Pathan": "SouthAsia",
+            "Piapoco": "America",
+            "Pima": "America",
+            "Polish": "WestEurasia",
+            "Punjabi": "SouthAsia",
+            "Quechua": "America",
+            "Relli": "SouthAsia",
+            "Russian": "WestEurasia",
+            "Saami": "WestEurasia",
+            "Saharawi": "Africa",
+            "Samaritan": "WestEurasia",
+            "Sardinian": "WestEurasia",
+            "She": "EastAsia",
+            "Sherpa": "SouthAsia",
+            "Sindhi": "SouthAsia",
+            "Somali": "Africa",
+            "Spanish": "WestEurasia",
+            "Surui": "America",
+            "Tajik": "WestEurasia",
+            "Thai": "EastAsia",
+            "Tibetan": "SouthAsia",
+            "Tlingit": "CentralAsiaSiberia",
+            "Tubalar": "CentralAsiaSiberia",
+            "Tu": "EastAsia",
+            "Tujia": "EastAsia",
+            "Turkish": "WestEurasia",
+            "Tuscan": "WestEurasia",
+            "Ulchi": "CentralAsiaSiberia",
+            "Uygur": "EastAsia",
+            "Xibo": "EastAsia",
+            "Yadava": "SouthAsia",
+            "Yakut": "CentralAsiaSiberia",
+            "Yemenite_Jew": "WestEurasia",
+            "Yi": "EastAsia",
+            "Yoruba": "Africa",
+            "Zapotec": "America",
+        }
+        population_id_map = {}
+        for name in sorted(region_map.keys()):
+            pop_id = self.samples.add_population(
+                {"name": name, "region": region_map[name]})
+            population_id_map[name] = pop_id
+
+        # The file contains some non UTF-8 codepoints for a contributors name.
+        with open(metadata_file, "r", encoding="ISO-8859-1") as md_file:
+            columns = next(md_file).lstrip("#").split("\t")
+            sane_names = [col.lower().strip() for col in columns]
+            j = sane_names.index("sample_id(aliases)")
+            sane_names[j] = "aliases"
+            for j, name in enumerate(sane_names):
+                if name.startswith("\"sgdp-lite category"):
+                    # There's a very long key that doesn't impart any information here. Remove it.
+                    sane_names[j] = "DELETE"
+            rows = {}
+            populations = {}
+            locations = {}
+            for line in md_file:
+                metadata = dict(zip(sane_names, line.strip().split("\t")))
+                del metadata["DELETE"]
+                name = metadata["sgdp_id"]
+                population_name = metadata.pop("population_id")
+                populations[name] = population_id_map[population_name]
+                rows[name] = metadata
+                location = [float(metadata.pop("latitude")), float(metadata.pop("longitude"))]
+                locations[name] = location
+                if metadata["town"] == "?":
+                    metadata["town"] = None
+
+        vcf = cyvcf2.VCF(self.data_file)
+        individual_names = list(vcf.samples)
+        vcf.close()
+        self.num_samples = 2 * len(individual_names)
+
+        # Add in the metadata rows in the order of the VCF.
+        for name in individual_names:
+            if name not in rows:
+                print("No metadata for individual", name)
+                self.samples.add_individual(ploidy=2)
+            else:
+                metadata = rows[name]
+                self.samples.add_individual(
+                    metadata=metadata, location=locations[name], ploidy=2,
+                    population=populations[name])
 
 
 def main():
     parser = argparse.ArgumentParser(
         description="Script to convert VCF files into tsinfer input.")
     parser.add_argument(
-        "source", choices=["1kg"],
+        "source", choices=["1kg", "sgdp"],
         help="The source of the input data.")
     parser.add_argument(
         "data_file", help="The input data file pattern.")
@@ -253,14 +454,13 @@ def main():
         if args.source == "1kg":
             converter = ThousandGenomesConverter(
                 args.data_file, args.ancestral_states_file, samples)
-
+        if args.source == "sgdp":
+            converter = SgdpConverter(
+                args.data_file, args.ancestral_states_file, samples)
         converter.process_metadata(args.metadata_file)
         converter.process_sites(args.progress, args.max_variants)
     print(samples)
 
-    # convert(
-    #     args.vcf_file, args.ancestral_states_file, args.pedigree_file, args.output_file,
-    #     args.max_variants, show_progress=args.progress)
 
 
 if __name__ == "__main__":
