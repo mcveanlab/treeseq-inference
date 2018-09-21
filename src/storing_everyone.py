@@ -46,34 +46,35 @@ def run_simulate():
 
 
 def benchmark_bcf(ts):
+    total_sites = ts.num_sites
     num_sites = 10**4
-
-    tables = ts.dump_tables()
-    tables.sites.clear()
-    tables.mutations.clear()
-    for site in ts.sites():
-        if site.id == num_sites:
-            break
-        site_id = tables.sites.add_row(
-            site.position, ancestral_state=site.ancestral_state,
-            metadata=site.metadata)
-        for mutation in site.mutations:
-            tables.mutations.add_row(
-                site_id, node=mutation.node, parent=mutation.parent,
-                derived_state=mutation.derived_state,
-                metadata=mutation.metadata)
-    ts = tables.tree_sequence()
-    print("Subsetted tree sequence")
-
     vcf_filename = os.path.join(data_prefix, "large-subset.vcf")
     bcf_filename = os.path.join(data_prefix, "large-subset.bcf")
+    if not os.path.exists(vcf_filename):
 
-    with open(vcf_filename, "w") as vcf_file:
-        ts.write_vcf(vcf_file, 2)
-    print("Wrote ", vcf_filename)
-    subprocess.check_call(["bcftools view -O b {} > {}".format(
-        vcf_filename, bcf_filename)], shell=True)
-    print("Wrote ", bcf_filename)
+        tables = ts.dump_tables()
+        tables.sites.clear()
+        tables.mutations.clear()
+        for site in ts.sites():
+            if site.id == num_sites:
+                break
+            site_id = tables.sites.add_row(
+                site.position, ancestral_state=site.ancestral_state,
+                metadata=site.metadata)
+            for mutation in site.mutations:
+                tables.mutations.add_row(
+                    site_id, node=mutation.node, parent=mutation.parent,
+                    derived_state=mutation.derived_state,
+                    metadata=mutation.metadata)
+        ts = tables.tree_sequence()
+        print("Subsetted tree sequence")
+
+        with open(vcf_filename, "w") as vcf_file:
+            ts.write_vcf(vcf_file, 2)
+        print("Wrote ", vcf_filename)
+        subprocess.check_call(["bcftools view -O b {} > {}".format(
+            vcf_filename, bcf_filename)], shell=True)
+        print("Wrote ", bcf_filename)
 
     before = time.perf_counter()
     records = cyvcf2.VCF(bcf_filename)
@@ -85,11 +86,11 @@ def benchmark_bcf(ts):
         count += 1
     assert count == num_sites
     duration = time.perf_counter() - before
-    print("Read {} records in {:.2f} seconds".format(count, duration))
+    print("Read {} BCF records in {:.2f} seconds".format(count, duration))
 
-    estimated_time = ts.num_sites * (duration / num_sites)
-    print("Esimated time to read {} records = {:.2f} hours".format(
-        ts.num_sites, estimated_time / 3600))
+    estimated_time = total_sites * (duration / num_sites)
+    print("Esimated time to read {} BCF records = {:.2f} hours".format(
+        total_sites, estimated_time / 3600))
 
 
 def run_benchmark():
@@ -256,6 +257,7 @@ def run_plot():
 
 
 if __name__ == "__main__":
+
     parser = argparse.ArgumentParser(
         description="Run the plot showing the files size storing everyone")
     subparsers = parser.add_subparsers()
