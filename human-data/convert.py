@@ -12,7 +12,11 @@ import tsinfer
 import attr
 import cyvcf2
 import tqdm
-import bgen_reader
+try:
+    import bgen_reader
+except ImportError:
+    # bgen-reader isn't available for Python 3.4.
+    print("WARNING: Cannot import bgen reader")
 
 
 @attr.s()
@@ -23,18 +27,24 @@ class Site(object):
     metadata = attr.ib({})
 
 
-class Converter(object):
+def filter_duplicates(vcf):
     """
-    Superclass of converters.
+    Returns the variants from this VCF with duplicate sites filtered
+    out. If any site position appears more than once, throw all variants away.
     """
-    def __init__(self, data_file, ancestral_states_file, samples):
-        self.data_file = data_file
-        self.ancestral_states_file = ancestral_states_file
-        self.samples = samples
-        self.num_samples = -1
-
-    def process_metadata(self, metadata_file):
-        pass
+    row = next(vcf, None)
+    bad_pos = -1
+    for next_row in vcf:
+        if bad_pos == -1 and next_row.POS != row.POS:
+            yield row
+        else:
+            if bad_pos == -1:
+                bad_pos = row.POS
+            elif bad_pos != next_row.POS:
+                bad_pos = -1
+        row = next_row
+    if row is not None and bad_pos != -1:
+        yield row
 
 
 def get_ancestral_state(row):
@@ -51,6 +61,21 @@ def get_ancestral_state(row):
             if base in "ACTG":
                 aa = base
     return aa
+
+
+class Converter(object):
+    """
+    Superclass of converters.
+    """
+    def __init__(self, data_file, ancestral_states_file, samples):
+        self.data_file = data_file
+        self.ancestral_states_file = ancestral_states_file
+        self.samples = samples
+        self.num_samples = -1
+
+    def process_metadata(self, metadata_file):
+        pass
+
 
 class VcfConverter(Converter):
     def __init__(self, *args, **kwargs):
@@ -109,15 +134,12 @@ class VcfConverter(Converter):
             total=num_ancestral_sites, disable=not show_progress)
 
         num_sites = 0
-        vcf_a = cyvcf2.VCF(self.ancestral_states_file)
-        vcf_d = cyvcf2.VCF(self.data_file)
+        vcf_a = filter_duplicates(cyvcf2.VCF(self.ancestral_states_file))
+        vcf_d = filter_duplicates(cyvcf2.VCF(self.data_file))
         row_a = next(vcf_a, None)
         row_d = next(vcf_d, None)
         while row_a is not None and row_d is not None:
 
-            # Filtering by POS and REF should guarantee that any sites with equal positions
-            # as we are excluding indels from the ancestral states explicitly and we're also
-            # dropping any sites that are not single letter SNPs.
             if row_a.POS == row_d.POS and row_a.REF == row_d.REF:
                 ancestral_state = get_ancestral_state(row_a)
                 if ancestral_state is not None:
@@ -426,7 +448,7 @@ class SgdpConverter(VcfConverter):
 
 
 class UkbbConverter(Converter):
- 
+
     def process_metadata(self, metadata_file, show_progress=False):
         bgen = bgen_reader.read_bgen(self.data_file, verbose=True)
         sample_df = bgen['samples']
@@ -434,7 +456,7 @@ class UkbbConverter(Converter):
         self.num_samples = 2 * num_individuals
         for _ in tqdm.tqdm(range(num_individuals), disable=not show_progress):
             self.samples.add_individual(ploidy=2)
-    
+
     def process_sites(self, show_progress=False, max_sites=None):
         bgen = bgen_reader.read_bgen(self.data_file, verbose=False, size=500)
 
@@ -463,9 +485,9 @@ class UkbbConverter(Converter):
 
         num_sites = 0
         vcf_a = cyvcf2.VCF(self.ancestral_states_file)
-         
+
         row_a = next(vcf_a, None)
-         
+
         progress.close()
 
 
@@ -495,18 +517,22 @@ def main():
 
     args = parser.parse_args()
 
-    with tsinfer.SampleData(path=args.output_file, num_flush_threads=2) as samples:
-        if args.source == "1kg":
-            converter = ThousandGenomesConverter(
-                args.data_file, args.ancestral_states_file, samples)
-        if args.source == "sgdp":
-            converter = SgdpConverter(
-                args.data_file, args.ancestral_states_file, samples)
-        if args.source == "ukbb":
-            converter = UkbbConverter(
-                args.data_file, args.ancestral_states_file, samples)
-        # converter.process_metadata(args.metadata_file, args.progress)
-        converter.process_sites(args.progress, args.max_variants)
+    try:
+        with tsinfer.SampleData(path=args.output_file, num_flush_threads=2) as samples:
+            if args.source == "1kg":
+                converter = ThousandGenomesConverter(
+                    args.data_file, args.ancestral_states_file, samples)
+            if args.source == "sgdp":
+                converter = SgdpConverter(
+                    args.data_file, args.ancestral_states_file, samples)
+            if args.source == "ukbb":
+                converter = UkbbConverter(
+                    args.data_file, args.ancestral_states_file, samples)
+            converter.process_metadata(args.metadata_file, args.progress)
+            converter.process_sites(args.progress, args.max_variants)
+    except Exception as e:
+        os.unlink(args.output_file)
+        raise e
     print(samples)
 
 
