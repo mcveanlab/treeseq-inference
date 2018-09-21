@@ -12,6 +12,7 @@ import tsinfer
 import attr
 import cyvcf2
 import tqdm
+import bgen_reader
 
 
 @attr.s()
@@ -151,7 +152,7 @@ class ThousandGenomesConverter(VcfConverter):
     Converts data for the 1000 Genomes.
     """
 
-    def process_metadata(self, metadata_file):
+    def process_metadata(self, metadata_file, show_progress=False):
         """
         Adds the 1000 genomes populations metadata.
         """
@@ -227,7 +228,7 @@ class SgdpConverter(VcfConverter):
     Converts data for the Simons Genome Diversity project data.
     """
 
-    def process_metadata(self, metadata_file):
+    def process_metadata(self, metadata_file, show_progress=False):
         """
         Adds the SGDP populations metadata.
         """
@@ -424,11 +425,55 @@ class SgdpConverter(VcfConverter):
                     population=populations[name])
 
 
+class UkbbConverter(Converter):
+ 
+    def process_metadata(self, metadata_file, show_progress=False):
+        bgen = bgen_reader.read_bgen(self.data_file, verbose=True)
+        sample_df = bgen['samples']
+        num_individuals = len(sample_df)
+        self.num_samples = 2 * num_individuals
+        for _ in tqdm.tqdm(range(num_individuals), disable=not show_progress):
+            self.samples.add_individual(ploidy=2)
+    
+    def process_sites(self, show_progress=False, max_sites=None):
+        bgen = bgen_reader.read_bgen(self.data_file, verbose=False, size=500)
+
+        #print(bgen["variants"].head())
+        position = np.array(bgen["variants"]["pos"])
+        rsid = np.array(bgen["variants"]["rsid"])
+        num_alleles = np.array(bgen["variants"]["nalleles"])
+        allele_id = np.array(bgen["variants"]["allele_ids"])
+        G = bgen["genotype"]
+
+        print("Decoding genotypes")
+        import time
+        before = time.clock()
+        genotypes = np.array(G[0,:,:].compute())
+        duration = time.clock() - before
+        print(genotypes)
+        print("time = ", duration)
+
+
+        num_ancestral_sites = int(subprocess.check_output(
+            ["bcftools", "index", "--nrecords", self.ancestral_states_file]))
+        # We tie the iterator to the ancestral states file so it must be updated
+        # each time we advance that iterator.
+        progress = tqdm.tqdm(
+            total=num_ancestral_sites, disable=not show_progress)
+
+        num_sites = 0
+        vcf_a = cyvcf2.VCF(self.ancestral_states_file)
+         
+        row_a = next(vcf_a, None)
+         
+        progress.close()
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Script to convert VCF files into tsinfer input.")
     parser.add_argument(
-        "source", choices=["1kg", "sgdp"],
+        "source", choices=["1kg", "sgdp", "ukbb"],
         help="The source of the input data.")
     parser.add_argument(
         "data_file", help="The input data file pattern.")
@@ -436,11 +481,11 @@ def main():
         "ancestral_states_file",
         help="A vcf file containing ancestral allele states. ")
     parser.add_argument(
-        "metadata_file",
-        help="The metadata file containing population and sample data")
-    parser.add_argument(
         "output_file",
         help="The tsinfer output file")
+    parser.add_argument(
+        "-m", "--metadata_file", default=None,
+        help="The metadata file containing population and sample data")
     parser.add_argument(
         "-n", "--max-variants", default=None, type=int,
         help="Keep only the first n variants")
@@ -457,7 +502,10 @@ def main():
         if args.source == "sgdp":
             converter = SgdpConverter(
                 args.data_file, args.ancestral_states_file, samples)
-        converter.process_metadata(args.metadata_file)
+        if args.source == "ukbb":
+            converter = UkbbConverter(
+                args.data_file, args.ancestral_states_file, samples)
+        # converter.process_metadata(args.metadata_file, args.progress)
         converter.process_sites(args.progress, args.max_variants)
     print(samples)
 

@@ -1,3 +1,7 @@
+
+# Requirements: bcftools, tabix, python3.
+# See requirements.txt for Python package requirements.
+
 all: 1kg_chr20.samples sgdp_chr20.samples
 
 
@@ -45,7 +49,7 @@ GENOTYPES_BASE=http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/suppor
 	python3 convert.py 1kg -p \
 		1kg_chr20_genotypes.bcf \
 		chr20_ancestral_states.bcf \
-		1kg_samples.ped \
+		-m 1kg_samples.ped \
 		$@ 
 
 #############################################
@@ -64,8 +68,22 @@ sgdp_chr20.samples: sgdp_chr20_genotypes.vcf.gz.tbi chr20_ancestral_states.bcf.c
 	python3 convert.py sgdp -p \
 		sgdp_chr20_genotypes.vcf.gz  \
 		chr20_ancestral_states.bcf \
-		sgdp_samples.txt \
+		-m sgdp_samples.txt \
 		$@ 
+
+#############################################
+# UKBB
+#############################################
+
+ukbb_chr20_genotypes.bgen: 
+	ln -s /gpfs2/well/ukbb-wtchg/v2/haplotypes/ukb_hap_chr20_v2.bgen $@
+
+ukbb_chr20.samples: ukbb_chr20_genotypes.bgen chr20_ancestral_states.bcf.csi 
+	python3 convert.py ukbb -p \
+		ukbb_chr20_genotypes.bgen  \
+		chr20_ancestral_states.bcf \
+		$@ 
+
 
 clean:
 	rm -f 1kg_samples.ped sgdp_samples.txt *.vcf* *.samples
