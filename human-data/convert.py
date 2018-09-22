@@ -450,7 +450,7 @@ class SgdpConverter(VcfConverter):
 class UkbbConverter(Converter):
 
     def process_metadata(self, metadata_file, show_progress=False):
-        bgen = bgen_reader.read_bgen(self.data_file, verbose=True)
+        bgen = bgen_reader.read_bgen(self.data_file, verbose=False)
         sample_df = bgen['samples']
         num_individuals = len(sample_df)
         self.num_samples = 2 * num_individuals
@@ -460,21 +460,27 @@ class UkbbConverter(Converter):
     def process_sites(self, show_progress=False, max_sites=None):
         bgen = bgen_reader.read_bgen(self.data_file, verbose=False, size=500)
 
-        #print(bgen["variants"].head())
-        position = np.array(bgen["variants"]["pos"])
-        rsid = np.array(bgen["variants"]["rsid"])
         num_alleles = np.array(bgen["variants"]["nalleles"])
-        allele_id = np.array(bgen["variants"]["allele_ids"])
-        G = bgen["genotype"]
+        assert np.all(num_alleles == 2)
 
+        G = bgen["genotype"]
         print("Decoding genotypes")
         import time
+        import dask
+        dask.config.set(scheduler='synchronous') 
+
         before = time.clock()
-        genotypes = np.array(G[0,:,:].compute())
+        genotypes = G[0,:,:].compute()
         duration = time.clock() - before
         print(genotypes)
         print("time = ", duration)
+        
+        return 
 
+        #print(bgen["variants"].head())
+        position = np.array(bgen["variants"]["pos"])
+        rsid = np.array(bgen["variants"]["rsid"])
+        allele_id = np.array(bgen["variants"]["allele_ids"])
 
         num_ancestral_sites = int(subprocess.check_output(
             ["bcftools", "index", "--nrecords", self.ancestral_states_file]))
@@ -528,7 +534,7 @@ def main():
             if args.source == "ukbb":
                 converter = UkbbConverter(
                     args.data_file, args.ancestral_states_file, samples)
-            converter.process_metadata(args.metadata_file, args.progress)
+            # converter.process_metadata(args.metadata_file, args.progress)
             converter.process_sites(args.progress, args.max_variants)
     except Exception as e:
         os.unlink(args.output_file)

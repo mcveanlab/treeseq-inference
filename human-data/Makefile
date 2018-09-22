@@ -3,7 +3,12 @@ NUM_THREADS ?= 0
 # Requirements: bcftools, tabix, python3.
 # See requirements.txt for Python package requirements.
 
-all: 1kg_chr20.samples sgdp_chr20.samples
+#all: 1kg_chr20.samples sgdp_chr20.samples
+
+all: simplebgen.cpython-36m-x86_64-linux-gnu.so
+
+simplebgen.cpython-36m-x86_64-linux-gnu.so: setup.py simplebgenmodule.c
+	python3 setup.py build_ext --inplace
 
 
 %.bcf.csi: %.bcf

@@ -49,7 +49,9 @@ def create_datafile(sd, bgen, outpath, use_n_samples=False, show_progress=False)
             zip(sd.sites_position[:], sd.sites_metadata[:], sd.sites_alleles[:]),
             desc="Read bgen", total=len(bgen['genotype']), disable=not show_progress):
             try:
+                import time
                 idx, UKBBalleles = GRCh37_UK_BB_info[md['ID']]
+                before = time.clock()
                 if UKBBalleles==alleles:
                     ref_is_ancestral += 1
                     genotypes = np.where(
@@ -68,6 +70,8 @@ def create_datafile(sd, bgen, outpath, use_n_samples=False, show_progress=False)
                 else:
                     alleles_differ += 1
                     print("Alleles differ {}, {}".format(UKBBalleles,alleles))
+                duration = time.clock() - before
+                print("read row in ", duration)
             except KeyError:
                 #can omit any rsIDs not in GRCh37_UK_BB_index
                 nomatch += 1
@@ -105,7 +109,7 @@ def main():
 
     bgen = bgen_reader.read_bgen(args.bgen_file, verbose=False, size = 500)
     sample_data =  tsinfer.load(args.sampledata_file)
-    create_datafile(sample_data, bgen, args.outfile, args.progress)
+    create_datafile(sample_data, bgen, args.outfile, show_progress=args.progress)
 
     
 if __name__ == "__main__":
