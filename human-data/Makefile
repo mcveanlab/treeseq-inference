@@ -1,3 +1,4 @@
+NUM_THREADS ?= 0
 
 # Requirements: bcftools, tabix, python3.
 # See requirements.txt for Python package requirements.
@@ -51,6 +52,15 @@ GENOTYPES_BASE=http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/suppor
 		chr20_ancestral_states.bcf \
 		-m 1kg_samples.ped \
 		$@ 
+
+1kg_chr20.ancestors: 1kg_chr20.samples
+	python3 -m tsinfer ga -vp -t ${NUM_THREADS} $^
+
+1kg_chr20.ancestors.trees: 1kg_chr20.ancestors
+	python3 -m tsinfer ma -vp -t ${NUM_THREADS} 1kg_chr20.samples
+
+1kg_chr20.nosimplify.trees: 1kg_chr20.ancestors.trees
+	python3 -m tsinfer ms -vp -t ${NUM_THREADS} 1kg_chr20.samples -O $@
 
 #############################################
 # SGDP data.
