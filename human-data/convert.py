@@ -1,6 +1,5 @@
 """
 Convert input data from various sources to samples format.
-
 """
 import argparse
 import subprocess
@@ -14,6 +13,8 @@ import cyvcf2
 import tqdm
 try:
     import bgen_reader
+    # Local module used to work around slow genotype access in bgen_reader
+    import simplebgen 
 except ImportError:
     # bgen-reader isn't available for Python 3.4.
     print("WARNING: Cannot import bgen reader")
@@ -449,6 +450,19 @@ class SgdpConverter(VcfConverter):
 
 class UkbbConverter(Converter):
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.num_no_ancestral_state = 0
+        self.num_missing_ancestral_state = 0
+        self.num_rsid_mismatches = 0
+        self.num_non_biallelic = 0
+
+    def report(self):
+        print("no_ancestral_state        :", self.num_no_ancestral_state)
+        print("missing_ancestral_states  :", self.num_missing_ancestral_state)
+        print("non_biallelic             :", self.num_non_biallelic)
+        print("rsid_mismatches           :", self.num_rsid_mismatches)
+
     def process_metadata(self, metadata_file, show_progress=False):
         bgen = bgen_reader.read_bgen(self.data_file, verbose=False)
         sample_df = bgen['samples']
@@ -458,44 +472,54 @@ class UkbbConverter(Converter):
             self.samples.add_individual(ploidy=2)
 
     def process_sites(self, show_progress=False, max_sites=None):
-        bgen = bgen_reader.read_bgen(self.data_file, verbose=False, size=500)
 
+        bgen = bgen_reader.read_bgen(self.data_file, verbose=False)
         num_alleles = np.array(bgen["variants"]["nalleles"])
-        assert np.all(num_alleles == 2)
-
-        G = bgen["genotype"]
-        print("Decoding genotypes")
-        import time
-        import dask
-        dask.config.set(scheduler='synchronous') 
-
-        before = time.clock()
-        genotypes = G[0,:,:].compute()
-        duration = time.clock() - before
-        print(genotypes)
-        print("time = ", duration)
-        
-        return 
-
-        #print(bgen["variants"].head())
         position = np.array(bgen["variants"]["pos"])
         rsid = np.array(bgen["variants"]["rsid"])
         allele_id = np.array(bgen["variants"]["allele_ids"])
-
-        num_ancestral_sites = int(subprocess.check_output(
-            ["bcftools", "index", "--nrecords", self.ancestral_states_file]))
-        # We tie the iterator to the ancestral states file so it must be updated
-        # each time we advance that iterator.
-        progress = tqdm.tqdm(
-            total=num_ancestral_sites, disable=not show_progress)
-
-        num_sites = 0
+        del bgen
         vcf_a = cyvcf2.VCF(self.ancestral_states_file)
-
         row_a = next(vcf_a, None)
 
-        progress.close()
+        bg = simplebgen.BgenReader(self.data_file)
+        N = 2 * bg.num_samples
+        for j in tqdm.tqdm(range(bg.num_variants)):
+            while row_a is not None and row_a.POS < position[j]:
+                row_a = next(vcf_a, None)
+            if row_a is None:
+                break
 
+            if row_a.POS == position[j]:
+                ancestral_state = get_ancestral_state(row_a)
+                alleles = allele_id[j].split(",")
+                if row_a.ID != rsid[j]:
+                    self.num_rsid_mismatches += 1
+                elif num_alleles[j] != 2:
+                    self.num_non_biallelic += 1
+                elif ancestral_state not in alleles:
+                    self.num_missing_ancestral_state += 1
+                else:
+                    P = bg.get_probabilities(j).astype(np.int8).reshape((N, 2))
+                    # The probabilities for each site is a (num_diploids, 4) array,
+                    # in the form (n0_a0, n0_a1, n1_a0, n1_a1). These are always zero
+                    # or one for the different alleles. We first flatten this array so 
+                    # that it's (N, 2) and then generate the genotypes based on that.
+                    genotypes = np.zeros(N, dtype=np.int8)
+                    if ancestral_state == alleles[0]:
+                        genotypes[P[:, 1] == 1] = 1
+                    else:
+                        genotypes[P[:, 0] == 1] = 1
+                    metadata = {"ID": row_a.ID, "REF": row_a.REF}
+                    self.samples.add_site(
+                        position=float(position[j]), genotypes=genotypes, alleles=alleles, 
+                        metadata=metadata)
+            else:
+                self.num_no_ancestral_state += 1
+            if j == max_sites:
+                break
+        self.report()
+ 
 
 def main():
     parser = argparse.ArgumentParser(
@@ -534,13 +558,12 @@ def main():
             if args.source == "ukbb":
                 converter = UkbbConverter(
                     args.data_file, args.ancestral_states_file, samples)
-            # converter.process_metadata(args.metadata_file, args.progress)
+            converter.process_metadata(args.metadata_file, args.progress)
             converter.process_sites(args.progress, args.max_variants)
     except Exception as e:
         os.unlink(args.output_file)
         raise e
     print(samples)
-
 
 
 if __name__ == "__main__":
