@@ -33,6 +33,12 @@ chr20_ancestral_states.bcf: ancestral_states.vcf.gz ancestral_states.vcf.gz.tbi
 	# Filter out multiallelic sites and indels to save time.
 	bcftools view --max-alleles 2 --exclude-types indels ancestral_states.vcf.gz --regions 20 -Ob -o $@
 
+# chr1
+chr1_ancestral_states.bcf: ancestral_states.vcf.gz ancestral_states.vcf.gz.tbi
+	# Filter out multiallelic sites and indels to save time.
+	bcftools view --max-alleles 2 --exclude-types indels ancestral_states.vcf.gz --regions 1 -Ob -o $@
+
+
 #############################################
 # 1000 Genomes data.
 #############################################
@@ -61,6 +67,26 @@ GENOTYPES_BASE=http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/suppor
 
 1kg_chr20.nosimplify.trees: 1kg_chr20.ancestors.trees
 	python3 -m tsinfer ms -vp -t ${NUM_THREADS} 1kg_chr20.samples -O $@
+
+# chr1
+1kg_chr1_genotypes.bcf:
+	curl ${GENOTYPES_BASE}/ALL.chr1.phase3_shapeit2_mvncall_integrated_v5.20130502.genotypes.bcf -o $@
+
+1kg_chr1.samples: 1kg_chr1_genotypes.bcf.csi chr1_ancestral_states.bcf.csi 1kg_samples.ped
+	python3 convert.py 1kg -p \
+		1kg_chr1_genotypes.bcf \
+		chr1_ancestral_states.bcf \
+		-m 1kg_samples.ped \
+		$@ 
+
+1kg_chr1.ancestors: 1kg_chr1.samples
+	python3 -m tsinfer ga -vp -t ${NUM_THREADS} $^
+
+1kg_chr1.ancestors.trees: 1kg_chr1.ancestors
+	python3 -m tsinfer ma -vp -t ${NUM_THREADS} 1kg_chr1.samples
+
+1kg_chr1.nosimplify.trees: 1kg_chr1.ancestors.trees
+	python3 -m tsinfer ms -vp -t ${NUM_THREADS} 1kg_chr1.samples -O $@
 
 #############################################
 # SGDP data.
