@@ -4,7 +4,6 @@ Convert input data from various sources to samples format.
 import argparse
 import subprocess
 import os
-import sys
 
 import numpy as np
 import tsinfer
@@ -14,7 +13,7 @@ import tqdm
 try:
     import bgen_reader
     # Local module used to work around slow genotype access in bgen_reader
-    import simplebgen 
+    import simplebgen
 except ImportError:
     # bgen-reader isn't available for Python 3.4.
     print("WARNING: Cannot import bgen reader")
@@ -123,7 +122,8 @@ class VcfConverter(Converter):
                 all_alleles.remove(ancestral_state)
                 alleles = [ancestral_state, all_alleles.pop()]
                 metadata = {"ID": row.ID, "REF": row.REF}
-                ret = Site(position=row.POS, alleles=alleles, genotypes=a, metadata=metadata)
+                ret = Site(
+                    position=row.POS, alleles=alleles, genotypes=a, metadata=metadata)
         return ret
 
     def process_sites(self, show_progress=False, max_sites=None):
@@ -414,7 +414,8 @@ class SgdpConverter(VcfConverter):
             sane_names[j] = "aliases"
             for j, name in enumerate(sane_names):
                 if name.startswith("\"sgdp-lite category"):
-                    # There's a very long key that doesn't impart any information here. Remove it.
+                    # There's a very long key that doesn't impart any information here.
+                    # Remove it.
                     sane_names[j] = "DELETE"
             rows = {}
             populations = {}
@@ -426,7 +427,8 @@ class SgdpConverter(VcfConverter):
                 population_name = metadata.pop("population_id")
                 populations[name] = population_id_map[population_name]
                 rows[name] = metadata
-                location = [float(metadata.pop("latitude")), float(metadata.pop("longitude"))]
+                location = [
+                    float(metadata.pop("latitude")), float(metadata.pop("longitude"))]
                 locations[name] = location
                 if metadata["town"] == "?":
                     metadata["town"] = None
@@ -503,7 +505,7 @@ class UkbbConverter(Converter):
                     P = bg.get_probabilities(j).astype(np.int8).reshape((N, 2))
                     # The probabilities for each site is a (num_diploids, 4) array,
                     # in the form (n0_a0, n0_a1, n1_a0, n1_a1). These are always zero
-                    # or one for the different alleles. We first flatten this array so 
+                    # or one for the different alleles. We first flatten this array so
                     # that it's (N, 2) and then generate the genotypes based on that.
                     genotypes = np.zeros(N, dtype=np.int8)
                     if ancestral_state == alleles[0]:
@@ -512,14 +514,14 @@ class UkbbConverter(Converter):
                         genotypes[P[:, 0] == 1] = 1
                     metadata = {"ID": row_a.ID, "REF": row_a.REF}
                     self.samples.add_site(
-                        position=float(position[j]), genotypes=genotypes, alleles=alleles, 
-                        metadata=metadata)
+                        position=float(position[j]), genotypes=genotypes,
+                        alleles=alleles, metadata=metadata)
             else:
                 self.num_no_ancestral_state += 1
             if j == max_sites:
                 break
         self.report()
- 
+
 
 def main():
     parser = argparse.ArgumentParser(
