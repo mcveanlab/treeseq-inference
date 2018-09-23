@@ -3,19 +3,16 @@ NUM_THREADS ?= 0
 # Requirements: bcftools, tabix, python3.
 # See requirements.txt for Python package requirements.
 
-#all: 1kg_chr20.samples sgdp_chr20.samples
+all: 1kg_chr20.samples sgdp_chr20.samples
 
-all: simplebgen.cpython-36m-x86_64-linux-gnu.so
-
-simplebgen.cpython-36m-x86_64-linux-gnu.so: setup.py simplebgenmodule.c
+simplebgen: setup.py simplebgenmodule.c
 	python3 setup.py build_ext --inplace
-
 
 %.bcf.csi: %.bcf
 	bcftools index $(patsubst %.bcf.csi,%.bcf,$@)
 
-%.vcf.gz.tbi: %.vcf.gz
-	tabix $(patsubst %.vcf.gz.tbi,%.vcf.gz,$@)
+%.vcf.gz.csi: %.vcf.gz
+	bcftools index $(patsubst %.vcf.gz.csi,%.vcf.gz,$@)
 
 #############################################
 # Ancestral states from Ensembl
@@ -28,7 +25,7 @@ simplebgen.cpython-36m-x86_64-linux-gnu.so: setup.py simplebgenmodule.c
 REFERENCE_NAME=GRCh37
 
 # We're using Ensembl release 92. 
-# I tried using 93 but the VCF header said it was realease 92.
+# I tried using 93 but the VCF header said it was release 92.
 #
 ANCESTRAL_STATES_URL=ftp://ftp.ensembl.org/pub/grch37/release-92/variation/vcf/homo_sapiens/homo_sapiens.vcf.gz 
 
@@ -114,7 +111,7 @@ sgdp_samples.txt:
 sgdp_chr20_genotypes.vcf.gz: cteam_extended.v4.PS2_phase.public.chr20.vcf.gz
 	ln cteam_extended.v4.PS2_phase.public.chr20.vcf.gz $@
 
-sgdp_chr20.samples: sgdp_chr20_genotypes.vcf.gz.tbi chr20_ancestral_states.bcf.csi sgdp_samples.txt
+sgdp_chr20.samples: sgdp_chr20_genotypes.vcf.gz.csi chr20_ancestral_states.bcf.csi sgdp_samples.txt
 	python3 convert.py sgdp -p \
 		sgdp_chr20_genotypes.vcf.gz  \
 		chr20_ancestral_states.bcf \
@@ -123,6 +120,16 @@ sgdp_chr20.samples: sgdp_chr20_genotypes.vcf.gz.tbi chr20_ancestral_states.bcf.c
 		--reference-name=${REFERENCE_NAME}\
 		$@ 
 
+sgdp_chr20.ancestors: sgdp_chr20.samples
+	python3 -m tsinfer ga -vp -t ${NUM_THREADS} $^
+
+sgdp_chr20.ancestors.trees: sgdp_chr20.ancestors
+	python3 -m tsinfer ma -vp -t ${NUM_THREADS} sgdp_chr20.samples
+
+sgdp_chr20.nosimplify.trees: sgdp_chr20.ancestors.trees
+	python3 -m tsinfer ms -vp -t ${NUM_THREADS} sgdp_chr20.samples -O $@
+
+
 #############################################
 # UKBB
 #############################################
@@ -130,13 +137,23 @@ sgdp_chr20.samples: sgdp_chr20_genotypes.vcf.gz.tbi chr20_ancestral_states.bcf.c
 ukbb_chr20_genotypes.bgen: 
 	ln -s /gpfs2/well/ukbb-wtchg/v2/haplotypes/ukb_hap_chr20_v2.bgen $@
 
-ukbb_chr20.samples: ukbb_chr20_genotypes.bgen chr20_ancestral_states.bcf.csi 
+ukbb_chr20.samples: simplebgen ukbb_chr20_genotypes.bgen chr20_ancestral_states.bcf.csi 
 	python3 convert.py ukbb -p \
 		ukbb_chr20_genotypes.bgen  \
 		chr20_ancestral_states.bcf \
 		--ancestral-states-url=${ANCESTRAL_STATES_URL}\
 		--reference-name=${REFERENCE_NAME}\
 		$@ 
+		 
+ukbb_chr20.ancestors: ukbb_chr20.samples
+	python3 -m tsinfer ga -vp -t ${NUM_THREADS} $^
+
+ukbb_chr20.ancestors.trees: ukbb_chr20.ancestors
+	python3 -m tsinfer ma -vp -t ${NUM_THREADS} ukbb_chr20.samples
+
+ukbb_chr20.nosimplify.trees: ukbb_chr20.ancestors.trees
+	python3 -m tsinfer ms -vp -t ${NUM_THREADS} ukbb_chr20.samples -O $@
+
 
 
 clean:
