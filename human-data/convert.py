@@ -4,6 +4,7 @@ Convert input data from various sources to samples format.
 import argparse
 import subprocess
 import os
+import sys
 
 import numpy as np
 import tsinfer
@@ -546,8 +547,26 @@ def main():
     parser.add_argument(
         "-p", "--progress", action="store_true",
         help="Show progress bars and output extra information when done")
+    parser.add_argument(
+        "--ancestral-states-url", default=None,
+        help="The source of ancestral state information for provenance.")
+    parser.add_argument(
+        "--reference-name", default=None,
+        help="The name of the reference for provenance.")
 
     args = parser.parse_args()
+
+    git_hash = subprocess.check_output(["git", "rev-parse", "HEAD"])
+    git_provenance = {
+        "repo": "git@github.com:mcveanlab/treeseq-inference.git",
+        "hash": git_hash.decode().strip(),
+        "dir": "human-data",
+        "notes:": (
+            "Use the Makefile to download and process the upstream data files")}
+    data_provenance = {
+        "ancestral_states_url": args.ancestral_states_url,
+        "reference_name": args.reference_name
+    }
 
     try:
         with tsinfer.SampleData(path=args.output_file, num_flush_threads=2) as samples:
@@ -562,6 +581,9 @@ def main():
                     args.data_file, args.ancestral_states_file, samples)
             converter.process_metadata(args.metadata_file, args.progress)
             converter.process_sites(args.progress, args.max_variants)
+            samples.record_provenance(
+                command=sys.argv[0], args=sys.argv[1:], git=git_provenance,
+                data=data_provenance)
     except Exception as e:
         os.unlink(args.output_file)
         raise e

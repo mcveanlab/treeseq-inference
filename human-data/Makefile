@@ -23,15 +23,20 @@ simplebgen.cpython-36m-x86_64-linux-gnu.so: setup.py simplebgenmodule.c
 
 # SGDP and 1000G are aligned to hs37d5, which is GRCh37 plus extra decoy sequences. 
 # So we download the ancestral states for GRCh37. 
-# 
+
+# Recorded in the sample file provenance.
+REFERENCE_NAME=GRCh37
+
 # We're using Ensembl release 92. 
 # I tried using 93 but the VCF header said it was realease 92.
 #
+ANCESTRAL_STATES_URL=ftp://ftp.ensembl.org/pub/grch37/release-92/variation/vcf/homo_sapiens/homo_sapiens.vcf.gz 
+
 ancestral_states.vcf.gz.tbi:
-	curl ftp://ftp.ensembl.org/pub/grch37/release-92/variation/vcf/homo_sapiens/homo_sapiens.vcf.gz.tbi -o $@
+	curl ${ANCESTRAL_STATES_URL}.tbi -o $@
 
 ancestral_states.vcf.gz:
-	curl ftp://ftp.ensembl.org/pub/grch37/release-92/variation/vcf/homo_sapiens/homo_sapiens.vcf.gz -o $@
+	curl ${ANCESTRAL_STATES_URL} -o $@
 
 # chr20
 chr20_ancestral_states.bcf: ancestral_states.vcf.gz ancestral_states.vcf.gz.tbi
@@ -62,6 +67,8 @@ GENOTYPES_BASE=http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/suppor
 		1kg_chr20_genotypes.bcf \
 		chr20_ancestral_states.bcf \
 		-m 1kg_samples.ped \
+		--ancestral-states-url=${ANCESTRAL_STATES_URL}\
+		--reference-name=${REFERENCE_NAME}\
 		$@ 
 
 1kg_chr20.ancestors: 1kg_chr20.samples
@@ -82,6 +89,8 @@ GENOTYPES_BASE=http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/suppor
 		1kg_chr1_genotypes.bcf \
 		chr1_ancestral_states.bcf \
 		-m 1kg_samples.ped \
+		--ancestral-states-url=${ANCESTRAL_STATES_URL}\
+		--reference-name=${REFERENCE_NAME}\
 		$@ 
 
 1kg_chr1.ancestors: 1kg_chr1.samples
@@ -110,6 +119,8 @@ sgdp_chr20.samples: sgdp_chr20_genotypes.vcf.gz.tbi chr20_ancestral_states.bcf.c
 		sgdp_chr20_genotypes.vcf.gz  \
 		chr20_ancestral_states.bcf \
 		-m sgdp_samples.txt \
+		--ancestral-states-url=${ANCESTRAL_STATES_URL}\
+		--reference-name=${REFERENCE_NAME}\
 		$@ 
 
 #############################################
@@ -123,6 +134,8 @@ ukbb_chr20.samples: ukbb_chr20_genotypes.bgen chr20_ancestral_states.bcf.csi
 	python3 convert.py ukbb -p \
 		ukbb_chr20_genotypes.bgen  \
 		chr20_ancestral_states.bcf \
+		--ancestral-states-url=${ANCESTRAL_STATES_URL}\
+		--reference-name=${REFERENCE_NAME}\
 		$@ 
 
 
