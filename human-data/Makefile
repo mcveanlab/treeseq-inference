@@ -14,6 +14,8 @@ simplebgen: setup.py simplebgenmodule.c
 %.vcf.gz.csi: %.vcf.gz
 	bcftools index $(patsubst %.vcf.gz.csi,%.vcf.gz,$@)
 
+.PRECIOUS: %.trees
+
 #############################################
 # Standard pipeline for samples file to .trees
 #############################################
@@ -55,47 +57,27 @@ ancestral_states.vcf.gz.tbi:
 ancestral_states.vcf.gz:
 	curl ${ANCESTRAL_STATES_URL} -o $@
 
-# chr20
-chr20_ancestral_states.bcf: ancestral_states.vcf.gz ancestral_states.vcf.gz.tbi
+chr%_ancestral_states.bcf: ancestral_states.vcf.gz ancestral_states.vcf.gz.tbi
 	# Filter out multiallelic sites and indels to save time.
-	bcftools view --max-alleles 2 --exclude-types indels ancestral_states.vcf.gz --regions 20 -Ob -o $@
-
-# chr1
-chr1_ancestral_states.bcf: ancestral_states.vcf.gz ancestral_states.vcf.gz.tbi
-	# Filter out multiallelic sites and indels to save time.
-	bcftools view --max-alleles 2 --exclude-types indels ancestral_states.vcf.gz --regions 1 -Ob -o $@
+	bcftools view --max-alleles 2 --exclude-types indels ancestral_states.vcf.gz --regions $* -Ob -o $@
 
 
 #############################################
 # 1000 Genomes data.
 #############################################
 
-GENOTYPES_BASE=http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/supporting/bcf_files/
+GENOTYPES_BASE=http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/supporting/bcf_files
 
 1kg_samples.ped:
 	curl http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/working/20130606_sample_info/20130606_g1k.ped \
 		-o $@
-# chr20
-1kg_chr20_genotypes.bcf:
-	curl ${GENOTYPES_BASE}/ALL.chr20.phase3_shapeit2_mvncall_integrated_v5.20130502.genotypes.bcf -o $@
+1kg_%_genotypes.bcf:
+	curl ${GENOTYPES_BASE}/ALL.$*.phase3_shapeit2_mvncall_integrated_v5.20130502.genotypes.bcf -o $@
 
-1kg_chr20.samples: 1kg_chr20_genotypes.bcf.csi chr20_ancestral_states.bcf.csi 1kg_samples.ped
+1kg_%.samples: 1kg_%_genotypes.bcf.csi %_ancestral_states.bcf.csi 1kg_samples.ped
 	python3 convert.py 1kg -p \
-		1kg_chr20_genotypes.bcf \
-		chr20_ancestral_states.bcf \
-		-m 1kg_samples.ped \
-		--ancestral-states-url=${ANCESTRAL_STATES_URL}\
-		--reference-name=${REFERENCE_NAME}\
-		$@ 
-
-# chr1
-1kg_chr1_genotypes.bcf:
-	curl ${GENOTYPES_BASE}/ALL.chr1.phase3_shapeit2_mvncall_integrated_v5.20130502.genotypes.bcf -o $@
-
-1kg_chr1.samples: 1kg_chr1_genotypes.bcf.csi chr1_ancestral_states.bcf.csi 1kg_samples.ped
-	python3 convert.py 1kg -p \
-		1kg_chr1_genotypes.bcf \
-		chr1_ancestral_states.bcf \
+		1kg_$*_genotypes.bcf \
+		$*_ancestral_states.bcf \
 		-m 1kg_samples.ped \
 		--ancestral-states-url=${ANCESTRAL_STATES_URL}\
 		--reference-name=${REFERENCE_NAME}\
