@@ -65,7 +65,6 @@ FASTARG = "fastARG"
 ARGWEAVER = "ARGweaver"
 RENTPLUS = "RentPlus"
 TSINFER = "tsinfer"
-TSINFER_WITH_ERROR = "tsinferWithErr"
 
 #names for optional columns in the dataset
 ERROR_COLNAME = 'error_rate'
@@ -420,8 +419,6 @@ class InferenceRunner(object):
         logging.debug("parameters = {}".format(self.row.to_dict()))
         if self.tool == TSINFER:
             ret = self.__run_tsinfer(skip_infer = metrics_only)
-        elif self.tool == TSINFER_WITH_ERROR:
-            ret = self.__run_tsinfer_with_err(skip_infer = metrics_only)
         elif self.tool == FASTARG:
             ret = self.__run_fastARG(skip_infer = metrics_only)
         elif self.tool == ARGWEAVER:
@@ -467,23 +464,7 @@ class InferenceRunner(object):
         row = {(self.tool + "_" + k):v for k,v in ret.items()}
         return row
 
-    #slightly more complex here as we have 2 ways to run tsinfer - with and without an error param
-    def __run_tsinfer_with_err(self, skip_infer=False):
-        #only bother actually inferring a specific with-error version if there was error injected into
-        #the original simulation. Otherwise skip everything, including the metrics (assume these were
-        #calculated in the "normal" __run_tsinfer() equivalent step
-        if self.row.error_rate == 0:
-            self.metric_params = []
-            return {}
-        return self.__tsinfer(self.row.error_rate, skip_infer)
-
-    def __run_tsinfer(self, skip_infer=False):
-        """
-        Standard is now to run without incorporating any error parameters into the inference 
-        """
-        return self.__tsinfer(None, skip_infer)
-
-    def __tsinfer(self, err, skip_infer=False):
+    def __run_tsinfer(self, err, skip_infer=False):
         #default to using srb & but not length breaking if nothing specified in the file
         shared_recombinations = bool(getattr(self.row,'tsinfer_srb', True))
         #default to no subsampling
@@ -859,7 +840,6 @@ class Dataset(object):
         RENTPLUS:   [METRICS_LOCATION_ALL | METRICS_POLYTOMIES_LEAVE],
         #tsinfer regularly produces polytomies, so need to check both methods here
         TSINFER:    [METRICS_LOCATION_ALL | METRICS_POLYTOMIES_LEAVE, METRICS_LOCATION_ALL | METRICS_POLYTOMIES_BREAK],
-        #TSINFER_WITH_ERROR: [METRICS_LOCATION_ALL | METRICS_POLYTOMIES_LEAVE, METRICS_LOCATION_ALL | METRICS_POLYTOMIES_BREAK]
     }
     
     """
