@@ -445,7 +445,7 @@ class InferenceRunner(object):
                     #get positions from the samples store, for use in metric calcs
                     try:
                         positions = tsinfer.SampleData.load(path=self.cmp_fn + ".samples").sites_position[:].tolist()
-                    except (tsinfer.exceptions.FileFormatError, FileNotFoundError):
+                    except FileNotFoundError:
                         #no such file exists, could be a case with no sites
                         continue
                 else:
@@ -1204,14 +1204,12 @@ class Dataset(object):
                 random_seed=sim_seed, **kwargs)
             #now add the mutations
             rng2 = msprime.RandomGenerator(mut_seed)
-            nodes = msprime.NodeTable()
-            edges = msprime.EdgeTable()
-            sites = msprime.SiteTable()
             muts = msprime.MutationTable()
-            ts.dump_tables(nodes=nodes, edges=edges)
+            tables = ts.dump_tables()
             mutgen = msprime.MutationGenerator(rng2, mutation_rate)
-            mutgen.generate(nodes, edges, sites, muts)
-            msprime.sort_tables(nodes=nodes, edges=edges, sites=sites, mutations=muts)
+            mutgen.generate(tables.nodes, tables.edges, tables.sites, muts)
+            msprime.sort_tables(
+                nodes=tables.nodes, edges=tables.edges, sites=tables.sites, mutations=muts)
             ts = msprime.load_tables(nodes=nodes, edges=edges, sites=sites, mutations=muts)
 
         logging.info(
@@ -1491,7 +1489,7 @@ class AllToolsAccuracyDataset(AllToolsDataset):
     #params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
-        ERROR_COLNAME : [0, 0.001, 0.01],
+        ERROR_COLNAME : [0, 0.001],
     }
 
 class AllToolsPerformanceDataset(AllToolsDataset):
@@ -1954,7 +1952,7 @@ class MetricsAllToolsFigure(Figure):
         metrics = ARG_metrics.get_metric_names()
         topology_only_metrics = [m for m in metrics if not m.startswith('w')]
         fig, axes = pyplot.subplots(len(topology_only_metrics),
-            len(error_rates), figsize=(4*len(error_rates), 15))
+            len(error_rates), figsize=(4*len(error_rates), 15), sharey=True)
         for j, metric in enumerate(topology_only_metrics):
             for k, error_rate in enumerate(error_rates):
                 ax = axes[j][k] if len(error_rates)>1 else axes[j]
@@ -2358,7 +2356,7 @@ class MetricAllToolsAccuracySweepFigure(Figure):
         sample_sizes = df.sample_size.unique()
 
         fig, axes = pyplot.subplots(len(output_freqs), len(error_rates),
-            figsize=(4*len(error_rates), 3*len(output_freqs)))
+            figsize=(7*len(error_rates), 3*len(output_freqs)))
         for j, output_data in enumerate(output_freqs.itertuples()):
             for k, error_rate in enumerate(error_rates):
                 freq = output_data.output_frequency
@@ -2367,11 +2365,14 @@ class MetricAllToolsAccuracySweepFigure(Figure):
                 ax.set_xscale('log')
                 if j == 0:
                     ax.set_title("Error = {}".format(error_rate))
+                if j == len(output_freqs) - 1:
+                    ax.set_xlabel("Neutral mutation rate")
                 if k == 0:
                     ax.set_ylabel(getattr(self, 'y_axis_label', self.metric_titles[self.metric].replace("Kendall-Colijn", "KC")) + 
-                        " @ freq {}{}".format(freq, "+{} gens".format(int(gens)) if gens else ""))
-                if j == len(output_freqs) - 1:
-                    ax.set_xlabel("Mutation rate")
+                        " @ {}{}".format(
+                            "fixation " if np.isclose(freq, 1.0) else "freq {}".format(freq),
+                            "+{} gens".format(int(gens)) if gens else ""))
+                if np.isclose(freq, 1.0) and not gens:
                 for n, fillstyle in zip(sample_sizes, self.fillstyles):
                     df_s = df[np.logical_and.reduce((
                         df.sample_size == n,
