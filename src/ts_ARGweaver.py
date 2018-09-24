@@ -137,7 +137,7 @@ def samples_to_ARGweaver_in(sample_data, ARGweaver_filehandle, infinite_sites=Tr
 
 def ARGweaver_smc_to_ts_txts(smc2bin_executable, prefix, nodes_fh, edges_fh):
     """
-    convert the ARGweaver smc representation to coalescence records format
+    convert the ARGweaver smc representation to tree sequence text format
     """
     logging.debug(
         "== Converting the ARGweaver smc output file '{}' to .arg format using '{}' ==".format(
