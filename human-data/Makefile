@@ -22,10 +22,10 @@ simplebgen: setup.py simplebgenmodule.c
 	python3 -m tsinfer ga -vp -t ${NUM_THREADS} $^
 
 %.ancestors.trees: %.ancestors
-	python3 -m tsinfer ma -vp -t ${NUM_THREADS} %.samples
+	python3 -m tsinfer ma -vp -t ${NUM_THREADS} $*.samples
 
 %.nosimplify.trees: %.ancestors.trees
-	python3 -m tsinfer ms -vp -t ${NUM_THREADS} %.samples -O $@
+	python3 -m tsinfer ms -vp -t ${NUM_THREADS} $*.samples -O $@
 
 %.trees: %.nosimplify.trees
 	python3 tsutil.py simplify $^ $@
@@ -129,7 +129,9 @@ sgdp_chr20.samples: sgdp_chr20_genotypes.vcf.gz.csi chr20_ancestral_states.bcf.c
 ukbb_chr20_genotypes.bgen: 
 	ln -s /gpfs2/well/ukbb-wtchg/v2/haplotypes/ukb_hap_chr20_v2.bgen $@
 
-ukbb_chr20.samples: simplebgen ukbb_chr20_genotypes.bgen chr20_ancestral_states.bcf.csi 
+# Also requires the simplebgen module above. Don't want to require it here as 
+# any changes will cascade a full rebuild on UKBB.
+ukbb_chr20.samples: ukbb_chr20_genotypes.bgen chr20_ancestral_states.bcf.csi 
 	python3 convert.py ukbb -p \
 		ukbb_chr20_genotypes.bgen  \
 		chr20_ancestral_states.bcf \
@@ -137,6 +139,8 @@ ukbb_chr20.samples: simplebgen ukbb_chr20_genotypes.bgen chr20_ancestral_states.
 		--reference-name=${REFERENCE_NAME}\
 		$@ 
 
+ukbb-chr20.augmented_131072.nosimplify.trees: ukbb_chr20.samples ukbb_chr20.ancestors.trees
+	python3 tsutil.py sequential-augment ukbb_chr20.samples --num-threads=${NUM_THREADS}
 
 clean:
 	rm -f 1kg_samples.ped sgdp_samples.txt *.vcf* *.samples
