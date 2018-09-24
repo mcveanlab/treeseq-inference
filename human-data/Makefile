@@ -15,6 +15,26 @@ simplebgen: setup.py simplebgenmodule.c
 	bcftools index $(patsubst %.vcf.gz.csi,%.vcf.gz,$@)
 
 #############################################
+# Standard pipeline for samples file to .trees
+#############################################
+
+%.ancestors: %.samples
+	python3 -m tsinfer ga -vp -t ${NUM_THREADS} $^
+
+%.ancestors.trees: %.ancestors
+	python3 -m tsinfer ma -vp -t ${NUM_THREADS} %.samples
+
+%.nosimplify.trees: %.ancestors.trees
+	python3 -m tsinfer ms -vp -t ${NUM_THREADS} %.samples -O $@
+
+%.trees: %.nosimplify.trees
+	python3 tsutil.py simplify $^ $@
+
+%.trees.gz: %.trees
+	gzip -k $^
+
+
+#############################################
 # Ancestral states from Ensembl
 #############################################
 
@@ -68,15 +88,6 @@ GENOTYPES_BASE=http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/suppor
 		--reference-name=${REFERENCE_NAME}\
 		$@ 
 
-1kg_chr20.ancestors: 1kg_chr20.samples
-	python3 -m tsinfer ga -vp -t ${NUM_THREADS} $^
-
-1kg_chr20.ancestors.trees: 1kg_chr20.ancestors
-	python3 -m tsinfer ma -vp -t ${NUM_THREADS} 1kg_chr20.samples
-
-1kg_chr20.nosimplify.trees: 1kg_chr20.ancestors.trees
-	python3 -m tsinfer ms -vp -t ${NUM_THREADS} 1kg_chr20.samples -O $@
-
 # chr1
 1kg_chr1_genotypes.bcf:
 	curl ${GENOTYPES_BASE}/ALL.chr1.phase3_shapeit2_mvncall_integrated_v5.20130502.genotypes.bcf -o $@
@@ -89,15 +100,6 @@ GENOTYPES_BASE=http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/suppor
 		--ancestral-states-url=${ANCESTRAL_STATES_URL}\
 		--reference-name=${REFERENCE_NAME}\
 		$@ 
-
-1kg_chr1.ancestors: 1kg_chr1.samples
-	python3 -m tsinfer ga -vp -t ${NUM_THREADS} $^
-
-1kg_chr1.ancestors.trees: 1kg_chr1.ancestors
-	python3 -m tsinfer ma -vp -t ${NUM_THREADS} 1kg_chr1.samples
-
-1kg_chr1.nosimplify.trees: 1kg_chr1.ancestors.trees
-	python3 -m tsinfer ms -vp -t ${NUM_THREADS} 1kg_chr1.samples -O $@
 
 #############################################
 # SGDP data.
@@ -120,16 +122,6 @@ sgdp_chr20.samples: sgdp_chr20_genotypes.vcf.gz.csi chr20_ancestral_states.bcf.c
 		--reference-name=${REFERENCE_NAME}\
 		$@ 
 
-sgdp_chr20.ancestors: sgdp_chr20.samples
-	python3 -m tsinfer ga -vp -t ${NUM_THREADS} $^
-
-sgdp_chr20.ancestors.trees: sgdp_chr20.ancestors
-	python3 -m tsinfer ma -vp -t ${NUM_THREADS} sgdp_chr20.samples
-
-sgdp_chr20.nosimplify.trees: sgdp_chr20.ancestors.trees
-	python3 -m tsinfer ms -vp -t ${NUM_THREADS} sgdp_chr20.samples -O $@
-
-
 #############################################
 # UKBB
 #############################################
@@ -144,16 +136,6 @@ ukbb_chr20.samples: simplebgen ukbb_chr20_genotypes.bgen chr20_ancestral_states.
 		--ancestral-states-url=${ANCESTRAL_STATES_URL}\
 		--reference-name=${REFERENCE_NAME}\
 		$@ 
-		 
-ukbb_chr20.ancestors: ukbb_chr20.samples
-	python3 -m tsinfer ga -vp -t ${NUM_THREADS} $^
-
-ukbb_chr20.ancestors.trees: ukbb_chr20.ancestors
-	python3 -m tsinfer ma -vp -t ${NUM_THREADS} ukbb_chr20.samples
-
-ukbb_chr20.nosimplify.trees: ukbb_chr20.ancestors.trees
-	python3 -m tsinfer ms -vp -t ${NUM_THREADS} ukbb_chr20.samples -O $@
-
 
 
 clean:
