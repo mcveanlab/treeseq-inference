@@ -40,24 +40,20 @@ import matplotlib.backends.backend_pdf
 import pandas as pd
 import tqdm
 
-# import the local copy of msprime in preference to the global one
-sys.path.insert(1,os.path.join(sys.path[0],'..','msprime'))
-sys.path.insert(1,os.path.join(sys.path[0],'..','tsinfer'))
-sys.path.insert(1,os.path.join(sys.path[0],'..','ftprime', 'examples'))
-
 import msprime
 import _msprime
 import tsinfer
+
+# The following are all contained in files local to this directory
 import ts_extras
 import ts_fastARG
 import ts_ARGweaver
 import ts_RentPlus
 import ARG_metrics
 
-
-fastARG_executable = os.path.join(sys.path[0],'..','fastARG','fastARG')
-ARGweaver_executable = os.path.join(sys.path[0],'..','argweaver','bin','arg-sample')
-smc2arg_executable = os.path.join(sys.path[0],'..','argweaver','bin','smc2arg')
+fastARG_executable = os.path.join('tools','fastARG','fastARG')
+ARGweaver_executable = os.path.join('tools','argweaver','bin','arg-sample')
+smc2arg_executable = os.path.join('tools','argweaver','bin','smc2arg')
 RentPlus_executable = os.path.join(sys.path[0],'..','RentPlus','RentPlus.jar')
 tsinfer_executable = os.path.join(sys.path[0],'run_tsinfer.py')
 
