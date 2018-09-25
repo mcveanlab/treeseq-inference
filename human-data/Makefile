@@ -14,7 +14,7 @@ simplebgen: setup.py simplebgenmodule.c
 %.vcf.gz.csi: %.vcf.gz
 	bcftools index $(patsubst %.vcf.gz.csi,%.vcf.gz,$@)
 
-.PRECIOUS: %.trees
+.PRECIOUS: %.trees %.csi
 
 #############################################
 # Standard pipeline for samples file to .trees

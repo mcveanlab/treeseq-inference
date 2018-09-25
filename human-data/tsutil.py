@@ -9,7 +9,6 @@ import daiquiri
 import numpy as np
 
 def run_simplify(args):
-    print("simplify", args.input, args.output)
     ts = msprime.load(args.input)
     ts = ts.simplify()
     ts.dump(args.output)
@@ -78,5 +77,5 @@ def main():
 
     args = parser.parse_args()
     args.func(args)
-     
+
 main()
