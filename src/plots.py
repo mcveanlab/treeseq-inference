@@ -1053,13 +1053,13 @@ class Dataset(object):
                         break
                 if record_rate:
                     bits_flipped += np.sum(np.logical_xor(genotypes, v.genotypes))
+                logging.info("Empirical error used with actual error rate = {}".format(
+                        bits_flipped/(n_variants*ts.sample_size)) if record_rate else "")
 
             sample_data.add_site(
                 position=v.site.position, alleles=v.alleles,
                 genotypes=genotypes)
       
-        logging.info(": actual error rate = {}".format(
-                bits_flipped/(n_variants*ts.sample_size)) if record_rate else "")
         sample_data.finalise()
         return sample_data
     
