@@ -456,14 +456,14 @@ class InferenceRunner(object):
         row = {(self.tool + "_" + k):v for k,v in ret.items()}
         return row
 
-    def __run_tsinfer(self, err, skip_infer=False):
+    def __run_tsinfer(self, skip_infer=False):
         #default to no subsampling
         subsample_size = getattr(self.row,'subsample_size', None)
         restrict_sample_size_comparison = getattr(self.row,'restrict_sample_size_comparison', None)
         #construct filenames - these can be used even if inference does not occur
         samples_fn = self.sample_fn + ".samples"
         out_fn = construct_tsinfer_name(self.sample_fn,
-            restrict_sample_size_comparison, err)
+            restrict_sample_size_comparison)
         self.inferred_filenames = [out_fn]
         if skip_infer:
             return {}
@@ -479,7 +479,7 @@ class InferenceRunner(object):
                 )
             if restrict_sample_size_comparison is not None:
                 if len(self.metric_params):
-                    with open(construct_tsinfer_name(self.sample_fn, None, err) + ".nex", "w+") as out:
+                    with open(construct_tsinfer_name(self.sample_fn, None) + ".nex", "w+") as out:
                         tree_labels_between_variants=(True if subsample_size is None else False)
                         inferred_ts.write_nexus_trees(
                             out, tree_labels_between_variants=tree_labels_between_variants)
