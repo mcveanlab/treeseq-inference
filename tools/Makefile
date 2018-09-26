@@ -11,7 +11,7 @@ fastARG:
 ARGweaver: 
 	git clone https://github.com/CshlSiepelLab/argweaver
 	# checkout a specific revision (lastest as of Sept 2018)
-	cd ARGweaver && git checkout 905d3280b0ce3d799767b9511862b39294b0c093
+	cd argweaver && git checkout 905d3280b0ce3d799767b9511862b39294b0c093
 	
 RentPlus:
 	git clone https://github.com/SajadMirzaei/RentPlus
