@@ -1,4 +1,4 @@
-all: | fastARG ARGweaver RentPlus ftprime
+all: | fastARG argweaver RentPlus ftprime
 	#the following two tools require stand-alone compilation
 	make -C fastARG
 	make -C argweaver
@@ -8,7 +8,7 @@ fastARG:
 	# checkout a specific revision (lastest as of Sept 2018)
 	cd fastARG && git checkout 841b4971cdf33932f07044b1c6c2fb14000bdd94
 
-ARGweaver: 
+argweaver: 
 	git clone https://github.com/CshlSiepelLab/argweaver
 	# checkout a specific revision (lastest as of Sept 2018)
 	cd argweaver && git checkout 905d3280b0ce3d799767b9511862b39294b0c093
