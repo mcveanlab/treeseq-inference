@@ -441,9 +441,10 @@ class SgdpConverter(VcfConverter):
 
         # Add in the metadata rows in the order of the VCF.
         for name in individual_names:
-            if name not in rows:
-                print("No metadata for individual", name)
-                self.samples.add_individual(ploidy=2)
+            if name == "S_Naxi-2":
+                # This individual is missing from the metadata. Skip metadata and location,
+                # but assume the population is the same as S_Naxi-1
+                self.samples.add_individual(population=populations["S_Naxi-1"], ploidy=2)
             else:
                 metadata = rows[name]
                 self.samples.add_individual(
