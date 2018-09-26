@@ -35,12 +35,6 @@ def main():
         "-l", "--length", default=None, type=int,
         help="The total sequence length")
     parser.add_argument(
-        "-r", "--recombination-rate", default=None, type=float,
-        help="The scaled recombination rate (now ignored)")
-    parser.add_argument(
-        "-e", "--error-probability", default=None, type=float,
-        help="The probability of observing an error (now ignored)")
-    parser.add_argument(
         "-t", "--threads", default=1, type=int,
         help="The number of worker threads to use")
     parser.add_argument(
@@ -55,10 +49,6 @@ def main():
 
     args = parser.parse_args()
         
-    if args.recombination_rate is not None:
-        logging.warning("TSinfer now simply ignores recombination rate. You can omit this parameter")
-    if args.error_probability is not None:
-        logging.warning("TSinfer now simply ignores error probabilities. You can omit this parameter")
     engine = tsinfer.PY_ENGINE if args.method == "P" else tsinfer.C_ENGINE
 
     if not os.path.isfile(args.samples):
