@@ -1,7 +1,7 @@
 all: | fastARG ARGweaver RentPlus ftprime
 	#the following two tools require stand-alone compilation
 	make -C fastARG
-	make -C ARGweaver
+	make -C argweaver
 
 fastARG: 
 	git clone https://github.com/lh3/fastARG
