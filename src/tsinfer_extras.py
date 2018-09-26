@@ -17,11 +17,8 @@ import itertools
 
 import numpy as np
 
-sys.path.insert(1,os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','msprime')) # use the local copy of msprime in preference to the global one
 import msprime
-import _msprime
 import tsinfer
-import _tsinfer
 
 
 def get_nodes_and_mutations(ts):

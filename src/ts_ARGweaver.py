@@ -11,7 +11,7 @@ same. We also test tree balance statistics (which are tip-label agnostic) and (i
 sample <= 5) looks at all possible tip permutations to see if the trees are
 essentially the same but with the labels lost.
 
-E.g. to look ove many small trees (seq length 1 million bases), try
+E.g. to look over many small trees (seq length 1 million bases), try
 
 python3 ./src/ts_ARGweaver.py tmp/AWtest -v -l 1000000
 
@@ -23,9 +23,10 @@ import math
 import re
 import gzip
 import csv
-import numpy as np
 import os.path
-sys.path.insert(1,os.path.join(sys.path[0],'..','msprime')) # use the local copy of msprime in preference to the global one
+
+import numpy as np
+
 import msprime
 
 class CyclicalARGError(Exception):

@@ -13,7 +13,6 @@ import tempfile
 
 import numpy as np
 
-sys.path.insert(1,os.path.join(sys.path[0],'..','msprime')) # use the local copy of msprime in preference to the global one
 import msprime
 
 def ts_to_fastARG_in(ts, fastARG_filehandle):

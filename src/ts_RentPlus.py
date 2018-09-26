@@ -2,9 +2,10 @@
 """Various functions to convert tree sequences to RentPlus input format, and from RentPlus output to tree seqs."""
 import sys
 from math import ceil
-import numpy as np
 import os.path
 import logging
+
+import numpy as np
     
 def samples_to_RentPlus_in(sample_data, RentPlus_filehandle, infinite_sites=True):
     """

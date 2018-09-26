@@ -8,9 +8,6 @@ import logging
 
 import numpy as np
 
-# use the local copy of msprime in preference to the global one
-sys.path.insert(1,os.path.join(sys.path[0],'..','msprime'))
-sys.path.insert(1,os.path.join(sys.path[0],'..','tsinfer'))
 import msprime
 import tsinfer
 import tsinfer.eval_util as eval_util
