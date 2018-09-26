@@ -2280,6 +2280,9 @@ class MetricsAllToolsAccuracySweepFigure(Figure):
                         ax.set_ylabel(getattr(self, 'y_axis_label', self.metric_titles[metric]))
                     if j == len(topology_only_metrics) - 1:
                         ax.set_xlabel("Mutation rate")
+                    if np.isclose(freq, 1.0) and not gens:
+                        # This is *at* fixation - set the plot background colour
+                        ax.set_facecolor('0.9')
                     for n, fillstyle in zip(sample_sizes, self.fillstyles):
                         df_s = df[np.logical_and.reduce((
                             df.sample_size == n,
@@ -2345,7 +2348,7 @@ class MetricAllToolsAccuracySweepFigure(Figure):
     """
     datasetClass = AllToolsAccuracyWithSelectiveSweepDataset
     datasetClass = AllToolsAccuracyWithSelectiveSweepDataset
-    name = "metrics_all_tools_accuracy_sweep"
+    name = "metric_all_tools_accuracy_sweep"
     error_bars = True
     fillstyles = ['full', 'none']
 
@@ -2373,6 +2376,8 @@ class MetricAllToolsAccuracySweepFigure(Figure):
                             "fixation " if np.isclose(freq, 1.0) else "freq {}".format(freq),
                             "+{} gens".format(int(gens)) if gens else ""))
                 if np.isclose(freq, 1.0) and not gens:
+                    # This is *at* fixation - set the plot background colour
+                    ax.set_facecolor('0.9')
                 for n, fillstyle in zip(sample_sizes, self.fillstyles):
                     df_s = df[np.logical_and.reduce((
                         df.sample_size == n,
