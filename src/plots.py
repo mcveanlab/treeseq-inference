@@ -326,7 +326,7 @@ def rentplus_name_from_ts_row(row, sim_dir):
     """
     return construct_rentplus_name(mk_sim_name_from_row(row, sim_dir))
 
-def construct_tsinfer_name(sim_name, subsample_size, shared_breakpoints, error_param=None):
+def construct_tsinfer_name(sim_name, subsample_size, error_param=None):
     """
     Returns a TSinfer filename.
     If the file is a subset of the original, this can be added to the
@@ -335,8 +335,6 @@ def construct_tsinfer_name(sim_name, subsample_size, shared_breakpoints, error_p
     """
     d,f = os.path.split(sim_name)
     suffix = "" if error_param is None else "err{}".format(float(error_param))
-    if shared_breakpoints is not None:
-        suffix += "srb"+str(int(shared_breakpoints))
     name = os.path.join(d,'+'.join(['tsinfer', f, suffix]))
     if subsample_size is not None and not pd.isnull(subsample_size):
         name = add_subsample_param_to_name(name, subsample_size)
@@ -465,15 +463,13 @@ class InferenceRunner(object):
         return row
 
     def __run_tsinfer(self, err, skip_infer=False):
-        #default to using srb & but not length breaking if nothing specified in the file
-        shared_recombinations = bool(getattr(self.row,'tsinfer_srb', True))
         #default to no subsampling
         subsample_size = getattr(self.row,'subsample_size', None)
         restrict_sample_size_comparison = getattr(self.row,'restrict_sample_size_comparison', None)
         #construct filenames - these can be used even if inference does not occur
         samples_fn = self.sample_fn + ".samples"
         out_fn = construct_tsinfer_name(self.sample_fn,
-            restrict_sample_size_comparison, shared_recombinations, err)
+            restrict_sample_size_comparison, err)
         self.inferred_filenames = [out_fn]
         if skip_infer:
             return {}
@@ -483,13 +479,13 @@ class InferenceRunner(object):
             samples_fn))
         try:
             inferred_ts, time, memory = self.run_tsinfer(
-                samples_fn, self.row.length, shared_recombinations, self.num_threads,
+                samples_fn, self.row.length, self.num_threads,
                 #uncomment below to inject real ancestors - will need adjusting for subsampling
                 #inject_real_ancestors_from_ts_fn = self.orig_sim_fn + ".hdf5",
                 )
             if restrict_sample_size_comparison is not None:
                 if len(self.metric_params):
-                    with open(construct_tsinfer_name(self.sample_fn, None, shared_recombinations, err) + ".nex", "w+") as out:
+                    with open(construct_tsinfer_name(self.sample_fn, None, err) + ".nex", "w+") as out:
                         tree_labels_between_variants=(True if subsample_size is None else False)
                         inferred_ts.write_nexus_trees(
                             out, tree_labels_between_variants=tree_labels_between_variants)
@@ -673,7 +669,7 @@ class InferenceRunner(object):
 
     @staticmethod
     def run_tsinfer(sample_fn, length,
-        shared_recombinations, num_threads=1, inject_real_ancestors_from_ts_fn=None, rho=None, error_probability=None):
+        num_threads=1, inject_real_ancestors_from_ts_fn=None, rho=None, error_probability=None):
             with tempfile.NamedTemporaryFile("w+") as ts_out:
                 cmd = [sys.executable, tsinfer_executable, sample_fn, "--length", str(int(length))]
                 if rho is not None:
@@ -685,8 +681,6 @@ class InferenceRunner(object):
                     logging.debug("Injecting real ancestors constructed from {}".format(
                         inject_real_ancestors_from_ts_fn))
                     cmd.extend(["--inject-real-ancestors-from-ts", inject_real_ancestors_from_ts_fn])
-                if shared_recombinations:
-                    cmd.append("--shared-recombinations")
                 cpu_time, memory_use = time_cmd(cmd)
                 ts_simplified = msprime.load(ts_out.name)
             return ts_simplified, cpu_time, memory_use

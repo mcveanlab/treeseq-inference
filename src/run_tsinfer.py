@@ -32,9 +32,6 @@ def main():
         "output",
         help="The path to write the output file to")
     parser.add_argument(
-        "-srb", "--shared-recombinations", action='store_true',
-        help="Use shared recombinations (path compression) to break polytomies")
-    parser.add_argument(
         "-l", "--length", default=None, type=int,
         help="The total sequence length")
     parser.add_argument(
@@ -75,12 +72,12 @@ def main():
         eval_util.build_simulated_ancestors(sample_data, ancestor_data, orig_ts)
         ancestor_data.finalise()
         ancestors_ts = tsinfer.match_ancestors(
-            sample_data, ancestor_data, path_compression=args.shared_recombinations, engine=engine)
+            sample_data, ancestor_data, engine=engine)
         ts = tsinfer.match_samples(
-            sample_data, ancestors_ts, path_compression=args.shared_recombinations, engine=engine, simplify=True)
+            sample_data, ancestors_ts, engine=engine, simplify=True)
     else:
         ts = tsinfer.infer(
-            sample_data, num_threads=args.threads, path_compression=args.shared_recombinations, engine=engine)
+            sample_data, num_threads=args.threads, engine=engine)
     ts.dump(args.output)
 
     # # TODO add command line arg here for when we're comparing run time performance.
