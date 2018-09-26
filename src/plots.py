@@ -499,7 +499,6 @@ class InferenceRunner(object):
                         out, tree_labels_between_variants=tree_labels_between_variants)
             unique, counts = np.unique(np.array([e.parent for e in inferred_ts.edges()], dtype="u8"), return_counts=True)
         except ValueError as e:
-            # temporary hack around https://github.com/tskit-dev/tsinfer/issues/44
             if "No inference sites" in str(e):
                 logging.warning("No inference sites in {}. Skipping".format(samples_fn))
                 self.inferred_filenames = None
@@ -536,7 +535,6 @@ class InferenceRunner(object):
                     with open(fn + ".nex", "w+") as out:
                         inferred_ts.write_nexus_trees(out)
         except ValueError as e:
-            # temporary hack around https://github.com/tskit-dev/tsinfer/issues/44
             if "0 samples;" in str(e):
                 logging.warning("No samples in {}. Skipping".format(infile))
                 self.inferred_filenames = None
