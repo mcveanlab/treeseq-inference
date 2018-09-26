@@ -109,12 +109,6 @@ def nanblank(val):
     """hack around a horrible pandas syntax, which puts nan instead of blank strings"""
     return "" if pd.isnull(val) else val
 
-def always_true(*pargs):
-    """
-    A func that returns True for any input value
-    """
-    return True
-
 def ts_has_non_singleton_variants(ts):
     """
     Check if there are any doubletons or higher in a treeseq
