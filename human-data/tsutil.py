@@ -4,6 +4,7 @@ Various utilities for manipulating tree sequences and running tsinfer.
 import argparse
 
 import msprime
+import time
 import tsinfer
 import daiquiri
 import numpy as np
@@ -51,6 +52,30 @@ def run_sequential_augment(args):
     final_ts = run_match_samples(sample_data, ancestors_ts, args.num_threads)
     final_ts.dump(final_file)
 
+def run_benchmark(args):
+
+    before = time.perf_counter()
+    ts = msprime.load(args.input)
+    duration = time.perf_counter() - before
+    print("Loaded in {:.2f}s".format(duration))
+
+    before = time.perf_counter()
+    j = 0
+    for tree in ts.trees(sample_counts=False):
+        j += 1
+    assert j == ts.num_trees
+    duration = time.perf_counter() - before
+    print("Iterated over trees in {:.2f}s".format(duration))
+
+    before = time.perf_counter()
+    j = 0
+    for var in ts.variants():
+        j += 1
+    assert j == ts.num_sites
+    duration = time.perf_counter() - before
+    total_genotypes = (ts.num_samples * ts.num_sites) / 10**6
+    print("Iterated over variants in {:.2f}s @ {:.2f} M genotypes/s".format(
+        duration, total_genotypes / duration))
 
 def main():
 
@@ -72,6 +97,10 @@ def main():
     subparser.add_argument("--num-threads", type=int, default=0)
     subparser.set_defaults(func=run_sequential_augment)
 
+    subparser = subparsers.add_parser("benchmark")
+    subparser.add_argument(
+        "input", type=str, help="Input tree sequence")
+    subparser.set_defaults(func=run_benchmark)
 
     daiquiri.setup(level="INFO")
 

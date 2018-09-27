@@ -54,8 +54,8 @@ import ARG_metrics
 fastARG_executable = os.path.join('tools','fastARG','fastARG')
 ARGweaver_executable = os.path.join('tools','argweaver','bin','arg-sample')
 smc2arg_executable = os.path.join('tools','argweaver','bin','smc2arg')
-RentPlus_executable = os.path.join(sys.path[0],'..','RentPlus','RentPlus.jar')
-tsinfer_executable = os.path.join(sys.path[0],'run_tsinfer.py')
+RentPlus_executable = os.path.join('tools','RentPlus','RentPlus.jar')
+tsinfer_executable = os.path.join('src','run_tsinfer.py')
 
 #monkey-patch nexus saving/writing into msprime/tskit
 msprime.TreeSequence.write_nexus_trees = ts_extras.write_nexus_trees
@@ -1958,7 +1958,7 @@ class MetricsAllToolsFigure(Figure):
         metrics = ARG_metrics.get_metric_names()
         topology_only_metrics = [m for m in metrics if not m.startswith('w')]
         fig, axes = pyplot.subplots(len(topology_only_metrics),
-            len(error_rates), figsize=(4*len(error_rates), 15), sharey=True)
+            len(error_rates), figsize=(4*len(error_rates), 15), sharey='row')
         for j, metric in enumerate(topology_only_metrics):
             for k, error_rate in enumerate(error_rates):
                 ax = axes[j][k] if len(error_rates)>1 else axes[j]

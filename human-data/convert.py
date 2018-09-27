@@ -86,6 +86,9 @@ class VcfConverter(Converter):
         self.num_missing_data = 0
         self.num_invariant = 0
         self.num_non_biallelic = 0
+        # Rows that don't overlap
+        self.num_ancestral_state_no_data = 0
+        self.num_data_no_ancestral_state = 0
 
     def report(self):
         print("no_ancestral_state  :", self.num_no_ancestral_state)
@@ -93,6 +96,8 @@ class VcfConverter(Converter):
         print("missing_data        :", self.num_missing_data)
         print("invariant           :", self.num_invariant)
         print("non_biallelic       :", self.num_non_biallelic)
+        print("ancestral_state_no_data :", self.num_ancestral_state_no_data)
+        print("data_no_ancestral_state :", self.num_data_no_ancestral_state)
 
     def convert_genotypes(self, row, ancestral_state):
         ret = None
@@ -128,12 +133,11 @@ class VcfConverter(Converter):
         return ret
 
     def process_sites(self, show_progress=False, max_sites=None):
-        num_ancestral_sites = int(subprocess.check_output(
-            ["bcftools", "index", "--nrecords", self.ancestral_states_file]))
+        num_data_sites = int(subprocess.check_output(
+            ["bcftools", "index", "--nrecords", self.data_file]))
         # We tie the iterator to the ancestral states file so it must be updated
         # each time we advance that iterator.
-        progress = tqdm.tqdm(
-            total=num_ancestral_sites, disable=not show_progress)
+        progress = tqdm.tqdm(total=num_data_sites, disable=not show_progress)
 
         num_sites = 0
         vcf_a = filter_duplicates(cyvcf2.VCF(self.ancestral_states_file))
@@ -163,8 +167,10 @@ class VcfConverter(Converter):
                 progress.update()
             elif row_a.POS < row_d.POS:
                 row_a = next(vcf_a, None)
-                progress.update()
+                self.num_ancestral_state_no_data += 1
             elif row_d.POS < row_a.POS:
+                progress.update()
+                self.num_data_no_ancestral_state += 1
                 row_d = next(vcf_d, None)
 
         progress.close()
