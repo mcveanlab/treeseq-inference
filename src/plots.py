@@ -1883,6 +1883,18 @@ class ARGweaverParamChangesDataset(Dataset):
 #
 ######################################
 
+def error_label(error):
+    """
+    Make a nice label explaining this error parameter
+    """
+    try:
+        error = float(error)
+        return "Error = {}",format(error) if error else "No error"
+    except (ValueError, TypeError):
+        return "{} error",format(error) if error else "No error"
+        
+
+
 class Figure(object):
     """
     Superclass of all figures. Each figure depends on a dataset.
@@ -1953,24 +1965,24 @@ class MetricsAllToolsFigure(Figure):
     def plot(self):
         from matplotlib.legend_handler import HandlerTuple
         df = self.dataset.data
-        error_rates = df[ERROR_COLNAME].unique()
+        error_params = df[ERROR_COLNAME].unique()
         sample_sizes = df.sample_size.unique()
         metrics = ARG_metrics.get_metric_names()
         topology_only_metrics = [m for m in metrics if not m.startswith('w')]
         fig, axes = pyplot.subplots(len(topology_only_metrics),
-            len(error_rates), figsize=(4*len(error_rates), 15), sharey='row')
+            len(error_params), figsize=(4*len(error_params), 15), sharey='row')
         for j, metric in enumerate(topology_only_metrics):
-            for k, error_rate in enumerate(error_rates):
-                ax = axes[j][k] if len(error_rates)>1 else axes[j]
+            for k, error in enumerate(error_params):
+                ax = axes[j][k] if len(error_params)>1 else axes[j]
                 ax.set_xscale('log')
                 if j == 0:
-                    ax.set_title("Error = {}".format(error_rate))
+                    ax.set_title(error_label(error))
                 if k == 0:
                     ax.set_ylabel(getattr(self, 'y_axis_label', self.metric_titles[metric]))
                 if j == len(topology_only_metrics) - 1:
                     ax.set_xlabel("Mutation rate")
                 for n, fillstyle in zip(sample_sizes, self.fillstyles):
-                    df_s = df[np.logical_and(df.sample_size == n, df[ERROR_COLNAME] == error_rate)]
+                    df_s = df[np.logical_and(df.sample_size == n, df[ERROR_COLNAME] == error)]
                     group = df_s.groupby(["mutation_rate"])
                     mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
                     for tool_and_metrics_param, setting in self.tools_and_metrics_params.items():
@@ -2065,22 +2077,22 @@ class MetricAllToolsFigure(Figure):
 
     def plot(self):
         df = self.dataset.data
-        error_rates = df[ERROR_COLNAME].unique()
+        error_params = df[ERROR_COLNAME].unique()
         sample_sizes = df.sample_size.unique()
 
-        fig, axes = pyplot.subplots(1, len(error_rates),
+        fig, axes = pyplot.subplots(1, len(error_params),
             figsize=getattr(self,'figsize',(12, 6)), sharey=True)
         lines = []
-        for k, error_rate in enumerate(error_rates):
-            ax = axes[k] if len(error_rates)>1 else axes
-            ax.set_title("Error = {}".format(error_rate))
+        for k, error in enumerate(error_params):
+            ax = axes[k] if len(error_params)>1 else axes
+            ax.set_title(error_label(error))
             ax.set_xlabel("Mutation rate")
             ax.set_xscale('log')
             if k == 0:
                 ax.set_ylim(self.ylim)
                 ax.set_ylabel(getattr(self, 'y_axis_label', self.metric_titles[metric]))
             for n, fillstyle in zip(sample_sizes, self.fillstyles):
-                df_s = df[np.logical_and(df.sample_size == n, df[ERROR_COLNAME] == error_rate)]
+                df_s = df[np.logical_and(df.sample_size == n, df[ERROR_COLNAME] == error)]
                 group = df_s.groupby(["mutation_rate"])
                 mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
                 for tool_and_metrics_param,setting in self.tools_and_metrics_params.items():
@@ -2203,7 +2215,9 @@ class CputimeAllToolsFigure(Figure):
 
         fig, (ax_hi, ax_lo) = pyplot.subplots(2, 1, sharex=True)
         lines = []
-        error_rate = 0
+        noerror = [e for e in df[ERROR_COLNAME].unique() if error_label(e) == "No error"]
+        assert len(noerror) == 1
+        noerror = noerror[0]
         ax_lo.set_xlabel("Sample Size")
         ax_hi.set_ylabel("CPU time (hours)")
         #ax_lo.set_xlim(sample_sizes.min(), sample_sizes.max())
@@ -2222,7 +2236,7 @@ class CputimeAllToolsFigure(Figure):
         ax_lo.xaxis.tick_bottom()
 
         df_s = df[np.logical_and(
-            df[ERROR_COLNAME] == error_rate, 
+            df[ERROR_COLNAME] == noerror, 
             df['length'] == self.dataset.fixed_length)]
         group = df_s.groupby(["sample_size"])
         mean_sem = [{'sz':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
@@ -2262,17 +2276,17 @@ class MetricsAllToolsAccuracySweepFigure(Figure):
 
     def plot(self):
         df = self.dataset.data
-        error_rates = df[ERROR_COLNAME].unique()
+        error_params = df[ERROR_COLNAME].unique()
         output_freqs = df[[SELECTED_FREQ_COLNAME, SELECTED_POSTGEN_COLNAME]].drop_duplicates()
         sample_sizes = df.sample_size.unique()
 
         metrics = ARG_metrics.get_metric_names()
         topology_only_metrics = [m for m in metrics if not m.startswith('w')] #don't use the weighted metrics
         figures = [] #save figures for putting onto a multi-page pdf
-        for error_rate in error_rates:
+        for error in error_params:
             fig, axes = pyplot.subplots(len(topology_only_metrics),
                 len(output_freqs), figsize=(20, 20))
-            fig.suptitle("Error-rate = {}".format(error_rate))
+            fig.suptitle(error_label(error))
             for j, metric in enumerate(topology_only_metrics):
                 for k, output_data in enumerate(output_freqs.itertuples()):
                     freq = output_data.output_frequency
@@ -2292,7 +2306,7 @@ class MetricsAllToolsAccuracySweepFigure(Figure):
                     for n, fillstyle in zip(sample_sizes, self.fillstyles):
                         df_s = df[np.logical_and.reduce((
                             df.sample_size == n,
-                            df[ERROR_COLNAME] == error_rate,
+                            df[ERROR_COLNAME] == error,
                             df[SELECTED_FREQ_COLNAME] == freq,
                             df[SELECTED_POSTGEN_COLNAME] == gens))]
                         group = df_s.groupby(["mutation_rate"])
@@ -2360,20 +2374,20 @@ class MetricAllToolsAccuracySweepFigure(Figure):
 
     def plot(self):
         df = self.dataset.data
-        error_rates = df[ERROR_COLNAME].unique()
+        error_params = df[ERROR_COLNAME].unique()
         output_freqs = df[[SELECTED_FREQ_COLNAME, SELECTED_POSTGEN_COLNAME]].drop_duplicates()
         sample_sizes = df.sample_size.unique()
 
-        fig, axes = pyplot.subplots(len(output_freqs), len(error_rates),
-            figsize=(7*len(error_rates), 3*len(output_freqs)))
+        fig, axes = pyplot.subplots(len(output_freqs), len(error_params),
+            figsize=(7*len(error_params), 3*len(output_freqs)))
         for j, output_data in enumerate(output_freqs.itertuples()):
-            for k, error_rate in enumerate(error_rates):
+            for k, error in enumerate(error_params):
                 freq = output_data.output_frequency
                 gens = output_data.output_after_generations
                 ax = axes[j][k]
                 ax.set_xscale('log')
                 if j == 0:
-                    ax.set_title("Error = {}".format(error_rate))
+                    ax.set_title(error_label(error))
                 if j == len(output_freqs) - 1:
                     ax.set_xlabel("Neutral mutation rate")
                 if k == 0:
@@ -2387,7 +2401,7 @@ class MetricAllToolsAccuracySweepFigure(Figure):
                 for n, fillstyle in zip(sample_sizes, self.fillstyles):
                     df_s = df[np.logical_and.reduce((
                         df.sample_size == n,
-                        df[ERROR_COLNAME] == error_rate,
+                        df[ERROR_COLNAME] == error,
                         df[SELECTED_FREQ_COLNAME] == freq,
                         df[SELECTED_POSTGEN_COLNAME] == gens))]
                     group = df_s.groupby(["mutation_rate"])
@@ -2463,7 +2477,7 @@ class MetricsSubsamplingFigure(Figure):
         col="black"
         metrics = ARG_metrics.get_metric_names()
         topology_only_metrics = [m for m in metrics if not m.startswith('w')]
-        for error_rate in df[ERROR_COLNAME].unique():
+        for error in df[ERROR_COLNAME].unique():
             fig, axes = pyplot.subplots(len(topology_only_metrics),
                 len(lengths), figsize=(12, 16))
             for j, metric in enumerate(topology_only_metrics):
@@ -2484,7 +2498,7 @@ class MetricsSubsamplingFigure(Figure):
                                 # RF metrics are not well behaved for trees with polytomies (i.e. tsinfer trees)
                                 # so we should omit tsinfer cases where METRICS_POLYTOMIES_BREAK == 0
                                 continue
-                        dfp = df[np.logical_and(df.length == length, df[ERROR_COLNAME] == error_rate)]
+                        dfp = df[np.logical_and(df.length == length, df[ERROR_COLNAME] == error)]
                         group = dfp.groupby(["subsample_size"])
                         mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
                         #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
