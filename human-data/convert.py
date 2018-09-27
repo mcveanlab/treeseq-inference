@@ -133,12 +133,11 @@ class VcfConverter(Converter):
         return ret
 
     def process_sites(self, show_progress=False, max_sites=None):
-        num_ancestral_sites = int(subprocess.check_output(
-            ["bcftools", "index", "--nrecords", self.ancestral_states_file]))
+        num_data_sites = int(subprocess.check_output(
+            ["bcftools", "index", "--nrecords", self.data_file]))
         # We tie the iterator to the ancestral states file so it must be updated
         # each time we advance that iterator.
-        progress = tqdm.tqdm(
-            total=num_ancestral_sites, disable=not show_progress)
+        progress = tqdm.tqdm(total=num_data_sites, disable=not show_progress)
 
         num_sites = 0
         vcf_a = filter_duplicates(cyvcf2.VCF(self.ancestral_states_file))
@@ -168,9 +167,9 @@ class VcfConverter(Converter):
                 progress.update()
             elif row_a.POS < row_d.POS:
                 row_a = next(vcf_a, None)
-                progress.update()
                 self.num_ancestral_state_no_data += 1
             elif row_d.POS < row_a.POS:
+                progress.update()
                 self.num_data_no_ancestral_state += 1
                 row_d = next(vcf_d, None)
 

@@ -63,8 +63,7 @@ ancestral_states.vcf.gz:
 	curl ${ANCESTRAL_STATES_URL} -o $@
 
 chr%_ancestral_states.bcf: ancestral_states.vcf.gz ancestral_states.vcf.gz.tbi
-	# Filter out multiallelic sites and indels to save time.
-	bcftools view --max-alleles 2 --exclude-types indels ancestral_states.vcf.gz --regions $* -Ob -o $@
+	bcftools view ancestral_states.vcf.gz --regions $* -Ob -o $@
 
 
 #############################################
