@@ -143,7 +143,7 @@ def make_errors_genotype_model(g, error_probs):
     for idx in g0:
         result=make_tuple(np.random.choice(['(0,0)','(1,0)','(1,1)'], p=error_probs[['p00','p01','p02']].values[0]))
         if result == '(1,0)':
-            genos[idx]=make_tuple(np.random.choice(['(0,0)','(1,0)'], 1)[0])
+            genos[idx]=make_tuple(np.random.choice(['(0,1)','(1,0)'], 1)[0])
         else:
             genos[idx] = result
 
@@ -156,7 +156,7 @@ def make_errors_genotype_model(g, error_probs):
     for idx in g2:
         result=make_tuple(np.random.choice(['(0,0)','(1,0)','(1,1)'], p=error_probs[['p20','p21','p22']].values[0]))
         if result == '(1,0)':
-            genos[idx]=make_tuple(np.random.choice(['(0,0)','(1,0)'], 1)[0])
+            genos[idx]=make_tuple(np.random.choice(['(0,1)','(1,0)'], 1)[0])
         else:
             genos[idx] = result
     return(np.array(sum(genos, ())))
