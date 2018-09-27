@@ -1889,9 +1889,9 @@ def error_label(error):
     """
     try:
         error = float(error)
-        return "Error = {}",format(error) if error else "No error"
+        return "Error = {}".format(error) if error else "No error"
     except (ValueError, TypeError):
-        return "{} error",format(error) if error else "No error"
+        return "{} error".format(error) if error else "No error"
         
 
 
