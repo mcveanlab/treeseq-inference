@@ -1,9 +1,5 @@
 
 deps:
 	make -C src
-	make -C fastARG
-	make -C argweaver
-	# This will ultimately be redundant as we will pip install 
-	# a released version.
-	make -C msprime ext3
-
+	# this should download and compile fastARG, ARGweaver, RentPlus, ftprime, etc
+	make -C tools

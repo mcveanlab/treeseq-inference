@@ -8,9 +8,6 @@ import logging
 
 import numpy as np
 
-# use the local copy of msprime in preference to the global one
-sys.path.insert(1,os.path.join(sys.path[0],'..','msprime'))
-sys.path.insert(1,os.path.join(sys.path[0],'..','tsinfer'))
 import msprime
 import tsinfer
 import tsinfer.eval_util as eval_util
@@ -32,17 +29,8 @@ def main():
         "output",
         help="The path to write the output file to")
     parser.add_argument(
-        "-srb", "--shared-recombinations", action='store_true',
-        help="Use shared recombinations (path compression) to break polytomies")
-    parser.add_argument(
         "-l", "--length", default=None, type=int,
         help="The total sequence length")
-    parser.add_argument(
-        "-r", "--recombination-rate", default=None, type=float,
-        help="The scaled recombination rate (now ignored)")
-    parser.add_argument(
-        "-e", "--error-probability", default=None, type=float,
-        help="The probability of observing an error (now ignored)")
     parser.add_argument(
         "-t", "--threads", default=1, type=int,
         help="The number of worker threads to use")
@@ -58,10 +46,6 @@ def main():
 
     args = parser.parse_args()
         
-    if args.recombination_rate is not None:
-        logging.warning("TSinfer now simply ignores recombination rate. You can omit this parameter")
-    if args.error_probability is not None:
-        logging.warning("TSinfer now simply ignores error probabilities. You can omit this parameter")
     engine = tsinfer.PY_ENGINE if args.method == "P" else tsinfer.C_ENGINE
 
     if not os.path.isfile(args.samples):
@@ -75,12 +59,12 @@ def main():
         eval_util.build_simulated_ancestors(sample_data, ancestor_data, orig_ts)
         ancestor_data.finalise()
         ancestors_ts = tsinfer.match_ancestors(
-            sample_data, ancestor_data, path_compression=args.shared_recombinations, engine=engine)
+            sample_data, ancestor_data, engine=engine)
         ts = tsinfer.match_samples(
-            sample_data, ancestors_ts, path_compression=args.shared_recombinations, engine=engine, simplify=True)
+            sample_data, ancestors_ts, engine=engine, simplify=True)
     else:
         ts = tsinfer.infer(
-            sample_data, num_threads=args.threads, path_compression=args.shared_recombinations, engine=engine)
+            sample_data, num_threads=args.threads, engine=engine)
     ts.dump(args.output)
 
     # # TODO add command line arg here for when we're comparing run time performance.

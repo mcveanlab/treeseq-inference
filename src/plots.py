@@ -40,24 +40,20 @@ import matplotlib.backends.backend_pdf
 import pandas as pd
 import tqdm
 
-# import the local copy of msprime in preference to the global one
-sys.path.insert(1,os.path.join(sys.path[0],'..','msprime'))
-sys.path.insert(1,os.path.join(sys.path[0],'..','tsinfer'))
-sys.path.insert(1,os.path.join(sys.path[0],'..','ftprime', 'examples'))
-
 import msprime
 import _msprime
 import tsinfer
+
+# The following are all contained in files local to this directory
 import ts_extras
 import ts_fastARG
 import ts_ARGweaver
 import ts_RentPlus
 import ARG_metrics
 
-
-fastARG_executable = os.path.join(sys.path[0],'..','fastARG','fastARG')
-ARGweaver_executable = os.path.join(sys.path[0],'..','argweaver','bin','arg-sample')
-smc2arg_executable = os.path.join(sys.path[0],'..','argweaver','bin','smc2arg')
+fastARG_executable = os.path.join('tools','fastARG','fastARG')
+ARGweaver_executable = os.path.join('tools','argweaver','bin','arg-sample')
+smc2arg_executable = os.path.join('tools','argweaver','bin','smc2arg')
 RentPlus_executable = os.path.join(sys.path[0],'..','RentPlus','RentPlus.jar')
 tsinfer_executable = os.path.join(sys.path[0],'run_tsinfer.py')
 
@@ -69,7 +65,6 @@ FASTARG = "fastARG"
 ARGWEAVER = "ARGweaver"
 RENTPLUS = "RentPlus"
 TSINFER = "tsinfer"
-TSINFER_WITH_ERROR = "tsinferWithErr"
 
 #names for optional columns in the dataset
 ERROR_COLNAME = 'error_rate'
@@ -113,12 +108,6 @@ def latex_float(f):
 def nanblank(val):
     """hack around a horrible pandas syntax, which puts nan instead of blank strings"""
     return "" if pd.isnull(val) else val
-
-def always_true(*pargs):
-    """
-    A func that returns True for any input value
-    """
-    return True
 
 def ts_has_non_singleton_variants(ts):
     """
@@ -331,7 +320,7 @@ def rentplus_name_from_ts_row(row, sim_dir):
     """
     return construct_rentplus_name(mk_sim_name_from_row(row, sim_dir))
 
-def construct_tsinfer_name(sim_name, subsample_size, shared_breakpoints, error_param=None):
+def construct_tsinfer_name(sim_name, subsample_size, error_param=None):
     """
     Returns a TSinfer filename.
     If the file is a subset of the original, this can be added to the
@@ -340,8 +329,6 @@ def construct_tsinfer_name(sim_name, subsample_size, shared_breakpoints, error_p
     """
     d,f = os.path.split(sim_name)
     suffix = "" if error_param is None else "err{}".format(float(error_param))
-    if shared_breakpoints is not None:
-        suffix += "srb"+str(int(shared_breakpoints))
     name = os.path.join(d,'+'.join(['tsinfer', f, suffix]))
     if subsample_size is not None and not pd.isnull(subsample_size):
         name = add_subsample_param_to_name(name, subsample_size)
@@ -424,8 +411,6 @@ class InferenceRunner(object):
         logging.debug("parameters = {}".format(self.row.to_dict()))
         if self.tool == TSINFER:
             ret = self.__run_tsinfer(skip_infer = metrics_only)
-        elif self.tool == TSINFER_WITH_ERROR:
-            ret = self.__run_tsinfer_with_err(skip_infer = metrics_only)
         elif self.tool == FASTARG:
             ret = self.__run_fastARG(skip_infer = metrics_only)
         elif self.tool == ARGWEAVER:
@@ -471,32 +456,14 @@ class InferenceRunner(object):
         row = {(self.tool + "_" + k):v for k,v in ret.items()}
         return row
 
-    #slightly more complex here as we have 2 ways to run tsinfer - with and without an error param
-    def __run_tsinfer_with_err(self, skip_infer=False):
-        #only bother actually inferring a specific with-error version if there was error injected into
-        #the original simulation. Otherwise skip everything, including the metrics (assume these were
-        #calculated in the "normal" __run_tsinfer() equivalent step
-        if self.row.error_rate == 0:
-            self.metric_params = []
-            return {}
-        return self.__tsinfer(self.row.error_rate, skip_infer)
-
     def __run_tsinfer(self, skip_infer=False):
-        """
-        Standard is now to run without incorporating any error parameters into the inference 
-        """
-        return self.__tsinfer(None, skip_infer)
-
-    def __tsinfer(self, err, skip_infer=False):
-        #default to using srb & but not length breaking if nothing specified in the file
-        shared_recombinations = bool(getattr(self.row,'tsinfer_srb', True))
         #default to no subsampling
         subsample_size = getattr(self.row,'subsample_size', None)
         restrict_sample_size_comparison = getattr(self.row,'restrict_sample_size_comparison', None)
         #construct filenames - these can be used even if inference does not occur
         samples_fn = self.sample_fn + ".samples"
         out_fn = construct_tsinfer_name(self.sample_fn,
-            restrict_sample_size_comparison, shared_recombinations, err)
+            restrict_sample_size_comparison)
         self.inferred_filenames = [out_fn]
         if skip_infer:
             return {}
@@ -506,13 +473,13 @@ class InferenceRunner(object):
             samples_fn))
         try:
             inferred_ts, time, memory = self.run_tsinfer(
-                samples_fn, self.row.length, shared_recombinations, self.num_threads,
+                samples_fn, self.row.length, self.num_threads,
                 #uncomment below to inject real ancestors - will need adjusting for subsampling
                 #inject_real_ancestors_from_ts_fn = self.orig_sim_fn + ".hdf5",
                 )
             if restrict_sample_size_comparison is not None:
                 if len(self.metric_params):
-                    with open(construct_tsinfer_name(self.sample_fn, None, shared_recombinations, err) + ".nex", "w+") as out:
+                    with open(construct_tsinfer_name(self.sample_fn, None) + ".nex", "w+") as out:
                         tree_labels_between_variants=(True if subsample_size is None else False)
                         inferred_ts.write_nexus_trees(
                             out, tree_labels_between_variants=tree_labels_between_variants)
@@ -532,7 +499,6 @@ class InferenceRunner(object):
                         out, tree_labels_between_variants=tree_labels_between_variants)
             unique, counts = np.unique(np.array([e.parent for e in inferred_ts.edges()], dtype="u8"), return_counts=True)
         except ValueError as e:
-            # temporary hack around https://github.com/tskit-dev/tsinfer/issues/44
             if "No inference sites" in str(e):
                 logging.warning("No inference sites in {}. Skipping".format(samples_fn))
                 self.inferred_filenames = None
@@ -569,7 +535,6 @@ class InferenceRunner(object):
                     with open(fn + ".nex", "w+") as out:
                         inferred_ts.write_nexus_trees(out)
         except ValueError as e:
-            # temporary hack around https://github.com/tskit-dev/tsinfer/issues/44
             if "0 samples;" in str(e):
                 logging.warning("No samples in {}. Skipping".format(infile))
                 self.inferred_filenames = None
@@ -696,7 +661,7 @@ class InferenceRunner(object):
 
     @staticmethod
     def run_tsinfer(sample_fn, length,
-        shared_recombinations, num_threads=1, inject_real_ancestors_from_ts_fn=None, rho=None, error_probability=None):
+        num_threads=1, inject_real_ancestors_from_ts_fn=None, rho=None, error_probability=None):
             with tempfile.NamedTemporaryFile("w+") as ts_out:
                 cmd = [sys.executable, tsinfer_executable, sample_fn, "--length", str(int(length))]
                 if rho is not None:
@@ -708,8 +673,6 @@ class InferenceRunner(object):
                     logging.debug("Injecting real ancestors constructed from {}".format(
                         inject_real_ancestors_from_ts_fn))
                     cmd.extend(["--inject-real-ancestors-from-ts", inject_real_ancestors_from_ts_fn])
-                if shared_recombinations:
-                    cmd.append("--shared-recombinations")
                 cpu_time, memory_use = time_cmd(cmd)
                 ts_simplified = msprime.load(ts_out.name)
             return ts_simplified, cpu_time, memory_use
@@ -863,7 +826,6 @@ class Dataset(object):
         RENTPLUS:   [METRICS_LOCATION_ALL | METRICS_POLYTOMIES_LEAVE],
         #tsinfer regularly produces polytomies, so need to check both methods here
         TSINFER:    [METRICS_LOCATION_ALL | METRICS_POLYTOMIES_LEAVE, METRICS_LOCATION_ALL | METRICS_POLYTOMIES_BREAK],
-        #TSINFER_WITH_ERROR: [METRICS_LOCATION_ALL | METRICS_POLYTOMIES_LEAVE, METRICS_LOCATION_ALL | METRICS_POLYTOMIES_BREAK]
     }
     
     """
@@ -2280,6 +2242,9 @@ class MetricsAllToolsAccuracySweepFigure(Figure):
                         ax.set_ylabel(getattr(self, 'y_axis_label', self.metric_titles[metric]))
                     if j == len(topology_only_metrics) - 1:
                         ax.set_xlabel("Mutation rate")
+                    if np.isclose(freq, 1.0) and not gens:
+                        # This is *at* fixation - set the plot background colour
+                        ax.set_facecolor('0.9')
                     for n, fillstyle in zip(sample_sizes, self.fillstyles):
                         df_s = df[np.logical_and.reduce((
                             df.sample_size == n,
@@ -2345,7 +2310,7 @@ class MetricAllToolsAccuracySweepFigure(Figure):
     """
     datasetClass = AllToolsAccuracyWithSelectiveSweepDataset
     datasetClass = AllToolsAccuracyWithSelectiveSweepDataset
-    name = "metrics_all_tools_accuracy_sweep"
+    name = "metric_all_tools_accuracy_sweep"
     error_bars = True
     fillstyles = ['full', 'none']
 
@@ -2373,6 +2338,8 @@ class MetricAllToolsAccuracySweepFigure(Figure):
                             "fixation " if np.isclose(freq, 1.0) else "freq {}".format(freq),
                             "+{} gens".format(int(gens)) if gens else ""))
                 if np.isclose(freq, 1.0) and not gens:
+                    # This is *at* fixation - set the plot background colour
+                    ax.set_facecolor('0.9')
                 for n, fillstyle in zip(sample_sizes, self.fillstyles):
                     df_s = df[np.logical_and.reduce((
                         df.sample_size == n,
