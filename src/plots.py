@@ -141,20 +141,20 @@ def make_errors_genotype_model(g, error_probs):
     
 
     for idx in g0:
-        result=make_tuple(np.random.choice(['(0,0)','(1,0)','(1,1)'], p=error_probs.as_matrix(['p00','p01','p02'])[0]))
+        result=make_tuple(np.random.choice(['(0,0)','(1,0)','(1,1)'], p=error_probs[['p00','p01','p02']].values[0]))
         if result == '(1,0)':
             genos[idx]=make_tuple(np.random.choice(['(0,0)','(1,0)'], 1)[0])
         else:
             genos[idx] = result
 
     for idx in g1a:
-        genos[idx]=make_tuple(np.random.choice(['(0,0)','(1,0)','(1,1)'], p=error_probs.as_matrix(['p10','p11','p12'])[0]))
+        genos[idx]=make_tuple(np.random.choice(['(0,0)','(1,0)','(1,1)'], p=error_probs[['p10','p11','p12']].values[0]))
 
     for idx in g1b:
-        genos[idx]=make_tuple(np.random.choice(['(0,0)','(0,1)','(1,1)'], p=error_probs.as_matrix(['p10','p11','p12'])[0]))
+        genos[idx]=make_tuple(np.random.choice(['(0,0)','(0,1)','(1,1)'], p=error_probs[['p10','p11','p12']].values[0]))
 
     for idx in g2:
-        result=make_tuple(np.random.choice(['(0,0)','(1,0)','(1,1)'], p=error_probs.as_matrix(['p20','p21','p22'])[0]))
+        result=make_tuple(np.random.choice(['(0,0)','(1,0)','(1,1)'], p=error_probs[['p20','p21','p22']].values[0]))
         if result == '(1,0)':
             genos[idx]=make_tuple(np.random.choice(['(0,0)','(1,0)'], 1)[0])
         else:
@@ -237,10 +237,10 @@ def add_error_param_to_name(sim_name, error_rate=None):
     if error_rate is not None and not pd.isnull(error_rate):
         if sim_name.endswith("+") or sim_name.endswith("-"):
             #this is the first param
-            return sim_name + "_err{}".format(float(error_rate))
+            return sim_name + "_err{}".format(error_rate)
         else:
             #this is the first param
-            return sim_name + "err{}".format(float(error_rate))
+            return sim_name + "err{}".format(error_rate)
     else:
         return sim_name
 
@@ -306,7 +306,7 @@ def construct_tsinfer_name(sim_name, subsample_size, error_param=None):
     add_subsample_param_to_name() routine.
     """
     d,f = os.path.split(sim_name)
-    suffix = "" if error_param is None else "err{}".format(float(error_param))
+    suffix = "" if error_param is None else "err{}".format(error_param)
     name = os.path.join(d,'+'.join(['tsinfer', f, suffix]))
     if subsample_size is not None and not pd.isnull(subsample_size):
         name = add_subsample_param_to_name(name, subsample_size)
@@ -642,10 +642,6 @@ class InferenceRunner(object):
         num_threads=1, inject_real_ancestors_from_ts_fn=None, rho=None, error_probability=None):
             with tempfile.NamedTemporaryFile("w+") as ts_out:
                 cmd = [sys.executable, tsinfer_executable, sample_fn, "--length", str(int(length))]
-                if rho is not None:
-                    cmd += ["--recombination-rate", str(rho)]
-                if error_probability is not None:
-                    cmd += ["--error-probability", str(error_probability)]
                 cmd += ["--threads", str(num_threads), ts_out.name]
                 if inject_real_ancestors_from_ts_fn:
                     logging.debug("Injecting real ancestors constructed from {}".format(
@@ -979,7 +975,7 @@ class Dataset(object):
                 ts.save_nexus_trees(base_fn +".nex")
         return_value = {}
         for params in itertools.product(*iterate_over_dict.values()):
-            #may be iterating here over errors, or e.g. tsinfer_srb
+            #may be iterating here over error rates
             keyed_params = dict(zip(iterate_over_dict.keys(), params))
             keyed_params.update(base_params)
             row = return_value[base_row_id] = {}
@@ -1014,9 +1010,10 @@ class Dataset(object):
             "A dataset should implement a single_sim method that runs" \
             " a simulation, e.g. by calling self.single_neutral_simulation")
 
-    def generate_samples(self, ts, filename, use_empirical_error=False):
+    def generate_samples(self, ts, filename, error_rate=0):
         """
-        Generate a samples file from a simulated ts based on an empirically estimated error matrix
+        Generate a samples file from a simulated ts based on the empirically estimated 
+        error matrix saved in self.error_matrix.
         Reject any variants that result in a fixed column. 
         """
         record_rate = logging.getLogger().isEnabledFor(logging.INFO)
@@ -1026,8 +1023,12 @@ class Dataset(object):
         for v in ts.variants():
             n_variants += 1
     
-            if not use_empirical_error:
-                genotypes=v.genotypes
+            if error_rate != 'Empirical':
+                error_rate = float(error_rate)
+                if error_rate == 0:
+                    genotypes=v.genotypes
+                else:
+                    raise NotImplementedError
             else:
                 #Record the allele frequency
                 m = v.genotypes.shape[0]
@@ -1058,8 +1059,9 @@ class Dataset(object):
                 position=v.site.position, alleles=v.alleles,
                 genotypes=genotypes)
 
-        if use_empirical_error:
-            logging.info("Empirical error used with actual error rate = {}".format(
+        if error_rate != 0:
+            logging.info("Error = {} used with actual error rate = {}".format(
+                error_rate,
                 bits_flipped/(n_variants*ts.sample_size)) if record_rate else "")
       
         sample_data.finalise()
@@ -1454,7 +1456,7 @@ class AllToolsDataset(Dataset):
     #params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
-        ERROR_COLNAME : [0, 0.001],
+        ERROR_COLNAME : [0, 'Empirical'],
     }
     
     def single_sim(self, row_id, sim_params, rng):
@@ -1493,7 +1495,7 @@ class AllToolsAccuracyDataset(AllToolsDataset):
     #params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
-        ERROR_COLNAME : [0, 0.001],
+        ERROR_COLNAME : [None, 'Empirical'],
     }
 
 class AllToolsPerformanceDataset(AllToolsDataset):
@@ -1668,7 +1670,7 @@ class SubsamplingDataset(Dataset):
     within_sim_params = {
         'tsinfer_srb' : [True], #, False], #should we use shared recombinations ("path compression")
         SUBSAMPLE_COLNAME:  [12, 50, 100, 500, 1000], #we infer based on this many samples
-        ERROR_COLNAME: [0, 0.001]
+        ERROR_COLNAME: [0, 'Empirical']
     }
 
 
@@ -1721,7 +1723,7 @@ class AllToolsAccuracyWithDemographyDataset(Dataset):
     #params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
-        ERROR_COLNAME : [0, 0.001],
+        ERROR_COLNAME : [0, 'Empirical'],
     }
 
     def single_sim(self, row_id, sim_params, rng):
@@ -1770,7 +1772,7 @@ class AllToolsAccuracyWithSelectiveSweepDataset(Dataset):
     within_sim_params = {
         #NB - these are strings because they are output as part of the filename
         'stop_freqs': ['0.2', '0.5', '0.8', '1.0', ('1.0', 200), ('1.0', 1000)], #frequencies when file is saved.
-        ERROR_COLNAME : [0, 0.001],
+        ERROR_COLNAME : [0, 'Empirical'],
     }
 
     extra_sim_cols = [SIMTOOL_COLNAME, SELECTION_COEFF_COLNAME,
