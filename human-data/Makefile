@@ -14,7 +14,12 @@ simplebgen: setup.py simplebgenmodule.c
 %.vcf.gz.csi: %.vcf.gz
 	bcftools index $(patsubst %.vcf.gz.csi,%.vcf.gz,$@)
 
-.PRECIOUS: %.trees %.csi
+# Any implicit targets that are built will be deleted unless we make them as 'precious'.
+.PRECIOUS: \
+	%.ancestors %.ancestors.trees %.nosimplify.trees %.trees %.trees.gz\
+	%.bcf.csi %.vcf.gz.csi \
+	chr%_ancestral_states.bcf \
+	1kg_%_genotypes.bcf 1kg_%.samples
 
 #############################################
 # Standard pipeline for samples file to .trees

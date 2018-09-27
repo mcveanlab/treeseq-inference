@@ -86,6 +86,9 @@ class VcfConverter(Converter):
         self.num_missing_data = 0
         self.num_invariant = 0
         self.num_non_biallelic = 0
+        # Rows that don't overlap
+        self.num_ancestral_state_no_data = 0
+        self.num_data_no_ancestral_state = 0
 
     def report(self):
         print("no_ancestral_state  :", self.num_no_ancestral_state)
@@ -93,6 +96,8 @@ class VcfConverter(Converter):
         print("missing_data        :", self.num_missing_data)
         print("invariant           :", self.num_invariant)
         print("non_biallelic       :", self.num_non_biallelic)
+        print("ancestral_state_no_data :", self.num_ancestral_state_no_data)
+        print("data_no_ancestral_state :", self.num_data_no_ancestral_state)
 
     def convert_genotypes(self, row, ancestral_state):
         ret = None
@@ -164,7 +169,9 @@ class VcfConverter(Converter):
             elif row_a.POS < row_d.POS:
                 row_a = next(vcf_a, None)
                 progress.update()
+                self.num_ancestral_state_no_data += 1
             elif row_d.POS < row_a.POS:
+                self.num_data_no_ancestral_state += 1
                 row_d = next(vcf_d, None)
 
         progress.close()
