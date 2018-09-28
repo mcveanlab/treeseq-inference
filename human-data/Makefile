@@ -102,12 +102,18 @@ sgdp_samples.txt:
 	 
 # TODO download the full tarball for the cteam_extended files?
 
-sgdp_chr20_genotypes.vcf.gz: cteam_extended.v4.PS2_phase.public.chr20.vcf.gz
-	ln cteam_extended.v4.PS2_phase.public.chr20.vcf.gz $@
+# TODO we need to make sure that the source VCF is indexed here or the sample
+# removal will fail.
+#
+sgdp_chr20_genotypes.bcf: cteam_extended.v4.PS2_phase.public.chr20.vcf.gz 
+	# Remove the S_Naxi-2 individual because (a) it doesn't have any metadata in the 
+	# file we're using and (b) it has a massively elevated sample edge count if we 
+	# leave it in.
+	bcftools view -s '^S_Naxi-2' $^ -O b -o $@
 
-sgdp_chr20.samples: sgdp_chr20_genotypes.vcf.gz.csi chr20_ancestral_states.fa sgdp_samples.txt
+sgdp_chr20.samples: sgdp_chr20_genotypes.bcf.csi chr20_ancestral_states.fa sgdp_samples.txt
 	python3 convert.py sgdp -p \
-		sgdp_chr20_genotypes.vcf.gz  \
+		sgdp_chr20_genotypes.bcf \
 		chr20_ancestral_states.fa \
 		-m sgdp_samples.txt \
 		--ancestral-states-url=${ANCESTRAL_STATES_URL}\

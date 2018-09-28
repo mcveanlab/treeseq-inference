@@ -442,15 +442,10 @@ class SgdpConverter(VcfConverter):
 
         # Add in the metadata rows in the order of the VCF.
         for name in individual_names:
-            if name == "S_Naxi-2":
-                # This individual is missing from the metadata. Skip metadata and location,
-                # but assume the population is the same as S_Naxi-1
-                self.samples.add_individual(population=populations["S_Naxi-1"], ploidy=2)
-            else:
-                metadata = rows[name]
-                self.samples.add_individual(
-                    metadata=metadata, location=locations[name], ploidy=2,
-                    population=populations[name])
+            metadata = rows[name]
+            self.samples.add_individual(
+                metadata=metadata, location=locations[name], ploidy=2,
+                population=populations[name])
 
 
 class UkbbConverter(Converter):
