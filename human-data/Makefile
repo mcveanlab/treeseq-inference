@@ -2,8 +2,12 @@ NUM_THREADS ?= 0
 
 # Requirements: bcftools, tabix, python3.
 # See requirements.txt for Python package requirements.
+#
+help:
+	@echo WRITE SOME HELP
 
 all: 1kg_chr20.samples sgdp_chr20.samples
+
 
 simplebgen: setup.py simplebgenmodule.c
 	python3 setup.py build_ext --inplace
@@ -18,7 +22,7 @@ simplebgen: setup.py simplebgenmodule.c
 .PRECIOUS: \
 	%.ancestors %.ancestors.trees %.nosimplify.trees %.trees %.trees.gz\
 	%.bcf.csi %.vcf.gz.csi \
-	chr%_ancestral_states.bcf \
+	chr%_ancestral_states.fa \
 	1kg_%_genotypes.bcf 1kg_%.samples
 
 #############################################
@@ -51,19 +55,21 @@ simplebgen: setup.py simplebgenmodule.c
 # Recorded in the sample file provenance.
 REFERENCE_NAME=GRCh37
 
-# We're using Ensembl release 92. 
-# I tried using 93 but the VCF header said it was release 92.
-#
-ANCESTRAL_STATES_URL=ftp://ftp.ensembl.org/pub/grch37/release-92/variation/vcf/homo_sapiens/homo_sapiens.vcf.gz 
+ANCESTRAL_STATES_PREFIX=homo_sapiens_ancestor_GRCh37_e71
+ANCESTRAL_STATES_TARBALL=${ANCESTRAL_STATES_PREFIX}.tar.bz2
+ANCESTRAL_STATES_URL=ftp://ftp.ensembl.org/pub/release-75/fasta/ancestral_alleles/${ANCESTRAL_STATES_TARBALL}
 
-ancestral_states.vcf.gz.tbi:
-	curl ${ANCESTRAL_STATES_URL}.tbi -o $@
+${ANCESTRAL_STATES_TARBALL}:
+	curl ${ANCESTRAL_STATES_URL} -o ${ANCESTRAL_STATES_TARBALL}
 
-ancestral_states.vcf.gz:
-	curl ${ANCESTRAL_STATES_URL} -o $@
+${ANCESTRAL_STATES_PREFIX}/README: ${ANCESTRAL_STATES_TARBALL}
+	rm -fR ${ANCESTRAL_STATES_PREFIX}
+	tar -jxvf ${ANCESTRAL_STATES_TARBALL}
+	# Update access times or we'll keep rebuilding this rule
+	touch ${ANCESTRAL_STATES_PREFIX}/*
 
-chr%_ancestral_states.bcf: ancestral_states.vcf.gz ancestral_states.vcf.gz.tbi
-	bcftools view ancestral_states.vcf.gz --regions $* -Ob -o $@
+chr%_ancestral_states.fa: ${ANCESTRAL_STATES_PREFIX}/README
+	ln -f ${ANCESTRAL_STATES_PREFIX}/homo_sapiens_ancestor_$*.fa $@
 
 
 #############################################
@@ -78,10 +84,10 @@ GENOTYPES_BASE=http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/suppor
 1kg_%_genotypes.bcf:
 	curl ${GENOTYPES_BASE}/ALL.$*.phase3_shapeit2_mvncall_integrated_v5.20130502.genotypes.bcf -o $@
 
-1kg_%.samples: 1kg_%_genotypes.bcf.csi %_ancestral_states.bcf.csi 1kg_samples.ped
+1kg_%.samples: 1kg_%_genotypes.bcf.csi %_ancestral_states.fa 1kg_samples.ped
 	python3 convert.py 1kg -p \
 		1kg_$*_genotypes.bcf \
-		$*_ancestral_states.bcf \
+		$*_ancestral_states.fa \
 		-m 1kg_samples.ped \
 		--ancestral-states-url=${ANCESTRAL_STATES_URL}\
 		--reference-name=${REFERENCE_NAME}\
@@ -99,10 +105,10 @@ sgdp_samples.txt:
 sgdp_chr20_genotypes.vcf.gz: cteam_extended.v4.PS2_phase.public.chr20.vcf.gz
 	ln cteam_extended.v4.PS2_phase.public.chr20.vcf.gz $@
 
-sgdp_chr20.samples: sgdp_chr20_genotypes.vcf.gz.csi chr20_ancestral_states.bcf.csi sgdp_samples.txt
+sgdp_chr20.samples: sgdp_chr20_genotypes.vcf.gz.csi chr20_ancestral_states.fa sgdp_samples.txt
 	python3 convert.py sgdp -p \
 		sgdp_chr20_genotypes.vcf.gz  \
-		chr20_ancestral_states.bcf \
+		chr20_ancestral_states.fa \
 		-m sgdp_samples.txt \
 		--ancestral-states-url=${ANCESTRAL_STATES_URL}\
 		--reference-name=${REFERENCE_NAME}\
@@ -117,10 +123,10 @@ ukbb_chr20_genotypes.bgen:
 
 # Also requires the simplebgen module above. Don't want to require it here as 
 # any changes will cascade a full rebuild on UKBB.
-ukbb_chr20.samples: ukbb_chr20_genotypes.bgen chr20_ancestral_states.bcf.csi 
+ukbb_chr20.samples: ukbb_chr20_genotypes.bgen chr20_ancestral_states.fa
 	python3 convert.py ukbb -p \
 		ukbb_chr20_genotypes.bgen  \
-		chr20_ancestral_states.bcf \
+		chr20_ancestral_states.fa \
 		--ancestral-states-url=${ANCESTRAL_STATES_URL}\
 		--reference-name=${REFERENCE_NAME}\
 		$@ 

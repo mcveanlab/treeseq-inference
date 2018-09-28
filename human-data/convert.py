@@ -10,6 +10,7 @@ import numpy as np
 import tsinfer
 import attr
 import cyvcf2
+import pysam
 import tqdm
 try:
     import bgen_reader
@@ -48,34 +49,40 @@ def filter_duplicates(vcf):
         yield row
 
 
-def get_ancestral_state(row):
-    try:
-        aa = row.INFO["AA"]
-    except KeyError:
-        aa = None
-    if aa is not None:
-        # Format: for indels = AA|REF|ALT|IndelType; for SNPs = AA
-        splits = aa.split("|")
-        # We're only interest in SNPs
-        if len(splits[0]) == 1:
-            base = splits[0].upper()
-            if base in "ACTG":
-                aa = base
-    return aa
-
-
 class Converter(object):
     """
     Superclass of converters.
     """
-    def __init__(self, data_file, ancestral_states_file, samples):
+    def __init__(self, data_file, ancestral_states, samples):
         self.data_file = data_file
-        self.ancestral_states_file = ancestral_states_file
+        self.ancestral_states = ancestral_states
         self.samples = samples
         self.num_samples = -1
 
     def process_metadata(self, metadata_file):
         pass
+
+    def get_ancestral_state(self, position):
+        # From the ancestral states README:
+        # The convention for the sequence is:
+        #    ACTG : high-confidence call, ancestral state supproted by the other two sequences
+        #    actg : low-confindence call, ancestral state supported by one sequence only
+        #    N    : failure, the ancestral state is not supported by any other sequence
+        #    -    : the extant species contains an insertion at this postion
+        #    .    : no coverage in the alignment
+
+        ret = None
+        # NB: we assume that this array is modified so that the 1-indexed coordinates
+        # work correctly!
+        ancestral_state = self.ancestral_states[position]
+        if ancestral_state in [".", "N", "-"]:
+            self.num_no_ancestral_state += 1
+        elif ancestral_state.lower() == ancestral_state:
+            self.num_low_confidence_ancestral_state += 1
+        else:
+            assert ancestral_state in ["A", "C", "T", "G"]
+            ret = ancestral_state
+        return ret
 
 
 class VcfConverter(Converter):
@@ -86,18 +93,17 @@ class VcfConverter(Converter):
         self.num_missing_data = 0
         self.num_invariant = 0
         self.num_non_biallelic = 0
-        # Rows that don't overlap
-        self.num_ancestral_state_no_data = 0
-        self.num_data_no_ancestral_state = 0
+        # ancestral states counters.
+        self.num_no_ancestral_state = 0
+        self.num_low_confidence_ancestral_state = 0
 
     def report(self):
-        print("no_ancestral_state  :", self.num_no_ancestral_state)
-        print("unphased            :", self.num_unphased)
-        print("missing_data        :", self.num_missing_data)
-        print("invariant           :", self.num_invariant)
-        print("non_biallelic       :", self.num_non_biallelic)
-        print("ancestral_state_no_data :", self.num_ancestral_state_no_data)
-        print("data_no_ancestral_state :", self.num_data_no_ancestral_state)
+        print("unphased                       :", self.num_unphased)
+        print("missing_data                   :", self.num_missing_data)
+        print("invariant                      :", self.num_invariant)
+        print("non_biallelic                  :", self.num_non_biallelic)
+        print("no_ancestral_state             :", self.num_no_ancestral_state)
+        print("low_confidence_ancestral_state :", self.num_low_confidence_ancestral_state)
 
     def convert_genotypes(self, row, ancestral_state):
         ret = None
@@ -135,44 +141,22 @@ class VcfConverter(Converter):
     def process_sites(self, show_progress=False, max_sites=None):
         num_data_sites = int(subprocess.check_output(
             ["bcftools", "index", "--nrecords", self.data_file]))
-        # We tie the iterator to the ancestral states file so it must be updated
-        # each time we advance that iterator.
         progress = tqdm.tqdm(total=num_data_sites, disable=not show_progress)
 
         num_sites = 0
-        vcf_a = filter_duplicates(cyvcf2.VCF(self.ancestral_states_file))
-        vcf_d = filter_duplicates(cyvcf2.VCF(self.data_file))
-        row_a = next(vcf_a, None)
-        row_d = next(vcf_d, None)
-        while row_a is not None and row_d is not None:
-
-            if row_a.POS == row_d.POS and row_a.REF == row_d.REF:
-                ancestral_state = get_ancestral_state(row_a)
-                if ancestral_state is not None:
-                    site = self.convert_genotypes(row_d, ancestral_state)
-                    if site is not None:
-                        self.samples.add_site(
-                            position=site.position, genotypes=site.genotypes,
-                            alleles=site.alleles, metadata=site.metadata)
-                        progress.set_postfix(used=str(num_sites))
-                        num_sites += 1
-                        if num_sites == max_sites:
-                            break
-                else:
-                    self.num_no_ancestral_state += 1
-            if row_a.POS == row_d.POS:
-                # Advance both iterators.
-                row_a = next(vcf_a, None)
-                row_d = next(vcf_d, None)
-                progress.update()
-            elif row_a.POS < row_d.POS:
-                row_a = next(vcf_a, None)
-                self.num_ancestral_state_no_data += 1
-            elif row_d.POS < row_a.POS:
-                progress.update()
-                self.num_data_no_ancestral_state += 1
-                row_d = next(vcf_d, None)
-
+        for row in filter_duplicates(cyvcf2.VCF(self.data_file)):
+            ancestral_state = self.get_ancestral_state(row.POS)
+            if ancestral_state is not None:
+                site = self.convert_genotypes(row, ancestral_state)
+                if site is not None:
+                    self.samples.add_site(
+                        position=site.position, genotypes=site.genotypes,
+                        alleles=site.alleles, metadata=site.metadata)
+                    progress.set_postfix(used=str(num_sites))
+                    num_sites += 1
+                    if num_sites == max_sites:
+                        break
+            progress.update()
         progress.close()
         self.report()
 
@@ -575,17 +559,25 @@ def main():
         "reference_name": args.reference_name
     }
 
+    # Get the ancestral states.
+    fasta = pysam.FastaFile(args.ancestral_states_file)
+    # NB! We put in an extra character at the start to convert to 1 based coords.
+    ancestral_states = "X" + fasta.fetch(reference=fasta.references[0])
+    # The largest possible site position is len(ancestral_states). Positions must
+    # be strictly less than sequence_length, so we add 1.
+    sequence_length = len(ancestral_states) + 1
+
+    converter_class = {
+        "1kg": ThousandGenomesConverter,
+        "sgdp": SgdpConverter,
+        "ukbb": UkbbConverter}
+
     try:
-        with tsinfer.SampleData(path=args.output_file, num_flush_threads=2) as samples:
-            if args.source == "1kg":
-                converter = ThousandGenomesConverter(
-                    args.data_file, args.ancestral_states_file, samples)
-            if args.source == "sgdp":
-                converter = SgdpConverter(
-                    args.data_file, args.ancestral_states_file, samples)
-            if args.source == "ukbb":
-                converter = UkbbConverter(
-                    args.data_file, args.ancestral_states_file, samples)
+        with tsinfer.SampleData(
+                path=args.output_file, num_flush_threads=2,
+                sequence_length=sequence_length) as samples:
+            converter = converter_class[args.source](
+                    args.data_file, ancestral_states, samples)
             converter.process_metadata(args.metadata_file, args.progress)
             converter.process_sites(args.progress, args.max_variants)
             samples.record_provenance(
