@@ -66,7 +66,7 @@ RENTPLUS = "RentPlus"
 TSINFER = "tsinfer"
 
 #names for optional columns in the dataset
-ERROR_COLNAME = 'error_rate'
+ERROR_COLNAME = 'error_param'
 SUBSAMPLE_COLNAME = 'subsample_size'
 SIMTOOL_COLNAME = 'sim_tool' #if column does not exist, default simulation tool = 'msprime'
 MUTATION_SEED_COLNAME = 'mut_seed'
@@ -828,9 +828,10 @@ class Dataset(object):
 
     """
     We store empirically determined error stats (e.g. from 1000 genomes platinum analysis
-    in a separate csv file in the data_dir
+    in a separate csv file in the data_dir. We can use this filename as the label in the
+    ERROR_COLNAME column in the results file, so we know which error matrix we have used
     """
-    error_filename = "empirical_error_1000G_platinum.csv"
+    error_filename = "EmpiricalErrorPlatinum1000G.csv"
 
     def __init__(self):
         self.data_path = os.path.abspath(
@@ -992,12 +993,12 @@ class Dataset(object):
                 self.save_variant_matrices(
                     ts.simplify(list(range(subsample))),
                     add_subsample_param_to_name(base_fn, subsample),
-                    keyed_params.get('error_rate') or 0,
+                    keyed_params.get(ERROR_COLNAME) or 0,
                     infinite_sites=False)
             else:
                 self.save_variant_matrices(
                     ts, base_fn, 
-                    keyed_params.get('error_rate') or 0,
+                    keyed_params.get(ERROR_COLNAME) or 0,
                     infinite_sites=False)
         return return_value
 
@@ -1011,7 +1012,7 @@ class Dataset(object):
             "A dataset should implement a single_sim method that runs" \
             " a simulation, e.g. by calling self.single_neutral_simulation")
 
-    def generate_samples(self, ts, filename, error_rate=0):
+    def generate_samples(self, ts, filename, error_param=0):
         """
         Generate a samples file from a simulated ts based on the empirically estimated 
         error matrix saved in self.error_matrix.
@@ -1024,14 +1025,15 @@ class Dataset(object):
         for v in ts.variants():
             n_variants += 1
     
-            if error_rate != 'Empirical':
-                error_rate = float(error_rate)
-                if error_rate == 0:
+            try:
+                error_param = float(error_param)
+                if error_param == 0:
                     genotypes=v.genotypes
                 else:
                     raise NotImplementedError
-            else:
-                #Record the allele frequency
+            except ValueError:
+                # Error_param is not a number => is a error file
+                # First record the allele frequency
                 m = v.genotypes.shape[0]
                 frequency = np.sum(v.genotypes) / m
                 try:
@@ -1060,9 +1062,9 @@ class Dataset(object):
                 position=v.site.position, alleles=v.alleles,
                 genotypes=genotypes)
 
-        if error_rate != 0:
+        if error_param != 0:
             logging.info("Error = {} used with actual error rate = {}".format(
-                error_rate,
+                error_param,
                 bits_flipped/(n_variants*ts.sample_size)) if record_rate else "")
       
         sample_data.finalise()
@@ -1393,7 +1395,7 @@ class Dataset(object):
 
 
 
-    def save_variant_matrices(self, ts, filename, error_rate=0, infinite_sites=True):
+    def save_variant_matrices(self, ts, filename, error_param=0, infinite_sites=True):
         """
         Make sample data from a tree sequence
         """
@@ -1401,12 +1403,12 @@ class Dataset(object):
             #for infinite sites, assume we have discretised mutations to ints
             if not all(p.is_integer() for p in pos):
                 raise ValueError("Variant positions are not all integers")
-        filename = add_error_param_to_name(filename, error_rate)
+        filename = add_error_param_to_name(filename, error_param)
         if ts.num_sites == 0:
             logging.warning("No sites to save for {}".format(filename))
         else:
             logging.debug("Saving samples to {}".format(filename))
-            s = self.generate_samples(ts, filename, error_rate)
+            s = self.generate_samples(ts, filename, error_param)
             if FASTARG in self.tools_and_metrics:
                 logging.debug("writing samples to {}.hap for fastARG".format(filename))
                 with open(filename+".hap", "w+") as file_in:
@@ -1457,7 +1459,7 @@ class AllToolsDataset(Dataset):
     #params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
-        ERROR_COLNAME : [0, 'Empirical'],
+        ERROR_COLNAME : [0, error_filename.replace(".csv","")],
     }
     
     def single_sim(self, row_id, sim_params, rng):
@@ -1496,7 +1498,7 @@ class AllToolsAccuracyDataset(AllToolsDataset):
     #params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
-        ERROR_COLNAME : [0, 'Empirical'],
+        ERROR_COLNAME : [0, error_filename.replace(".csv","")],
     }
 
 class AllToolsPerformanceDataset(AllToolsDataset):
@@ -1671,7 +1673,7 @@ class SubsamplingDataset(Dataset):
     within_sim_params = {
         'tsinfer_srb' : [True], #, False], #should we use shared recombinations ("path compression")
         SUBSAMPLE_COLNAME:  [12, 50, 100, 500, 1000], #we infer based on this many samples
-        ERROR_COLNAME: [0, 'Empirical']
+        ERROR_COLNAME: [0, error_filename.replace(".csv","")]
     }
 
 
@@ -1724,7 +1726,7 @@ class AllToolsAccuracyWithDemographyDataset(Dataset):
     #params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
-        ERROR_COLNAME : [0, 'Empirical'],
+        ERROR_COLNAME : [0, error_filename.replace(".csv","")],
     }
 
     def single_sim(self, row_id, sim_params, rng):
@@ -1773,7 +1775,7 @@ class AllToolsAccuracyWithSelectiveSweepDataset(Dataset):
     within_sim_params = {
         #NB - these are strings because they are output as part of the filename
         'stop_freqs': ['0.2', '0.5', '0.8', '1.0', ('1.0', 200), ('1.0', 1000)], #frequencies when file is saved.
-        ERROR_COLNAME : [0, 'Empirical'],
+        ERROR_COLNAME : [0, error_filename.replace(".csv","")],
     }
 
     extra_sim_cols = [SIMTOOL_COLNAME, SELECTION_COEFF_COLNAME,
@@ -2526,7 +2528,7 @@ class MetricsSubsamplingFigure(Figure):
             first_legend = axes[0][-1].legend(
                 artists, tool_labels, numpoints=1, labelspacing=0.1, loc="lower right")
             fig.suptitle('ARG metric for trees subsampled down to {} tips, error = {}'.format(
-                restrict_sample_size_comparison[0], error_rate))
+                restrict_sample_size_comparison[0], error_param))
             figures.append(fig)
         self.savefig(*figures)
 
