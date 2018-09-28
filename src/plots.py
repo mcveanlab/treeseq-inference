@@ -122,9 +122,9 @@ def ts_has_non_singleton_variants(ts):
 
 def make_errors_genotype_model(g, error_probs):
     """
-    Given an empirically estimated error matrix, resample for a particular
+    Given an empirically estimated error probability matrix, resample for a particular
     variant. Determine variant frequency and true genotype (g0, g1, or g2),
-    then return observed genotype based on row in error_matrix with nearest
+    then return observed genotype based on row in error_probs with nearest
     frequency. Treat each pair of alleles as a diploid individual. 
     """
     w = np.copy(g)
@@ -141,20 +141,20 @@ def make_errors_genotype_model(g, error_probs):
 
     for idx in g0:
         result=[(0,0),(1,0),(1,1)][np.random.choice(3,
-            p=error_matrix[['p00','p01','p02']].values[0])]
+            p=error_probs[['p00','p01','p02']].values[0])]
         if result == (1,0):
             genos[idx]=[(0,1),(1,0)][np.random.choice(2)]
         else:
             genos[idx] = result
     for idx in g1a:
         genos[idx]=[(0,0),(1,0),(1,1)][np.random.choice(3,
-            p=error_matrix[['p10','p11','p12']].values[0])]
+            p=error_probs[['p10','p11','p12']].values[0])]
     for idx in g1b:
         genos[idx]=[(0,0),(0,1),(1,1)][np.random.choice(3,
-            p=error_matrix[['p10','p11','p12']].values[0])]
+            p=error_probs[['p10','p11','p12']].values[0])]
     for idx in g2:
         result=[(0,0),(1,0),(1,1)][np.random.choice(3,
-            p=error_matrix[['p20','p21','p22']].values[0])]
+            p=error_probs[['p20','p21','p22']].values[0])]
         if result == (1,0):
             genos[idx]=[(0,1),(1,0)][np.random.choice(2)]
         else:
