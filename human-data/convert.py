@@ -132,8 +132,7 @@ class VcfConverter(Converter):
         else:
             freq = np.sum(a)
             # The loop above exited without breaking, so we have valid data.
-            if len(all_alleles) == 1:
-                assert freq == self.num_samples or freq == 0
+            if freq == self.num_samples or freq == 0:
                 self.num_invariant += 1
             elif len(all_alleles) > 2:
                 self.num_non_biallelic += 1

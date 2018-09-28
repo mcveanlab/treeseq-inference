@@ -69,7 +69,7 @@ ${ANCESTRAL_STATES_PREFIX}/README: ${ANCESTRAL_STATES_TARBALL}
 	touch ${ANCESTRAL_STATES_PREFIX}/*
 
 chr%_ancestral_states.fa: ${ANCESTRAL_STATES_PREFIX}/README
-	ln -f ${ANCESTRAL_STATES_PREFIX}/homo_sapiens_ancestor_$*.fa $@
+	ln -sf ${ANCESTRAL_STATES_PREFIX}/homo_sapiens_ancestor_$*.fa $@
 
 
 #############################################
@@ -91,7 +91,7 @@ GENOTYPES_BASE=http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/suppor
 		-m 1kg_samples.ped \
 		--ancestral-states-url=${ANCESTRAL_STATES_URL}\
 		--reference-name=${REFERENCE_NAME}\
-		$@ 
+		$@  > $@.report
 
 #############################################
 # SGDP data.
@@ -118,7 +118,7 @@ sgdp_chr20.samples: sgdp_chr20_genotypes.bcf.csi chr20_ancestral_states.fa sgdp_
 		-m sgdp_samples.txt \
 		--ancestral-states-url=${ANCESTRAL_STATES_URL}\
 		--reference-name=${REFERENCE_NAME}\
-		$@ 
+		$@  > $@.report
 
 #############################################
 # UKBB
@@ -135,7 +135,7 @@ ukbb_chr20.samples: ukbb_chr20_genotypes.bgen chr20_ancestral_states.fa
 		chr20_ancestral_states.fa \
 		--ancestral-states-url=${ANCESTRAL_STATES_URL}\
 		--reference-name=${REFERENCE_NAME}\
-		$@ 
+		$@  > $@.report
 
 ukbb-chr20.augmented_131072.nosimplify.trees: ukbb_chr20.samples ukbb_chr20.ancestors.trees
 	python3 tsutil.py sequential-augment ukbb_chr20.samples --num-threads=${NUM_THREADS}
