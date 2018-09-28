@@ -93,6 +93,9 @@ class VcfConverter(Converter):
         self.num_missing_data = 0
         self.num_invariant = 0
         self.num_non_biallelic = 0
+        self.num_singletons = 0
+        # (n - 1)-tons
+        self.num_nmo_tons = 0
         # ancestral states counters.
         self.num_no_ancestral_state = 0
         self.num_low_confidence_ancestral_state = 0
@@ -104,6 +107,8 @@ class VcfConverter(Converter):
         print("non_biallelic                  :", self.num_non_biallelic)
         print("no_ancestral_state             :", self.num_no_ancestral_state)
         print("low_confidence_ancestral_state :", self.num_low_confidence_ancestral_state)
+        print("num_singletons                 :", self.num_singletons)
+        print("num_(n - 1)_tons               :", self.num_nmo_tons)
 
     def convert_genotypes(self, row, ancestral_state):
         ret = None
@@ -125,11 +130,17 @@ class VcfConverter(Converter):
             a[2 * j] = alleles[0] != ancestral_state
             a[2 * j + 1] = alleles[1] != ancestral_state
         else:
+            freq = np.sum(a)
             # The loop above exited without breaking, so we have valid data.
             if len(all_alleles) == 1:
+                assert freq == self.num_samples or freq == 0
                 self.num_invariant += 1
             elif len(all_alleles) > 2:
                 self.num_non_biallelic += 1
+            elif freq == 1:
+                self.num_singletons += 1
+            elif freq == self.num_samples - 1:
+                self.num_nmo_tons += 1
             else:
                 all_alleles.remove(ancestral_state)
                 alleles = [ancestral_state, all_alleles.pop()]
