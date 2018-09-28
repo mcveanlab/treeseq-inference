@@ -41,7 +41,7 @@ def run_sequential_augment(args):
     offset = -1
     while n < num_samples // 4:
         augmented_file = base + ".augmented_{}.ancestors.trees".format(n)
-        final_file = base + ".augmented_{}.unsimplified.trees".format(n)
+        final_file = base + ".augmented_{}.nosimplify.trees".format(n)
         print("RUNNING", augmented_file)
         subset = np.linspace(offset, num_samples - offset, n + 2, dtype=int)[1: -1]
         ancestors_ts = run_augment(sample_data, ancestors_ts, subset, args.num_threads)
