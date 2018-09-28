@@ -58,6 +58,27 @@ class Converter(object):
         self.ancestral_states = ancestral_states
         self.samples = samples
         self.num_samples = -1
+        # ancestral states counters.
+        self.num_no_ancestral_state = 0
+        self.num_low_confidence_ancestral_state = 0
+        # Counters for genotypes and sites.
+        self.num_unphased = 0
+        self.num_missing_data = 0
+        self.num_invariant = 0
+        self.num_non_biallelic = 0
+        self.num_singletons = 0
+        # (n - 1)-tons
+        self.num_nmo_tons = 0
+
+    def report(self):
+        print("unphased                       :", self.num_unphased)
+        print("missing_data                   :", self.num_missing_data)
+        print("invariant                      :", self.num_invariant)
+        print("non_biallelic                  :", self.num_non_biallelic)
+        print("no_ancestral_state             :", self.num_no_ancestral_state)
+        print("low_confidence_ancestral_state :", self.num_low_confidence_ancestral_state)
+        print("num_singletons                 :", self.num_singletons)
+        print("num_(n - 1)_tons               :", self.num_nmo_tons)
 
     def process_metadata(self, metadata_file):
         pass
@@ -86,29 +107,6 @@ class Converter(object):
 
 
 class VcfConverter(Converter):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.num_no_ancestral_state = 0
-        self.num_unphased = 0
-        self.num_missing_data = 0
-        self.num_invariant = 0
-        self.num_non_biallelic = 0
-        self.num_singletons = 0
-        # (n - 1)-tons
-        self.num_nmo_tons = 0
-        # ancestral states counters.
-        self.num_no_ancestral_state = 0
-        self.num_low_confidence_ancestral_state = 0
-
-    def report(self):
-        print("unphased                       :", self.num_unphased)
-        print("missing_data                   :", self.num_missing_data)
-        print("invariant                      :", self.num_invariant)
-        print("non_biallelic                  :", self.num_non_biallelic)
-        print("no_ancestral_state             :", self.num_no_ancestral_state)
-        print("low_confidence_ancestral_state :", self.num_low_confidence_ancestral_state)
-        print("num_singletons                 :", self.num_singletons)
-        print("num_(n - 1)_tons               :", self.num_nmo_tons)
 
     def convert_genotypes(self, row, ancestral_state):
         ret = None
@@ -449,19 +447,6 @@ class SgdpConverter(VcfConverter):
 
 class UkbbConverter(Converter):
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.num_no_ancestral_state = 0
-        self.num_missing_ancestral_state = 0
-        self.num_rsid_mismatches = 0
-        self.num_non_biallelic = 0
-
-    def report(self):
-        print("no_ancestral_state        :", self.num_no_ancestral_state)
-        print("missing_ancestral_states  :", self.num_missing_ancestral_state)
-        print("non_biallelic             :", self.num_non_biallelic)
-        print("rsid_mismatches           :", self.num_rsid_mismatches)
-
     def process_metadata(self, metadata_file, show_progress=False):
         bgen = bgen_reader.read_bgen(self.data_file, verbose=False)
         sample_df = bgen['samples']
@@ -478,26 +463,15 @@ class UkbbConverter(Converter):
         rsid = np.array(bgen["variants"]["rsid"])
         allele_id = np.array(bgen["variants"]["allele_ids"])
         del bgen
-        vcf_a = cyvcf2.VCF(self.ancestral_states_file)
-        row_a = next(vcf_a, None)
 
         bg = simplebgen.BgenReader(self.data_file)
         N = 2 * bg.num_samples
         for j in tqdm.tqdm(range(bg.num_variants)):
-            while row_a is not None and row_a.POS < position[j]:
-                row_a = next(vcf_a, None)
-            if row_a is None:
-                break
-
-            if row_a.POS == position[j]:
-                ancestral_state = get_ancestral_state(row_a)
+            ancestral_state = self.get_ancestral_state(position[j])
+            if ancestral_state is not None:
                 alleles = allele_id[j].split(",")
-                if row_a.ID != rsid[j]:
-                    self.num_rsid_mismatches += 1
-                elif num_alleles[j] != 2:
+                if num_alleles[j] != 2 or ancestral_state not in alleles:
                     self.num_non_biallelic += 1
-                elif ancestral_state not in alleles:
-                    self.num_missing_ancestral_state += 1
                 else:
                     P = bg.get_probabilities(j).astype(np.int8).reshape((N, 2))
                     # The probabilities for each site is a (num_diploids, 4) array,
@@ -509,12 +483,19 @@ class UkbbConverter(Converter):
                         genotypes[P[:, 1] == 1] = 1
                     else:
                         genotypes[P[:, 0] == 1] = 1
-                    metadata = {"ID": row_a.ID, "REF": row_a.REF}
-                    self.samples.add_site(
-                        position=float(position[j]), genotypes=genotypes,
-                        alleles=alleles, metadata=metadata)
-            else:
-                self.num_no_ancestral_state += 1
+
+                    freq = np.sum(genotypes)
+                    if freq == self.num_samples or freq == 0:
+                        self.num_invariant += 1
+                    elif freq == 1:
+                        self.num_singletons += 1
+                    elif freq == self.num_samples - 1:
+                        self.num_nmo_tons += 1
+                    else:
+                        metadata = {"ID": rsid[j], "REF": alleles[0]}
+                        self.samples.add_site(
+                            position=float(position[j]), genotypes=genotypes,
+                            alleles=alleles, metadata=metadata)
             if j == max_sites:
                 break
         self.report()
