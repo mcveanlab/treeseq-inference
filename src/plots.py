@@ -30,7 +30,6 @@ import tempfile
 import time
 import math
 import gzip
-from ast import literal_eval as make_tuple
 
 import numpy as np
 import matplotlib
@@ -141,24 +140,26 @@ def make_errors_genotype_model(g, error_probs):
     
 
     for idx in g0:
-        result=make_tuple(np.random.choice(['(0,0)','(1,0)','(1,1)'], p=error_probs[['p00','p01','p02']].values[0]))
+        result=random.choices(
+            [(0,0),(1,0),(1,1)], weights=error_matrix[['p00','p01','p02']].values[0])
         if result == (1,0):
-            genos[idx]=make_tuple(np.random.choice(['(0,1)','(1,0)'], 1)[0])
+            genos[idx]=random.choices([(0,1),(1,0)])
         else:
             genos[idx] = result
-
     for idx in g1a:
-        genos[idx]=make_tuple(np.random.choice(['(0,0)','(1,0)','(1,1)'], p=error_probs[['p10','p11','p12']].values[0]))
-
+        genos[idx]=random.choices(
+            [(0,0),(1,0),(1,1)], weights=error_matrix[['p10','p11','p12']].values[0])
     for idx in g1b:
-        genos[idx]=make_tuple(np.random.choice(['(0,0)','(0,1)','(1,1)'], p=error_probs[['p10','p11','p12']].values[0]))
-
+        genos[idx]=random.choices(
+            [(0,0),(0,1),(1,1)], weights=error_matrix[['p10','p11','p12']].values[0])
     for idx in g2:
-        result=make_tuple(np.random.choice(['(0,0)','(1,0)','(1,1)'], p=error_probs[['p20','p21','p22']].values[0]))
+        result=random.choices(
+            [(0,0),(1,0),(1,1)], weights=error_matrix[['p20','p21','p22']].values[0])
         if result == (1,0):
-            genos[idx]=make_tuple(np.random.choice(['(0,1)','(1,0)'], 1)[0])
+            genos[idx]=random.choices([(0,1),(1,0)])
         else:
             genos[idx] = result
+            
     return(np.array(sum(genos, ())))
 
 
@@ -208,7 +209,7 @@ def mk_sim_name_from_row(row, directory=None, error_col=ERROR_COLNAME, subsample
     name = mk_sim_name(row.sample_size, row.Ne, row.length, row.recombination_rate,
         row.mutation_rate, row.seed, mut_seed, directory,
         tool=tool, s=s, h=h, freq=freq, post_gens = post_gens)
-    #in some cases the original simulation (or results frome the simulation) have been
+    #in some cases the original simulation (or results from the simulation) have been
     # modified and we need a name that reflects that modification
     if subsample_col and subsample_col in row:
         name = add_subsample_param_to_name(name, row[subsample_col])
@@ -229,18 +230,18 @@ def add_subsample_param_to_name(sim_name, subsample_size=None):
     else:
         return sim_name
 
-def add_error_param_to_name(sim_name, error_rate=None):
+def add_error_param_to_name(sim_name, error_param=None):
     """
     Append the error param to the simulated tree sequence filename.
     Only relevant for files downstream of the step where sequence error is added
     """
-    if error_rate is not None and not pd.isnull(error_rate):
+    if error_param is not None and not pd.isnull(error_param):
         if sim_name.endswith("+") or sim_name.endswith("-"):
             #this is the first param
-            return sim_name + "_err{}".format(error_rate)
+            return sim_name + "_err{}".format(error_param)
         else:
             #this is the first param
-            return sim_name + "err{}".format(error_rate)
+            return sim_name + "err{}".format(error_param)
     else:
         return sim_name
 
@@ -1495,7 +1496,7 @@ class AllToolsAccuracyDataset(AllToolsDataset):
     #params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
-        ERROR_COLNAME : [None, 'Empirical'],
+        ERROR_COLNAME : [0, 'Empirical'],
     }
 
 class AllToolsPerformanceDataset(AllToolsDataset):
