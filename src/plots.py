@@ -140,23 +140,23 @@ def make_errors_genotype_model(g, error_probs):
     
 
     for idx in g0:
-        result=random.choices(
-            [(0,0),(1,0),(1,1)], weights=error_matrix[['p00','p01','p02']].values[0])
+        result=[(0,0),(1,0),(1,1)][np.random.choice(3,
+            p=error_matrix[['p00','p01','p02']].values[0])]
         if result == (1,0):
-            genos[idx]=random.choices([(0,1),(1,0)])
+            genos[idx]=[(0,1),(1,0)][np.random.choice(2)]
         else:
             genos[idx] = result
     for idx in g1a:
-        genos[idx]=random.choices(
-            [(0,0),(1,0),(1,1)], weights=error_matrix[['p10','p11','p12']].values[0])
+        genos[idx]=[(0,0),(1,0),(1,1)][np.random.choice(3,
+            p=error_matrix[['p10','p11','p12']].values[0])]
     for idx in g1b:
-        genos[idx]=random.choices(
-            [(0,0),(0,1),(1,1)], weights=error_matrix[['p10','p11','p12']].values[0])
+        genos[idx]=[(0,0),(0,1),(1,1)][np.random.choice(3,
+            p=error_matrix[['p10','p11','p12']].values[0])]
     for idx in g2:
-        result=random.choices(
-            [(0,0),(1,0),(1,1)], weights=error_matrix[['p20','p21','p22']].values[0])
+        result=[(0,0),(1,0),(1,1)][np.random.choice(3,
+            p=error_matrix[['p20','p21','p22']].values[0])]
         if result == (1,0):
-            genos[idx]=random.choices([(0,1),(1,0)])
+            genos[idx]=[(0,1),(1,0)][np.random.choice(2)]
         else:
             genos[idx] = result
             
