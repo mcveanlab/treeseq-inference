@@ -9,6 +9,7 @@ import tsinfer
 import daiquiri
 import numpy as np
 
+
 def run_simplify(args):
     ts = msprime.load(args.input)
     ts = ts.simplify()
@@ -68,14 +69,16 @@ def run_benchmark(args):
     print("Iterated over trees in {:.2f}s".format(duration))
 
     before = time.perf_counter()
-    j = 0
+    num_variants = 0
     for var in ts.variants():
-        j += 1
-    assert j == ts.num_sites
+        if num_variants == args.num_variants:
+            break
+        num_variants += 1
     duration = time.perf_counter() - before
-    total_genotypes = (ts.num_samples * ts.num_sites) / 10**6
-    print("Iterated over variants in {:.2f}s @ {:.2f} M genotypes/s".format(
-        duration, total_genotypes / duration))
+    total_genotypes = (ts.num_samples * num_variants) / 10**6
+    print("Iterated over {} variants in {:.2f}s @ {:.2f} M genotypes/s".format(
+        num_variants, duration, total_genotypes / duration))
+
 
 def main():
 
@@ -100,6 +103,9 @@ def main():
     subparser = subparsers.add_parser("benchmark")
     subparser.add_argument(
         "input", type=str, help="Input tree sequence")
+    subparser.add_argument(
+        "--num-variants", type=int, default=None,
+        help="Number of variants to benchmark genotypes decoding performance on")
     subparser.set_defaults(func=run_benchmark)
 
     daiquiri.setup(level="INFO")
