@@ -42,7 +42,7 @@ simplebgen: setup.py simplebgenmodule.c
 	python3 tsutil.py simplify $^ $@
 
 %.trees.gz: %.trees
-	gzip -k $^
+	gzip -c $^ > $@
 
 
 #############################################
