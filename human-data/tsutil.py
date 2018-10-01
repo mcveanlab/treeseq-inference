@@ -2,12 +2,15 @@
 Various utilities for manipulating tree sequences and running tsinfer.
 """
 import argparse
+import subprocess
+import time
+import sys
 
 import msprime
-import time
 import tsinfer
 import daiquiri
 import numpy as np
+import tqdm
 
 
 def run_simplify(args):
@@ -80,6 +83,73 @@ def run_benchmark(args):
         num_variants, duration, total_genotypes / duration))
 
 
+def run_combine_ukbb_1kg(args):
+    ukbb_samples_file = "ukbb_{}.samples".format(args.chromosome)
+    tg_ts_file = "1kg_{}.nosimplify.trees".format(args.chromosome)
+    ancestors_ts_file = "1kg_ukbb_{}.ancestors.trees".format(args.chromosome)
+    samples_file = "1kg_ukbb_{}.samples".format(args.chromosome)
+
+    ukbb_samples = tsinfer.load(ukbb_samples_file)
+    tg_ts = msprime.load(tg_ts_file)
+    print("Loaded ts:", tg_ts.num_nodes, tg_ts.num_edges)
+     
+    # Subset the sites down to the UKBB sites.
+    tables = tg_ts.dump_tables()
+    ukbb_sites = set(ukbb_samples.sites_position[:])
+    ancestors_sites = set(tables.sites.position[:])
+    intersecting_sites = ancestors_sites & ukbb_sites
+
+    print("Intersecting sites = ", len(intersecting_sites))
+    tg_ts = tsinfer.subset_sites(tg_ts, intersecting_sites)
+    # Reduce to site topology.
+    tg_ts = tsinfer.minimise(tg_ts)
+    print("minimised", tg_ts.num_nodes, tg_ts.num_edges)
+
+    tables = tg_ts.dump_tables()
+    # Set the node flags so that the samples are marked with a new flag
+    external_sample = 1 << 19
+
+    flags = tables.nodes.flags
+    flags[flags == msprime.NODE_IS_SAMPLE] = external_sample
+    tables.nodes.set_columns(
+        flags=flags,
+        time=tables.nodes.time + 1,
+        population=tables.nodes.population,
+        individual=tables.nodes.individual,
+        metadata=tables.nodes.metadata,
+        metadata_offset=tables.nodes.metadata_offset)
+    tg_ancestors_ts = tables.tree_sequence()
+    tg_ancestors_ts.dump(ancestors_ts_file)
+
+    # Now create a new samples file to get rid of the missing sites.
+    git_hash = subprocess.check_output(["git", "rev-parse", "HEAD"])
+    git_provenance = {
+        "repo": "git@github.com:mcveanlab/treeseq-inference.git",
+        "hash": git_hash.decode().strip(),
+        "dir": "human-data",
+        "notes:": (
+            "Use the Makefile to download and process the upstream data files")}
+    
+    with tsinfer.SampleData(
+            path=samples_file, num_flush_threads=4,
+            sequence_length=ukbb_samples.sequence_length) as samples:
+
+        for _ in tqdm.tqdm(range(ukbb_samples.num_individuals)):
+            samples.add_individual(ploidy=2)
+        for variant in tqdm.tqdm(ukbb_samples.variants(), total=ukbb_samples.num_sites):
+            if variant.site.position in intersecting_sites:
+                samples.add_site(
+                    position=variant.site.position, alleles=variant.alleles,
+                    genotypes=variant.genotypes, metadata=variant.site.metadata)
+
+        for timestamp, record in ukbb_samples.provenances():
+            samples.add_provenance(timestamp, record)
+        samples.record_provenance(
+            command=sys.argv[0], args=sys.argv[1:], git=git_provenance)
+        
+    print(samples)
+
+
 def main():
 
     parser = argparse.ArgumentParser()
@@ -99,6 +169,10 @@ def main():
         "input", type=str, help="Input tree sequence")
     subparser.add_argument("--num-threads", type=int, default=0)
     subparser.set_defaults(func=run_sequential_augment)
+
+    subparser = subparsers.add_parser("combine-ukbb-1kg")
+    subparser.add_argument("chromosome", type=str, help="chromosome stem")
+    subparser.set_defaults(func=run_combine_ukbb_1kg)
 
     subparser = subparsers.add_parser("benchmark")
     subparser.add_argument(
