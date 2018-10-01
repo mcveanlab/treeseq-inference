@@ -65,6 +65,7 @@ class Converter(object):
         self.num_unphased = 0
         self.num_missing_data = 0
         self.num_invariant = 0
+        self.num_indels = 0
         self.num_non_biallelic = 0
         self.num_singletons = 0
         # (n - 1)-tons
@@ -74,6 +75,7 @@ class Converter(object):
         print("unphased                       :", self.num_unphased)
         print("missing_data                   :", self.num_missing_data)
         print("invariant                      :", self.num_invariant)
+        print("num_indels                     :", self.num_indels)
         print("non_biallelic                  :", self.num_non_biallelic)
         print("no_ancestral_state             :", self.num_no_ancestral_state)
         print("low_confidence_ancestral_state :", self.num_low_confidence_ancestral_state)
@@ -132,12 +134,15 @@ class VcfConverter(Converter):
             # The loop above exited without breaking, so we have valid data.
             if freq == self.num_samples or freq == 0:
                 self.num_invariant += 1
+            elif any(len(allele) != 1 for allele in all_alleles):
+                self.num_indels += 1
             elif len(all_alleles) > 2:
                 self.num_non_biallelic += 1
             elif freq == 1:
                 self.num_singletons += 1
             elif freq == self.num_samples - 1:
                 self.num_nmo_tons += 1
+
             else:
                 all_alleles.remove(ancestral_state)
                 alleles = [ancestral_state, all_alleles.pop()]
@@ -472,6 +477,8 @@ class UkbbConverter(Converter):
                 alleles = allele_id[j].split(",")
                 if num_alleles[j] != 2 or ancestral_state not in alleles:
                     self.num_non_biallelic += 1
+                elif any(len(allele) != 1 for allele in alleles):
+                    self.num_indels += 1
                 else:
                     P = bg.get_probabilities(j).astype(np.int8).reshape((N, 2))
                     # The probabilities for each site is a (num_diploids, 4) array,
@@ -481,8 +488,11 @@ class UkbbConverter(Converter):
                     genotypes = np.zeros(N, dtype=np.int8)
                     if ancestral_state == alleles[0]:
                         genotypes[P[:, 1] == 1] = 1
+                        ref = alleles[0]
                     else:
                         genotypes[P[:, 0] == 1] = 1
+                        ref = alleles[0]
+                        alleles = alleles[::-1]
 
                     freq = np.sum(genotypes)
                     if freq == self.num_samples or freq == 0:
@@ -492,7 +502,7 @@ class UkbbConverter(Converter):
                     elif freq == self.num_samples - 1:
                         self.num_nmo_tons += 1
                     else:
-                        metadata = {"ID": rsid[j], "REF": alleles[0]}
+                        metadata = {"ID": rsid[j], "REF": ref}
                         self.samples.add_site(
                             position=float(position[j]), genotypes=genotypes,
                             alleles=alleles, metadata=metadata)

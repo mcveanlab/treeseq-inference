@@ -98,6 +98,21 @@ def run_combine_ukbb_1kg(args):
     ukbb_sites = set(ukbb_samples.sites_position[:])
     ancestors_sites = set(tables.sites.position[:])
     intersecting_sites = ancestors_sites & ukbb_sites
+    # Create a map from position to alleles so we can make sure they are 
+    # compatible between the two datasets.
+    tg_alleles = {}
+    for site in tg_ts.sites():
+        if site.position in intersecting_sites:
+            assert len(site.mutations) == 1
+            tg_alleles[site.position] = [
+                site.ancestral_state, site.mutations[0].derived_state]
+    
+    for pos, alleles in zip(ukbb_samples.sites_position[:], ukbb_samples.sites_alleles[:]):
+        if pos in tg_alleles and alleles != tg_alleles[pos]:
+            print(
+                "Removing site with incompatible alleles:", pos, alleles, 
+                tg_alleles[pos])
+            intersecting_sites.remove(pos)
 
     print("Intersecting sites = ", len(intersecting_sites))
     tg_ts = tsinfer.subset_sites(tg_ts, intersecting_sites)
@@ -118,6 +133,24 @@ def run_combine_ukbb_1kg(args):
         individual=tables.nodes.individual,
         metadata=tables.nodes.metadata,
         metadata_offset=tables.nodes.metadata_offset)
+    # Need to set ancestral and derived states to 0/1. This is a hack and 
+    # won't be necessary in later versions of tsinfer where the full data
+    # in the ancestors tree sequence is used.
+    num_sites = len(tables.sites)
+    tables.sites.set_columns(
+        position=tables.sites.position,
+        ancestral_state=np.zeros_like(tables.sites.ancestral_state) + ord("0"),
+        ancestral_state_offset=np.arange(num_sites + 1, dtype=np.uint32),
+        metadata=tables.sites.metadata,
+        metadata_offset=tables.sites.metadata_offset)
+    tables.mutations.set_columns(
+        site=tables.mutations.site,
+        node=tables.mutations.node,
+        parent=tables.mutations.parent,
+        derived_state=np.zeros_like(tables.sites.ancestral_state) +  ord("1"),
+        derived_state_offset=np.arange(num_sites + 1, dtype=np.uint32),
+        metadata=tables.sites.metadata,
+        metadata_offset=tables.sites.metadata_offset)
     tg_ancestors_ts = tables.tree_sequence()
     tg_ancestors_ts.dump(ancestors_ts_file)
 

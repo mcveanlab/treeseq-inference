@@ -65,8 +65,10 @@ ${ANCESTRAL_STATES_TARBALL}:
 ${ANCESTRAL_STATES_PREFIX}/README: ${ANCESTRAL_STATES_TARBALL}
 	rm -fR ${ANCESTRAL_STATES_PREFIX}
 	tar -jxvf ${ANCESTRAL_STATES_TARBALL}
-	# Update access times or we'll keep rebuilding this rule
-	touch ${ANCESTRAL_STATES_PREFIX}/*
+	# Update access times or we'll keep rebuilding this rule. Have to make sure 
+	# that the README we touch is older than the actual fa files.
+	touch $@
+	touch ${ANCESTRAL_STATES_PREFIX}/*.fa
 
 chr%_ancestral_states.fa: ${ANCESTRAL_STATES_PREFIX}/README
 	ln -sf ${ANCESTRAL_STATES_PREFIX}/homo_sapiens_ancestor_$*.fa $@
