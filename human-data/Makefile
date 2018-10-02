@@ -36,7 +36,7 @@ simplebgen: setup.py simplebgenmodule.c
 	python3 -m tsinfer ma -vp -t ${NUM_THREADS} $*.samples
 
 %.nosimplify.trees: %.ancestors.trees
-	python3 -m tsinfer ms -vp -t ${NUM_THREADS} $*.samples -O $@
+	python3 -m tsinfer ms -vp -t ${NUM_THREADS} $*.samples -O $@ --no-simplify
 
 %.trees: %.nosimplify.trees
 	python3 tsutil.py simplify $^ $@
