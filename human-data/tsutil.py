@@ -115,43 +115,25 @@ def run_combine_ukbb_1kg(args):
             intersecting_sites.remove(pos)
 
     print("Intersecting sites = ", len(intersecting_sites))
-    tg_ts = tsinfer.subset_sites(tg_ts, intersecting_sites)
-    # Reduce to site topology.
-    tg_ts = tsinfer.minimise(tg_ts)
-    print("minimised", tg_ts.num_nodes, tg_ts.num_edges)
+    tables.sites.clear()
+    tables.mutations.clear()
+    for site in tg_ts.sites():
+        if site.position in intersecting_sites:
+            # The ancestors tree sequence requires that sites be 0/1
+            site_id = tables.sites.add_row(position=site.position, ancestral_state="0")
+            assert len(site.mutations) == 1
+            mutation = site.mutations[0]
+            tables.mutations.add_row(site=site_id, node=mutation.node, derived_state="1")
 
-    tables = tg_ts.dump_tables()
-    # Set the node flags so that the samples are marked with a new flag
-    external_sample = 1 << 19
-
-    flags = tables.nodes.flags
-    flags[flags == msprime.NODE_IS_SAMPLE] = external_sample
+    # Update the nodes to mark everything as a sample. Don't bother trying to keep 
+    # the metadata or flags, as we can recover these from the original.
     tables.nodes.set_columns(
-        flags=flags,
-        time=tables.nodes.time + 1,
-        population=tables.nodes.population,
-        individual=tables.nodes.individual,
-        metadata=tables.nodes.metadata,
-        metadata_offset=tables.nodes.metadata_offset)
-    # Need to set ancestral and derived states to 0/1. This is a hack and 
-    # won't be necessary in later versions of tsinfer where the full data
-    # in the ancestors tree sequence is used.
-    num_sites = len(tables.sites)
-    tables.sites.set_columns(
-        position=tables.sites.position,
-        ancestral_state=np.zeros_like(tables.sites.ancestral_state) + ord("0"),
-        ancestral_state_offset=np.arange(num_sites + 1, dtype=np.uint32),
-        metadata=tables.sites.metadata,
-        metadata_offset=tables.sites.metadata_offset)
-    tables.mutations.set_columns(
-        site=tables.mutations.site,
-        node=tables.mutations.node,
-        parent=tables.mutations.parent,
-        derived_state=np.zeros_like(tables.sites.ancestral_state) +  ord("1"),
-        derived_state_offset=np.arange(num_sites + 1, dtype=np.uint32),
-        metadata=tables.sites.metadata,
-        metadata_offset=tables.sites.metadata_offset)
+        flags=np.ones_like(tables.nodes.flags),
+        time=tables.nodes.time + 1)
+    # Reduce this to the site topology now to make things as quick as possible.
+    tables.simplify(reduce_to_site_topology=True, filter_sites=False)
     tg_ancestors_ts = tables.tree_sequence()
+    print("Reduced to :", tg_ancestors_ts.num_nodes, tg_ancestors_ts.num_edges)
     tg_ancestors_ts.dump(ancestors_ts_file)
 
     # Now create a new samples file to get rid of the missing sites.
