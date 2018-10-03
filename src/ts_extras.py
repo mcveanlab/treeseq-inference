@@ -7,7 +7,7 @@ is addressed
 import numpy as np
 
 def treestring(name, tree):
-    return "TREE " + name + " = [&R] " + tree.newick(precision=14,time_scale=(1/4))[:-1] + ":0;\n"
+    return "TREE " + name + " = [&R] " + tree.newick(precision=14)[:-1] + ":0;\n"
 
 def header(n_tips, node_labels):
     #convert back to 0-based tip labels, or use string node labels (escaped with single quotes)
@@ -83,7 +83,7 @@ def write_nexus_trees(
             assert t.num_roots == 1, \
                 "Couldn't write Nexus to {} as Newick at interval {} has more than one root".format(
                 treefile.name, t.get_interval())
-            treefile.write(treestring(str(t.get_interval()[1])), t)
+            treefile.write(treestring(str(t.get_interval()[1]), t))
     treefile.write(footer())
 
 def save_nexus_trees(ts, fn, **kwargs):
