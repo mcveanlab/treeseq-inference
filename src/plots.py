@@ -2070,6 +2070,7 @@ class MetricAllToolsFigure(Figure):
 
     def plot(self):
         df = self.dataset.data
+        metric = self.metric
         error_params = df[ERROR_COLNAME].unique()
         sample_sizes = df.sample_size.unique()
 
@@ -2089,7 +2090,7 @@ class MetricAllToolsFigure(Figure):
                 group = df_s.groupby(["mutation_rate"])
                 mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
                 for tool_and_metrics_param,setting in self.tools_and_metrics_params.items():
-                    if self.metric.startswith("RF") \
+                    if metric.startswith("RF") \
                         and tool_and_metrics_param.startswith(TSINFER) \
                         and (int(tool_and_metrics_param.rsplit("_",1)[1]) & METRICS_POLYTOMIES_BREAK == 0):
                             # RF metrics are not well behaved for trees with polytomies (i.e. tsinfer trees)
@@ -2097,8 +2098,8 @@ class MetricAllToolsFigure(Figure):
                         continue
                     ax.errorbar(
                         [m['mu'] for m in mean_sem],
-                        [m['mean'][tool_and_metrics_param + "_" + self.metric] for m in mean_sem],
-                        yerr=[m['sem'][tool_and_metrics_param + "_" + self.metric] for m in mean_sem] \
+                        [m['mean'][tool_and_metrics_param + "_" + metric] for m in mean_sem],
+                        yerr=[m['sem'][tool_and_metrics_param + "_" + metric] for m in mean_sem] \
                              if getattr(self, 'error_bars', False) else None,
                         linestyle=setting["linestyle"],
                         fillstyle=fillstyle,
@@ -2367,6 +2368,7 @@ class MetricAllToolsAccuracySweepFigure(Figure):
 
     def plot(self):
         df = self.dataset.data
+        metric = self.metric
         error_params = df[ERROR_COLNAME].unique()
         output_freqs = df[[SELECTED_FREQ_COLNAME, SELECTED_POSTGEN_COLNAME]].drop_duplicates()
         sample_sizes = df.sample_size.unique()
@@ -2384,7 +2386,7 @@ class MetricAllToolsAccuracySweepFigure(Figure):
                 if j == len(output_freqs) - 1:
                     ax.set_xlabel("Neutral mutation rate")
                 if k == 0:
-                    ax.set_ylabel(getattr(self, 'y_axis_label', self.metric_titles[self.metric].replace("Kendall-Colijn", "KC")) + 
+                    ax.set_ylabel(getattr(self, 'y_axis_label', self.metric_titles[metric].replace("Kendall-Colijn", "KC")) + 
                         " @ {}{}".format(
                             "fixation " if np.isclose(freq, 1.0) else "freq {}".format(freq),
                             "+{} gens".format(int(gens)) if gens else ""))
@@ -2401,19 +2403,19 @@ class MetricAllToolsAccuracySweepFigure(Figure):
                     #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
                     mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
                     for tool_and_metrics_param, setting in self.tools_and_metrics_params.items():
-                        if self.metric.startswith("RF") \
+                        if metric.startswith("RF") \
                             and tool_and_metrics_param.startswith(TSINFER) \
                             and (int(tool_and_metrics_param.rsplit("_",1)[1]) & METRICS_POLYTOMIES_BREAK == 0):
                                 # RF metrics are not well behaved for trees with polytomies (i.e. tsinfer trees)
                                 # so we should omit tsinfer cases where METRICS_POLYTOMIES_BREAK == 0
                             continue
-                        if all(np.isnan(m['mean'][tool_and_metrics_param + "_" + self.metric]) for m in mean_sem):
+                        if all(np.isnan(m['mean'][tool_and_metrics_param + "_" + metric]) for m in mean_sem):
                             #don't plot if all NAs
                             continue
                         ax.errorbar(
                             [m['mu'] for m in mean_sem],
-                            [m['mean'][tool_and_metrics_param + "_" + self.metric] for m in mean_sem],
-                            yerr=[m['sem'][tool_and_metrics_param + "_" + self.metric] for m in mean_sem] \
+                            [m['mean'][tool_and_metrics_param + "_" + metric] for m in mean_sem],
+                            yerr=[m['sem'][tool_and_metrics_param + "_" + metric] for m in mean_sem] \
                                 if getattr(self, 'error_bars', False) else None,
                             color=setting["col"],
                             linestyle=setting["linestyle"],
@@ -2517,8 +2519,8 @@ class MetricsSubsamplingFigure(Figure):
                 for l in self.tools_and_metrics_params.keys()]
             first_legend = axes[0][-1].legend(
                 artists, tool_labels, numpoints=1, labelspacing=0.1, loc="lower right")
-            fig.suptitle('ARG metric for trees subsampled down to {} tips, error = {}'.format(
-                restrict_sample_size_comparison[0], error_param))
+            fig.suptitle('ARG metric for trees subsampled down to {} tips'.format(
+                restrict_sample_size_comparison[0], error_label(error)))
             figures.append(fig)
         self.savefig(*figures)
 
@@ -2532,6 +2534,7 @@ class MetricARGweaverParametersFigure(Figure):
 
     def plot(self):
         df = self.dataset.data
+        metric = self.metric
         tools = self.dataset.tools
         AW_burnin = df.ARGweaver_burnin.unique()
         AW_discrete_timeslices = df.ARGweaver_ntimes.unique()
@@ -2547,20 +2550,20 @@ class MetricARGweaverParametersFigure(Figure):
             ax.set_xlabel("Mutation rate")
             ax.set_xscale('log')
             if k == 0:
-                ax.set_ylabel(getattr(self, 'y_axis_label', self.metric + " metric"))
+                ax.set_ylabel(getattr(self, 'y_axis_label', metric + " metric"))
 
             #get the only tsinfer data for this selection (regardless of ntimes)
             tool = TSINFER
-            df_s = df[np.logical_not(df[tool + "_" + self.metric].isnull())]
+            df_s = df[np.logical_not(df[tool + "_" + metric].isnull())]
             group = df_s.groupby(["mutation_rate"])
             mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
             if getattr(self, 'error_bars', None):
-                yerr=[m['sem'][tool + "_" + self.metric] for m in mean_sem]
+                yerr=[m['sem'][tool + "_" + metric] for m in mean_sem]
             else:
                 yerr = None
             ax.errorbar(
                 [m['mu'] for m in mean_sem],
-                [m['mean'][tool + "_" + self.metric] for m in mean_sem],
+                [m['mean'][tool + "_" + metric] for m in mean_sem],
                 yerr=yerr,
                 linestyle=linestyles[0],
                 color=self.tools[tool]["col"],
@@ -2574,12 +2577,12 @@ class MetricARGweaverParametersFigure(Figure):
                 group = df_s.groupby(["mutation_rate"])
                 mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
                 if getattr(self, 'error_bars', None):
-                    yerr=[m['sem'][tool + "_" + self.metric] for m in mean_sem]
+                    yerr=[m['sem'][tool + "_" + metric] for m in mean_sem]
                 else:
                     yerr = None
                 ax.errorbar(
                     [m['mu'] for m in mean_sem],
-                    [m['mean'][tool + "_" + self.metric] for m in mean_sem],
+                    [m['mean'][tool + "_" + metric] for m in mean_sem],
                     yerr=yerr,
                     linestyle=linestyle,
                     color=self.tools[tool]["col"],
