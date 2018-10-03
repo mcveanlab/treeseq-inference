@@ -19,9 +19,12 @@ class Figure(object):
         datafile_name = "data/{}.csv".format(self.name)
         self.data = pd.read_csv(datafile_name)
 
-    def save(self):
-        plt.savefig("figures/{}.pdf".format(self.name))
-
+    def save(self, figure_name=None):
+        if figure_name is None:
+            figure_name = self.name
+        print("Saving figure ", figure_name)
+        plt.savefig("figures/{}.pdf".format(figure_name))
+        plt.clf()
 
 
 class StoringEveryone(Figure):
@@ -86,6 +89,26 @@ class StoringEveryone(Figure):
 class SampleEdges(Figure):
     name = "sample_edges"
 
+    def plot_region(self, df, dataset, region):
+        fig = plt.figure(figsize=(14,6))
+        ax = fig.add_subplot(111)
+        ax.plot(df.sample_edges.values, "o")
+        breakpoints = np.where(df.population.values[1:] != df.population.values[:-1])[0]
+        breakpoints = list(breakpoints) + [len(df)]
+        last = 0
+        y = df.sample_edges.min()
+        for bp in breakpoints:
+            label = df.population[bp - 1]
+            x = last + (bp - last) / 2
+            ax.annotate(label, xy=(x, y), horizontalalignment='centre', verticalalignment='top', rotation=90)
+            last = bp
+        ax.set_xticks(np.array(breakpoints) + 0.5)
+        ax.set_xticklabels([])
+        ax.set_xlim(-0.5, len(df) - 0.5)
+        ax.set_title("{}:{}".format(dataset.upper(), region))
+        ax.grid(axis="x")
+        self.save("{}_{}_{}".format(self.name, dataset, region))
+
     def plot(self):
         full_df = self.data
 
@@ -125,6 +148,13 @@ class SampleEdges(Figure):
         axes[0].set_ylim(0, 1500)
         axes[1].set_ylim(0, 3500)
         self.save()
+
+        # Also plot each region
+        for dataset, region in set(zip(full_df.dataset, full_df.region)):
+            df = full_df[(full_df.dataset == dataset) & (full_df.region == region)]
+            df = df.sort_values(by=["population", "sample", "strand"])
+            df = df.reset_index()
+            self.plot_region(df, dataset, region)
 
 
 def main():
