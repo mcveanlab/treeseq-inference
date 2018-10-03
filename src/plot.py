@@ -5,7 +5,7 @@ import argparse
 
 import matplotlib
 matplotlib.use('Agg')
-import matplotlib.pyplot as pyplot
+import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 import humanize
@@ -20,7 +20,7 @@ class Figure(object):
         self.data = pd.read_csv(datafile_name)
 
     def save(self):
-        pyplot.savefig("figures/{}.pdf".format(self.name))
+        plt.savefig("figures/{}.pdf".format(self.name))
 
 
 
@@ -35,7 +35,7 @@ class StoringEveryone(Figure):
         df = self.data
         df = df[df.sample_size > 100]
 
-        fig = pyplot.figure()
+        fig = plt.figure()
         ax1 = fig.add_subplot(111)
         xytext = (18, 0)
         GB = 1024**3
@@ -43,7 +43,7 @@ class StoringEveryone(Figure):
 
         index = df.vcf > 0
         line, = ax1.loglog(df.sample_size[index], df.vcf[index], "^", label="VCF")
-        ax1.loglog(df.sample_size, df.vcf_fit, "--", color=line.get_color())
+        ax1.loglog(df.sample_size, df.vcf_fit, "--", color=line.get_color(), label="")
         largest_value = np.array(df.vcf_fit)[-1]
         ax1.annotate(
             humanize.naturalsize(largest_value * GB, binary=True, format="%d"),
@@ -51,7 +51,7 @@ class StoringEveryone(Figure):
             xy=(largest_n, largest_value), xycoords="data")
 
         line, = ax1.loglog(df.sample_size[index], df.bcf[index], "s", label="BCF")
-        ax1.loglog(df.sample_size, df.bcf_fit, "--", color=line.get_color())
+        ax1.loglog(df.sample_size, df.bcf_fit, "--", color=line.get_color(), label="")
         largest_value = np.array(df.bcf_fit)[-1]
         ax1.annotate(
             humanize.naturalsize(largest_value * GB, binary=True, format="%d"),
@@ -60,7 +60,7 @@ class StoringEveryone(Figure):
 
         line, = ax1.loglog(
             df.sample_size, df.uncompressed, "o", label=".trees")
-        ax1.loglog(df.sample_size, df.tsk_fit, "--", color=line.get_color())
+        ax1.loglog(df.sample_size, df.tsk_fit, "--", color=line.get_color(), label="")
         largest_value = np.array(df.tsk_fit)[-1]
         ax1.annotate(
             humanize.naturalsize(largest_value * GB, binary=True, format="%d"),
@@ -69,7 +69,7 @@ class StoringEveryone(Figure):
 
         line, = ax1.loglog(
             df.sample_size, df.compressed, "*", label=".trees.gz")
-        ax1.loglog(df.sample_size, df.tskz_fit, "--", color=line.get_color())
+        ax1.loglog(df.sample_size, df.tskz_fit, "--", color=line.get_color(), label="")
         largest_value = np.array(df.tskz_fit)[-1]
         ax1.annotate(
             humanize.naturalsize(largest_value * GB, binary=True, format="%d"),
@@ -78,13 +78,57 @@ class StoringEveryone(Figure):
 
         ax1.set_xlabel("Number of chromosomes")
         ax1.set_ylabel("File size (GiB)")
-        pyplot.legend()
-        # pyplot.tight_layout()
+        plt.legend()
+        # plt.tight_layout()
+        self.save()
+
+
+class SampleEdges(Figure):
+    name = "sample_edges"
+
+    def plot(self):
+        full_df = self.data
+
+        fig, axes = plt.subplots(2, figsize=(14,6))
+        for ax, dataset in zip(axes, ["1kg", "sgdp"]):
+            df = full_df[full_df.dataset == dataset]
+            df = df.sort_values(by=["region", "population", "sample", "strand"])
+            df = df.reset_index()
+
+            ax.plot(df.sample_edges.values)
+            breakpoints = np.where(df.region.values[1:] != df.region.values[:-1])[0]
+            for bp in breakpoints:
+                ax.axvline(x=bp, ls="--", color="black")
+
+            last = 0
+            for j, bp in enumerate(list(breakpoints) + [len(df)]):
+                x = last + (bp - last) / 2
+                ax.annotate(df.region[bp - 1], xy=(x, 200), horizontalalignment='center')
+                last = bp
+
+            breakpoints = np.where(df.population.values[1:] != df.population.values[:-1])[0]
+            breakpoints = list(breakpoints) + [len(df)]
+            ax.set_xticks(breakpoints)
+            ax.set_xticklabels([])
+            ax.grid(axis="x")
+            ax.set_xlim(0, len(df))
+
+            if dataset == "1kg":
+                last = 0
+                for bp in breakpoints:
+                    x = last + (bp - last) / 2
+                    last = bp
+                    ax.annotate(
+                        df.population[int(x)], xy=(x, 0), horizontalalignment='right',
+                        verticalalignment='top', rotation=270)
+
+        axes[0].set_ylim(0, 1500)
+        axes[1].set_ylim(0, 3500)
         self.save()
 
 
 def main():
-    figures = [StoringEveryone]
+    figures = [StoringEveryone, SampleEdges]
 
     name_map = {fig.name: fig for fig in figures}
 
