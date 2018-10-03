@@ -125,52 +125,94 @@ def run_benchmark():
 
     benchmark_bcf(ts)
 
-def run_process():
-    sample_size = []
-    uncompressed = []
-    compressed = []
-    vcf = []
-    bcf = []
+def run_convert_files():
     for k in range(1, 8):
         n = 10**k
         filename = os.path.join(data_prefix, "{}.trees".format(n))
         if not os.path.exists(filename):
             break
-        sample_size.append(n)
-        uncompressed.append(os.path.getsize(filename))
         ts = msprime.load(filename)
         filename += ".gz"
-        compressed.append(os.path.getsize(filename))
         if k < 7:
             filename = os.path.join(data_prefix, "{}.vcf".format(n))
             with open(filename, "w") as vcf_file:
                 ts.write_vcf(vcf_file, 2)
             print("Wrote ", filename)
-            vcf.append(os.path.getsize(filename))
 
             bcf_filename = os.path.join(data_prefix, "{}.bcf".format(n))
             subprocess.check_call(["bcftools view -O b {} > {}".format(
                 filename, bcf_filename)], shell=True)
-            bcf.append(os.path.getsize(bcf_filename))
-        else:
-            vcf.append(0)
-            bcf.append(0)
 
+
+def run_make_data():
+    uncompressed = []
+    compressed = []
+    vcf = []
+    bcf = []
+    sample_size = 10**np.arange(1, 11)
+    uncompressed = np.zeros(sample_size.shape)
+    compressed = np.zeros(sample_size.shape)
+    vcf = np.zeros(sample_size.shape)
+    bcf = np.zeros(sample_size.shape)
 
     GB = 1024**3
-    sample_size = np.array(sample_size)
-    compressed = np.array(compressed) / GB
-    uncompressed = np.array(uncompressed) / GB
-    vcf = np.array(vcf) / GB
-    bcf = np.array(bcf) / GB
+    for j, n in enumerate(sample_size):
+        files = [
+            (uncompressed, os.path.join(data_prefix, "{}.trees".format(n))),
+            (compressed, os.path.join(data_prefix, "{}.trees.gz".format(n))),
+            (vcf, os.path.join(data_prefix, "{}.vcf".format(n))),
+            (bcf, os.path.join(data_prefix, "{}.bcf".format(n)))]
+        for array, filename in files:
+            if os.path.exists(filename):
+                array[j] = os.path.getsize(filename) / GB
+
+    # Fit the model for the observed data.
+    rho = 4 * Ne * recombination_rate * length
+
+    def additive_model(n, a, b, c):
+        # The model is based on the proof that we need O(n + rho log n) space
+        # to store edge. We then need a further O(theta log n) space to
+        # store the mutations. Because rho == mu, we don't need a separate term
+        # for rho, and represent them both by z. Thus, a here is the per-edge
+        # cost, b is the per site cost, and c is a constant for the overheads.
+        z = rho * np.log(n)
+        return a * (n + z) + b * z + c
+
+    def mulplicative_model(n, a, b, c):
+        # This is the number of sites.
+        z = rho * np.log(n)
+        return a * n * z + b * z + c
+
+
+    index = uncompressed > 0
+    tsk_fit_params, _ = optimize.curve_fit(
+        additive_model, sample_size[index][:-1], uncompressed[index][:-1])
+    tsk_fit = additive_model(sample_size, *tsk_fit_params)
+    tskz_fit_params, _ = optimize.curve_fit(
+        additive_model, sample_size[index][:-1], compressed[index][:-1])
+    tskz_fit = additive_model(sample_size, *tskz_fit_params)
+
+    index = vcf > 0
+    vcf_fit_params, _ = optimize.curve_fit(
+        mulplicative_model, sample_size[index], vcf[index])
+    vcf_fit = mulplicative_model(sample_size, *vcf_fit_params)
+    bcf_fit_params, _ = optimize.curve_fit(
+        mulplicative_model, sample_size[index], bcf[index])
+    bcf_fit = mulplicative_model(sample_size, *bcf_fit_params)
 
     df = pd.DataFrame({
         "sample_size": sample_size,
         "compressed": compressed,
         "uncompressed": uncompressed,
-        "vcf": vcf, "bcf": bcf})
+        "vcf": vcf,
+        "bcf": bcf,
+        "vcf_fit": vcf_fit,
+        "bcf_fit": bcf_fit,
+        "tsk_fit": tsk_fit,
+        "tskz_fit": tskz_fit})
     print(df)
     df.to_csv(datafile)
+
 
 
 def run_plot():
@@ -267,8 +309,11 @@ if __name__ == "__main__":
     subparser = subparsers.add_parser("simulate")
     subparser.set_defaults(func=run_simulate)
 
-    subparser = subparsers.add_parser("process")
-    subparser.set_defaults(func=run_process)
+    subparser = subparsers.add_parser("convert-files")
+    subparser.set_defaults(func=run_convert_files)
+
+    subparser = subparsers.add_parser("make-data")
+    subparser.set_defaults(func=run_make_data)
 
     subparser = subparsers.add_parser("benchmark")
     subparser.set_defaults(func=run_benchmark)
