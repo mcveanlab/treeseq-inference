@@ -1449,7 +1449,7 @@ class AllToolsDataset(Dataset):
     #params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
-        ERROR_COLNAME : [0, self.error_filename.replace(".csv","")],
+        ERROR_COLNAME : [0, Dataset.error_filename.replace(".csv","")],
     }
     
     def single_sim(self, row_id, sim_params, rng):
@@ -1488,7 +1488,7 @@ class AllToolsAccuracyDataset(AllToolsDataset):
     #params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
-        ERROR_COLNAME : [0, self.error_filename.replace(".csv","")],
+        ERROR_COLNAME : [0, AllToolsDataset.error_filename.replace(".csv","")],
     }
 
 class AllToolsPerformanceDataset(AllToolsDataset):
@@ -1663,7 +1663,7 @@ class SubsamplingDataset(Dataset):
     within_sim_params = {
         'tsinfer_srb' : [True], #, False], #should we use shared recombinations ("path compression")
         SUBSAMPLE_COLNAME:  [12, 50, 100, 500, 1000], #we infer based on this many samples
-        ERROR_COLNAME: [0, self.error_filename.replace(".csv","")]
+        ERROR_COLNAME: [0, Dataset.error_filename.replace(".csv","")]
     }
 
 
@@ -1716,7 +1716,7 @@ class AllToolsAccuracyWithDemographyDataset(Dataset):
     #params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
-        ERROR_COLNAME : [0, self.error_filename.replace(".csv","")],
+        ERROR_COLNAME : [0, Dataset.error_filename.replace(".csv","")],
     }
 
     def single_sim(self, row_id, sim_params, rng):
@@ -1765,7 +1765,7 @@ class AllToolsAccuracyWithSelectiveSweepDataset(Dataset):
     within_sim_params = {
         #NB - these are strings because they are output as part of the filename
         'stop_freqs': ['0.2', '0.5', '0.8', '1.0', ('1.0', 200), ('1.0', 1000)], #frequencies when file is saved.
-        ERROR_COLNAME : [0, self.error_filename.replace(".csv","")],
+        ERROR_COLNAME : [0, Dataset.error_filename.replace(".csv","")],
     }
 
     extra_sim_cols = [SIMTOOL_COLNAME, SELECTION_COEFF_COLNAME,
