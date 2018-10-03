@@ -1044,17 +1044,7 @@ class Dataset(object):
                     logging.warning("Empirical error matrix not available at: {}".format(
                         self.error_filename))
                     raise
-                #make new genotypes with error
-                # Reject any columns that have no 1s or no zeros.
-                # Unless the original also has them, as occasionally we have
-                # some sims (e.g. under selection) where a variant is fixed
-                while True:
-                    genotypes = make_errors_genotype_model(v.genotypes,closest_freq)
-                    s = np.sum(genotypes)
-                    if 0 < s < ts.sample_size:
-                        break
-                    if s == np.sum(v.genotypes):
-                        break
+                genotypes = make_errors_genotype_model(v.genotypes,closest_freq)
                 if record_rate:
                     bits_flipped += np.sum(np.logical_xor(genotypes, v.genotypes))
 
