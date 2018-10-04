@@ -95,6 +95,10 @@ GENOTYPES_BASE=http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/suppor
 		--reference-name=${REFERENCE_NAME}\
 		$@  > $@.report
 
+1kg_%.trees.ancestry.npy: 1kg_%.trees
+	python3 tsutil.py compute-1kg-ancestry $^ $@ 
+
+
 #############################################
 # SGDP data.
 #############################################

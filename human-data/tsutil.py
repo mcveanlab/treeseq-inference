@@ -4,6 +4,8 @@ Various utilities for manipulating tree sequences and running tsinfer.
 import argparse
 import subprocess
 import time
+import collections
+import json
 import sys
 
 import msprime
@@ -164,6 +166,17 @@ def run_combine_ukbb_1kg(args):
         
     print(samples)
 
+def run_compute_1kg_ancestry(args):
+    ts = msprime.load(args.input)
+    # This is specialised for the 1000 genomes metadata format. We could compute the 
+    # ancestry for all populations, but it's a good bit slower.
+    superpops = collections.defaultdict(list)
+    for population in ts.populations():
+        md = json.loads(population.metadata.decode())
+        superpops[md["super_population"]].extend(ts.samples(population.id))
+    A = tsinfer.mean_sample_ancestry(ts, list(superpops.values()), show_progress=True)
+    np.save(args.output, A)
+
 
 def main():
 
@@ -196,6 +209,13 @@ def main():
         "--num-variants", type=int, default=None,
         help="Number of variants to benchmark genotypes decoding performance on")
     subparser.set_defaults(func=run_benchmark)
+
+    subparser = subparsers.add_parser("compute-1kg-ancestry")
+    subparser.add_argument(
+        "input", type=str, help="Input tree sequence")
+    subparser.add_argument(
+        "output", type=str, help="Filename to write numpy array to.")
+    subparser.set_defaults(func=run_compute_1kg_ancestry)
 
     daiquiri.setup(level="INFO")
 
