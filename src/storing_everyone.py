@@ -11,21 +11,19 @@ import subprocess
 import numpy as np
 import msprime
 import scipy.optimize as optimize
-import scipy.stats as stats
 import pandas as pd
 import humanize
 import cyvcf2
 
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as pyplot
-
 datafile = "data/storing_everyone.csv"
-data_prefix = "tmp__NOBACKUP__"
+data_prefix = "data/raw__NOBACKUP__/storing_everyone"
 mutation_rate = 1e-8
 recombination_rate = 1e-8
 length = 100 * 10**6
 Ne = 10**4
+
+if not os.path.exists(data_prefix):
+    os.mkdir(data_prefix)
 
 
 def run_simulation(sample_size):
@@ -125,6 +123,7 @@ def run_benchmark():
 
     benchmark_bcf(ts)
 
+
 def run_convert_files():
     for k in range(1, 8):
         n = 10**k
@@ -138,22 +137,17 @@ def run_convert_files():
             with open(filename, "w") as vcf_file:
                 ts.write_vcf(vcf_file, 2)
             print("Wrote ", filename)
-
-            bcf_filename = os.path.join(data_prefix, "{}.bcf".format(n))
-            subprocess.check_call(["bcftools view -O b {} > {}".format(
-                filename, bcf_filename)], shell=True)
+            gz_filename = filename + ".gz"
+            subprocess.check_call("gzip -c {} > {}".format(filename, gz_filename))
+            print("Wrote ", gz_filename)
 
 
 def run_make_data():
-    uncompressed = []
-    compressed = []
-    vcf = []
-    bcf = []
     sample_size = 10**np.arange(1, 11)
     uncompressed = np.zeros(sample_size.shape)
     compressed = np.zeros(sample_size.shape)
     vcf = np.zeros(sample_size.shape)
-    bcf = np.zeros(sample_size.shape)
+    vcfz = np.zeros(sample_size.shape)
 
     GB = 1024**3
     for j, n in enumerate(sample_size):
@@ -161,7 +155,7 @@ def run_make_data():
             (uncompressed, os.path.join(data_prefix, "{}.trees".format(n))),
             (compressed, os.path.join(data_prefix, "{}.trees.gz".format(n))),
             (vcf, os.path.join(data_prefix, "{}.vcf".format(n))),
-            (bcf, os.path.join(data_prefix, "{}.bcf".format(n)))]
+            (vcfz, os.path.join(data_prefix, "{}.vcf.gz".format(n)))]
         for array, filename in files:
             if os.path.exists(filename):
                 array[j] = os.path.getsize(filename) / GB
@@ -183,7 +177,6 @@ def run_make_data():
         z = rho * np.log(n)
         return a * n * z + b * z + c
 
-
     index = uncompressed > 0
     tsk_fit_params, _ = optimize.curve_fit(
         additive_model, sample_size[index][:-1], uncompressed[index][:-1])
@@ -196,106 +189,22 @@ def run_make_data():
     vcf_fit_params, _ = optimize.curve_fit(
         mulplicative_model, sample_size[index], vcf[index])
     vcf_fit = mulplicative_model(sample_size, *vcf_fit_params)
-    bcf_fit_params, _ = optimize.curve_fit(
-        mulplicative_model, sample_size[index], bcf[index])
-    bcf_fit = mulplicative_model(sample_size, *bcf_fit_params)
+    vcfz_fit_params, _ = optimize.curve_fit(
+        mulplicative_model, sample_size[index], vcfz[index])
+    vcfz_fit = mulplicative_model(sample_size, *vcfz_fit_params)
 
     df = pd.DataFrame({
         "sample_size": sample_size,
         "compressed": compressed,
         "uncompressed": uncompressed,
         "vcf": vcf,
-        "bcf": bcf,
+        "vcfz": vcfz,
         "vcf_fit": vcf_fit,
-        "bcf_fit": bcf_fit,
+        "vcfz_fit": vcfz_fit,
         "tsk_fit": tsk_fit,
         "tskz_fit": tskz_fit})
     print(df)
     df.to_csv(datafile)
-
-
-
-def run_plot():
-    GB = 1024**3
-    # Fit the model for the observed data. Wek
-    rho = 4 * Ne * recombination_rate * length
-
-    def additive_model(n, a, b, c):
-        # The model is based on the proof that we need O(n + rho log n) space
-        # to store edge. We then need a further O(theta log n) space to
-        # store the mutations. Because rho == mu, we don't need a separate term
-        # for rho, and represent them both by z. Thus, a here is the per-edge
-        # cost, b is the per site cost, and c is a constant for the overheads.
-        z = rho * np.log(n)
-        return a * (n + z) + b * z + c
-
-    def mulplicative_model(n, a, b, c):
-        # This is the number of sites.
-        z = rho * np.log(n)
-        return a * n * z + b * z + c
-
-    df = pd.read_csv(datafile)
-    df = df[df.sample_size > 100]
-    projected_n = 10**np.arange(3, 11)
-
-    msp_fit_params, _ = optimize.curve_fit(
-        additive_model, df.sample_size[:-1], df.uncompressed[:-1])
-    msp_fit = additive_model(projected_n, *msp_fit_params)
-    mspz_fit_params, _ = optimize.curve_fit(
-        additive_model, df.sample_size[:-1], df.compressed[:-1])
-    mspz_fit = additive_model(projected_n, *mspz_fit_params)
-
-    index = df.sample_size < 10**6
-    vcf_fit_params, _ = optimize.curve_fit(
-        mulplicative_model, df.sample_size[index], df.vcf[index])
-    vcf_fit = mulplicative_model(projected_n, *vcf_fit_params)
-
-    bcf_fit_params, _ = optimize.curve_fit(
-        mulplicative_model, df.sample_size[index], df.bcf[index])
-    bcf_fit = mulplicative_model(projected_n, *bcf_fit_params)
-    bcf_fit_params, _ = optimize.curve_fit(
-        mulplicative_model, df.sample_size[index], df.bcf[index])
-
-    fig = pyplot.figure()
-    ax1 = fig.add_subplot(111)
-    xytext = (18, 0)
-
-    index = df.vcf > 0
-    line, = ax1.loglog(df.sample_size[index], df.vcf[index], "^", label="VCF")
-    ax1.loglog(projected_n, vcf_fit, "--", color=line.get_color())
-    ax1.annotate(
-        humanize.naturalsize(vcf_fit[-1] * GB, binary=True, format="%d"),
-        textcoords="offset points", xytext=xytext,
-        xy=(projected_n[-1], vcf_fit[-1]), xycoords="data")
-
-    line, = ax1.loglog(df.sample_size[index], df.bcf[index], "s", label="BCF")
-    ax1.loglog(projected_n, bcf_fit, "--", color=line.get_color())
-    ax1.annotate(
-        humanize.naturalsize(bcf_fit[-1] * GB, binary=True, format="%d"),
-        textcoords="offset points", xytext=xytext,
-        xy=(projected_n[-1], bcf_fit[-1]), xycoords="data")
-
-    line, = ax1.loglog(
-        df.sample_size, df.uncompressed, "o", label=".trees")
-    ax1.loglog(projected_n, msp_fit, "--", color=line.get_color())
-    ax1.annotate(
-        humanize.naturalsize(msp_fit[-1] * GB, binary=True, format="%d"),
-        textcoords="offset points", xytext=xytext,
-        xy=(projected_n[-1], msp_fit[-1]), xycoords="data")
-
-    line, = ax1.loglog(
-        df.sample_size, df.compressed, "*", label=".trees.gz")
-    ax1.loglog(projected_n, mspz_fit, "--", color=line.get_color())
-    ax1.annotate(
-        humanize.naturalsize(mspz_fit[-1] * GB, binary=True, format="%d"),
-        textcoords="offset points", xytext=xytext,
-        xy=(projected_n[-1], mspz_fit[-1]), xycoords="data")
-
-    ax1.set_xlabel("Number of chromosomes")
-    ax1.set_ylabel("File size (GiB)")
-    pyplot.legend()
-    # pyplot.tight_layout()
-    pyplot.savefig("figures/storing_everyone.pdf")
 
 
 if __name__ == "__main__":
@@ -317,9 +226,6 @@ if __name__ == "__main__":
 
     subparser = subparsers.add_parser("benchmark")
     subparser.set_defaults(func=run_benchmark)
-
-    subparser = subparsers.add_parser("plot")
-    subparser.set_defaults(func=run_plot)
 
     args = parser.parse_args()
     args.func()

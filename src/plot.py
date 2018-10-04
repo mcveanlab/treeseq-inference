@@ -45,7 +45,7 @@ class StoringEveryone(Figure):
         largest_n = np.array(df.sample_size)[-1]
 
         index = df.vcf > 0
-        line, = ax1.loglog(df.sample_size[index], df.vcf[index], "^", label="VCF")
+        line, = ax1.loglog(df.sample_size[index], df.vcf[index], "^", label=".vcf")
         ax1.loglog(df.sample_size, df.vcf_fit, "--", color=line.get_color(), label="")
         largest_value = np.array(df.vcf_fit)[-1]
         ax1.annotate(
@@ -53,9 +53,9 @@ class StoringEveryone(Figure):
             textcoords="offset points", xytext=xytext,
             xy=(largest_n, largest_value), xycoords="data")
 
-        line, = ax1.loglog(df.sample_size[index], df.bcf[index], "s", label="BCF")
-        ax1.loglog(df.sample_size, df.bcf_fit, "--", color=line.get_color(), label="")
-        largest_value = np.array(df.bcf_fit)[-1]
+        line, = ax1.loglog(df.sample_size[index], df.vcfz[index], "s", label=".vcf.gz")
+        ax1.loglog(df.sample_size, df.vcfz_fit, "--", color=line.get_color(), label="")
+        largest_value = np.array(df.vcfz_fit)[-1]
         ax1.annotate(
             humanize.naturalsize(largest_value * GB, binary=True, format="%d"),
             textcoords="offset points", xytext=xytext,
