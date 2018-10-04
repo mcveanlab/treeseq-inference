@@ -4,6 +4,8 @@ Various utilities for manipulating tree sequences and running tsinfer.
 import argparse
 import subprocess
 import time
+import collections
+import json
 import sys
 
 import msprime
@@ -85,56 +87,37 @@ def run_benchmark(args):
 
 def run_combine_ukbb_1kg(args):
     ukbb_samples_file = "ukbb_{}.samples".format(args.chromosome)
-    tg_ts_file = "1kg_{}.nosimplify.trees".format(args.chromosome)
+    tg_ancestors_ts_file = "1kg_{}.ancestors.trees".format(args.chromosome)
     ancestors_ts_file = "1kg_ukbb_{}.ancestors.trees".format(args.chromosome)
     samples_file = "1kg_ukbb_{}.samples".format(args.chromosome)
 
     ukbb_samples = tsinfer.load(ukbb_samples_file)
-    tg_ts = msprime.load(tg_ts_file)
-    print("Loaded ts:", tg_ts.num_nodes, tg_ts.num_edges)
+    tg_ancestors_ts = msprime.load(tg_ancestors_ts_file)
+    print("Loaded ts:", tg_ancestors_ts.num_nodes, tg_ancestors_ts.num_edges)
      
     # Subset the sites down to the UKBB sites.
-    tables = tg_ts.dump_tables()
+    tables = tg_ancestors_ts.dump_tables()
     ukbb_sites = set(ukbb_samples.sites_position[:])
     ancestors_sites = set(tables.sites.position[:])
     intersecting_sites = ancestors_sites & ukbb_sites
-    # Create a map from position to alleles so we can make sure they are 
-    # compatible between the two datasets.
-    tg_alleles = {}
-    for site in tg_ts.sites():
-        if site.position in intersecting_sites:
-            assert len(site.mutations) == 1
-            tg_alleles[site.position] = [
-                site.ancestral_state, site.mutations[0].derived_state]
-    
-    for pos, alleles in zip(ukbb_samples.sites_position[:], ukbb_samples.sites_alleles[:]):
-        if pos in tg_alleles and alleles != tg_alleles[pos]:
-            print(
-                "Removing site with incompatible alleles:", pos, alleles, 
-                tg_alleles[pos])
-            intersecting_sites.remove(pos)
 
     print("Intersecting sites = ", len(intersecting_sites))
     tables.sites.clear()
     tables.mutations.clear()
-    for site in tg_ts.sites():
+    for site in tg_ancestors_ts.sites():
         if site.position in intersecting_sites:
-            # The ancestors tree sequence requires that sites be 0/1
-            site_id = tables.sites.add_row(position=site.position, ancestral_state="0")
+            site_id = tables.sites.add_row(
+                position=site.position, ancestral_state=site.ancestral_state)
             assert len(site.mutations) == 1
             mutation = site.mutations[0]
-            tables.mutations.add_row(site=site_id, node=mutation.node, derived_state="1")
+            tables.mutations.add_row(
+                site=site_id, node=mutation.node, derived_state=mutation.derived_state)
 
-    # Update the nodes to mark everything as a sample. Don't bother trying to keep 
-    # the metadata or flags, as we can recover these from the original.
-    tables.nodes.set_columns(
-        flags=np.ones_like(tables.nodes.flags),
-        time=tables.nodes.time + 1)
     # Reduce this to the site topology now to make things as quick as possible.
     tables.simplify(reduce_to_site_topology=True, filter_sites=False)
-    tg_ancestors_ts = tables.tree_sequence()
-    print("Reduced to :", tg_ancestors_ts.num_nodes, tg_ancestors_ts.num_edges)
-    tg_ancestors_ts.dump(ancestors_ts_file)
+    reduced_ancestors_ts = tables.tree_sequence()
+    print("Reduced to :", reduced_ancestors_ts.num_nodes, reduced_ancestors_ts.num_edges)
+    reduced_ancestors_ts.dump(ancestors_ts_file)
 
     # Now create a new samples file to get rid of the missing sites.
     git_hash = subprocess.check_output(["git", "rev-parse", "HEAD"])
@@ -163,6 +146,17 @@ def run_combine_ukbb_1kg(args):
             command=sys.argv[0], args=sys.argv[1:], git=git_provenance)
         
     print(samples)
+
+def run_compute_1kg_ancestry(args):
+    ts = msprime.load(args.input)
+    # This is specialised for the 1000 genomes metadata format. We could compute the 
+    # ancestry for all populations, but it's a good bit slower.
+    superpops = collections.defaultdict(list)
+    for population in ts.populations():
+        md = json.loads(population.metadata.decode())
+        superpops[md["super_population"]].extend(ts.samples(population.id))
+    A = tsinfer.mean_sample_ancestry(ts, list(superpops.values()), show_progress=True)
+    np.save(args.output, A)
 
 
 def main():
@@ -196,6 +190,13 @@ def main():
         "--num-variants", type=int, default=None,
         help="Number of variants to benchmark genotypes decoding performance on")
     subparser.set_defaults(func=run_benchmark)
+
+    subparser = subparsers.add_parser("compute-1kg-ancestry")
+    subparser.add_argument(
+        "input", type=str, help="Input tree sequence")
+    subparser.add_argument(
+        "output", type=str, help="Filename to write numpy array to.")
+    subparser.set_defaults(func=run_compute_1kg_ancestry)
 
     daiquiri.setup(level="INFO")
 

@@ -20,7 +20,7 @@ simplebgen: setup.py simplebgenmodule.c
 
 # Any implicit targets that are built will be deleted unless we make them as 'precious'.
 .PRECIOUS: \
-	%.ancestors %.ancestors.trees %.nosimplify.trees %.trees %.trees.gz\
+	%.ancestors %.ancestors.trees %.nosimplify.trees %.nosimplify.nopc.trees %.trees %.trees.gz\
 	%.bcf.csi %.vcf.gz.csi \
 	chr%_ancestral_states.fa \
 	1kg_%_genotypes.bcf 1kg_%.samples
@@ -37,6 +37,9 @@ simplebgen: setup.py simplebgenmodule.c
 
 %.nosimplify.trees: %.ancestors.trees
 	python3 -m tsinfer ms -vp -t ${NUM_THREADS} $*.samples -O $@ --no-simplify
+
+%.nosimplify.nopc.trees: %.ancestors.trees
+	python3 -m tsinfer ms -vp -t ${NUM_THREADS} $*.samples -O $@ --no-simplify --no-path-compression
 
 %.trees: %.nosimplify.trees
 	python3 tsutil.py simplify $^ $@
@@ -94,6 +97,10 @@ GENOTYPES_BASE=http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/suppor
 		--ancestral-states-url=${ANCESTRAL_STATES_URL}\
 		--reference-name=${REFERENCE_NAME}\
 		$@  > $@.report
+
+1kg_%.trees.ancestry.npy: 1kg_%.trees
+	python3 tsutil.py compute-1kg-ancestry $^ $@ 
+
 
 #############################################
 # SGDP data.
