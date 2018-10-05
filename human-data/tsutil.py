@@ -7,12 +7,15 @@ import time
 import collections
 import json
 import sys
+import io
 
 import msprime
 import tsinfer
 import daiquiri
 import numpy as np
 import tqdm
+# Used for newick
+from Bio import Phylo
 
 
 def run_simplify(args):
@@ -26,6 +29,7 @@ def run_augment(sample_data, ancestors_ts, subset, num_threads):
     return tsinfer.augment_ancestors(
         sample_data, ancestors_ts, subset, num_threads=num_threads,
         progress_monitor=progress_monitor)
+
 
 def run_match_samples(sample_data, ancestors_ts, num_threads):
     progress_monitor = tsinfer.cli.ProgressMonitor(enabled=True, match_samples=True)
@@ -42,7 +46,6 @@ def run_sequential_augment(args):
     num_samples = sample_data.num_samples
     ancestors_ts = msprime.load(base + ".ancestors.trees")
 
-    samples = np.arange(num_samples, dtype=int)
     n = 2
     offset = -1
     while n < num_samples // 4:
@@ -58,7 +61,8 @@ def run_sequential_augment(args):
     final_ts = run_match_samples(sample_data, ancestors_ts, args.num_threads)
     final_ts.dump(final_file)
 
-def run_benchmark(args):
+
+def run_benchmark_tskit(args):
 
     before = time.perf_counter()
     ts = msprime.load(args.input)
@@ -75,7 +79,10 @@ def run_benchmark(args):
 
     before = time.perf_counter()
     num_variants = 0
-    for var in ts.variants():
+    # As of msprime 0.6.1, it's a little bit more efficient to specify the full
+    # samples and use the tree traversal based decoding algorithm than the full
+    # sample-lists for UKBB trees. This'll be fixed in the future.
+    for var in ts.variants(samples=ts.samples()):
         if num_variants == args.num_variants:
             break
         num_variants += 1
@@ -83,6 +90,30 @@ def run_benchmark(args):
     total_genotypes = (ts.num_samples * num_variants) / 10**6
     print("Iterated over {} variants in {:.2f}s @ {:.2f} M genotypes/s".format(
         num_variants, duration, total_genotypes / duration))
+
+
+def run_benchmark_newick(args):
+
+    ts = msprime.load(args.input)
+    num_trees = 0
+    total_length = 0
+    total_duration = 0
+    for tree in ts.trees():
+        ns = tree.newick()
+        handle = io.StringIO(ns)
+        before = time.perf_counter()
+        Phylo.read(handle, "newick")
+        total_duration += time.perf_counter() - before
+        total_length += len(ns)
+        num_trees += 1
+        if num_trees == args.num_trees:
+            break
+
+    expected_size = (total_length / num_trees) * ts.num_trees
+    mean_time = total_duration / num_trees
+    print("Expected size of newick file: {:.2f}GiB".format(expected_size / 1024**3))
+    print("Expected time to read {} hours @ {:.2f}/s".format(
+        (mean_time * ts.num_trees) / 3600, 1 / mean_time))
 
 
 def run_combine_ukbb_1kg(args):
@@ -94,7 +125,7 @@ def run_combine_ukbb_1kg(args):
     ukbb_samples = tsinfer.load(ukbb_samples_file)
     tg_ancestors_ts = msprime.load(tg_ancestors_ts_file)
     print("Loaded ts:", tg_ancestors_ts.num_nodes, tg_ancestors_ts.num_edges)
-     
+
     # Subset the sites down to the UKBB sites.
     tables = tg_ancestors_ts.dump_tables()
     ukbb_sites = set(ukbb_samples.sites_position[:])
@@ -127,7 +158,7 @@ def run_combine_ukbb_1kg(args):
         "dir": "human-data",
         "notes:": (
             "Use the Makefile to download and process the upstream data files")}
-    
+
     with tsinfer.SampleData(
             path=samples_file, num_flush_threads=4,
             sequence_length=ukbb_samples.sequence_length) as samples:
@@ -144,12 +175,13 @@ def run_combine_ukbb_1kg(args):
             samples.add_provenance(timestamp, record)
         samples.record_provenance(
             command=sys.argv[0], args=sys.argv[1:], git=git_provenance)
-        
+
     print(samples)
+
 
 def run_compute_1kg_ancestry(args):
     ts = msprime.load(args.input)
-    # This is specialised for the 1000 genomes metadata format. We could compute the 
+    # This is specialised for the 1000 genomes metadata format. We could compute the
     # ancestry for all populations, but it's a good bit slower.
     superpops = collections.defaultdict(list)
     for population in ts.populations():
@@ -183,13 +215,21 @@ def main():
     subparser.add_argument("chromosome", type=str, help="chromosome stem")
     subparser.set_defaults(func=run_combine_ukbb_1kg)
 
-    subparser = subparsers.add_parser("benchmark")
+    subparser = subparsers.add_parser("benchmark-tskit")
     subparser.add_argument(
         "input", type=str, help="Input tree sequence")
     subparser.add_argument(
         "--num-variants", type=int, default=None,
         help="Number of variants to benchmark genotypes decoding performance on")
-    subparser.set_defaults(func=run_benchmark)
+    subparser.set_defaults(func=run_benchmark_tskit)
+
+    subparser = subparsers.add_parser("benchmark-newick")
+    subparser.add_argument(
+        "input", type=str, help="Input tree sequence")
+    subparser.add_argument(
+        "--num-trees", type=int, default=1000,
+        help="Number of trees to benchmark newick size on.")
+    subparser.set_defaults(func=run_benchmark_newick)
 
     subparser = subparsers.add_parser("compute-1kg-ancestry")
     subparser.add_argument(
@@ -203,4 +243,6 @@ def main():
     args = parser.parse_args()
     args.func(args)
 
-main()
+
+if __name__ == "__main__":
+    main()
