@@ -172,11 +172,12 @@ def run_make_data():
         z = rho * np.log(n)
         return a * (n + z) + b * z + c
 
-    def mulplicative_model(n, a, b, c):
-        # This is the number of sites.
-        z = rho * np.log(n)
-        return a * n * z + b * z + c
+    def mulplicative_model(n, a, b):
+        # Fit a simple exponential function.
+        return a * np.power(n, b)
 
+    # Keep on data point back from all these fits so that we can see how the
+    # fit is doing.
     index = uncompressed > 0
     tsk_fit_params, _ = optimize.curve_fit(
         additive_model, sample_size[index][:-1], uncompressed[index][:-1])
@@ -185,12 +186,12 @@ def run_make_data():
         additive_model, sample_size[index][:-1], compressed[index][:-1])
     tskz_fit = additive_model(sample_size, *tskz_fit_params)
 
-    index = vcf > 0
+    index = (vcf > 0) & (sample_size > 10)
     vcf_fit_params, _ = optimize.curve_fit(
-        mulplicative_model, sample_size[index], vcf[index])
+        mulplicative_model, sample_size[index][:-1], vcf[index][:-1])
     vcf_fit = mulplicative_model(sample_size, *vcf_fit_params)
     vcfz_fit_params, _ = optimize.curve_fit(
-        mulplicative_model, sample_size[index], vcfz[index])
+        mulplicative_model, sample_size[index][:-1], vcfz[index][:-1])
     vcfz_fit = mulplicative_model(sample_size, *vcfz_fit_params)
 
     df = pd.DataFrame({
@@ -203,7 +204,6 @@ def run_make_data():
         "vcfz_fit": vcfz_fit,
         "tsk_fit": tsk_fit,
         "tskz_fit": tskz_fit})
-    print(df)
     df.to_csv(datafile)
 
 

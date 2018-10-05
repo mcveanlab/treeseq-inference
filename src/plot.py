@@ -3,12 +3,12 @@
 
 import argparse
 
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 import humanize
+import matplotlib
+matplotlib.use('Agg')  # NOQA
+import matplotlib.pyplot as plt
 
 
 class Figure(object):
@@ -36,7 +36,7 @@ class StoringEveryone(Figure):
 
     def plot(self):
         df = self.data
-        df = df[df.sample_size > 100]
+        df = df[df.sample_size > 10]
 
         fig = plt.figure()
         ax1 = fig.add_subplot(111)
@@ -45,7 +45,7 @@ class StoringEveryone(Figure):
         largest_n = np.array(df.sample_size)[-1]
 
         index = df.vcf > 0
-        line, = ax1.loglog(df.sample_size[index], df.vcf[index], "^", label=".vcf")
+        line, = ax1.loglog(df.sample_size[index], df.vcf[index], "^", label="vcf")
         ax1.loglog(df.sample_size, df.vcf_fit, "--", color=line.get_color(), label="")
         largest_value = np.array(df.vcf_fit)[-1]
         ax1.annotate(
@@ -53,7 +53,7 @@ class StoringEveryone(Figure):
             textcoords="offset points", xytext=xytext,
             xy=(largest_n, largest_value), xycoords="data")
 
-        line, = ax1.loglog(df.sample_size[index], df.vcfz[index], "s", label=".vcf.gz")
+        line, = ax1.loglog(df.sample_size[index], df.vcfz[index], "s", label="vcf.gz")
         ax1.loglog(df.sample_size, df.vcfz_fit, "--", color=line.get_color(), label="")
         largest_value = np.array(df.vcfz_fit)[-1]
         ax1.annotate(
@@ -62,7 +62,7 @@ class StoringEveryone(Figure):
             xy=(largest_n, largest_value), xycoords="data")
 
         line, = ax1.loglog(
-            df.sample_size, df.uncompressed, "o", label=".trees")
+            df.sample_size, df.uncompressed, "o", label="trees")
         ax1.loglog(df.sample_size, df.tsk_fit, "--", color=line.get_color(), label="")
         largest_value = np.array(df.tsk_fit)[-1]
         ax1.annotate(
@@ -71,7 +71,7 @@ class StoringEveryone(Figure):
             xy=(largest_n, largest_value), xycoords="data")
 
         line, = ax1.loglog(
-            df.sample_size, df.compressed, "*", label=".trees.gz")
+            df.sample_size, df.compressed, "*", label="trees.gz")
         ax1.loglog(df.sample_size, df.tskz_fit, "--", color=line.get_color(), label="")
         largest_value = np.array(df.tskz_fit)[-1]
         ax1.annotate(
@@ -90,7 +90,7 @@ class SampleEdges(Figure):
     name = "sample_edges"
 
     def plot_region(self, df, dataset, region):
-        fig = plt.figure(figsize=(14,6))
+        fig = plt.figure(figsize=(14, 6))
         ax = fig.add_subplot(111)
         ax.plot(df.sample_edges.values, "o")
         breakpoints = np.where(df.population.values[1:] != df.population.values[:-1])[0]
@@ -100,7 +100,9 @@ class SampleEdges(Figure):
         for bp in breakpoints:
             label = df.population[bp - 1]
             x = last + (bp - last) / 2
-            ax.annotate(label, xy=(x, y), horizontalalignment='centre', verticalalignment='top', rotation=90)
+            ax.annotate(
+                label, xy=(x, y), horizontalalignment='centre', verticalalignment='top',
+                rotation=90)
             last = bp
         ax.set_xticks(np.array(breakpoints) + 0.5)
         ax.set_xticklabels([])
@@ -112,7 +114,7 @@ class SampleEdges(Figure):
     def plot(self):
         full_df = self.data
 
-        fig, axes = plt.subplots(2, figsize=(14,6))
+        fig, axes = plt.subplots(2, figsize=(14, 6))
         for ax, dataset in zip(axes, ["1kg", "sgdp"]):
             df = full_df[full_df.dataset == dataset]
             df = df.sort_values(by=["region", "population", "sample", "strand"])
@@ -129,7 +131,8 @@ class SampleEdges(Figure):
                 ax.annotate(df.region[bp - 1], xy=(x, 200), horizontalalignment='center')
                 last = bp
 
-            breakpoints = np.where(df.population.values[1:] != df.population.values[:-1])[0]
+            breakpoints = np.where(
+                df.population.values[1:] != df.population.values[:-1])[0]
             breakpoints = list(breakpoints) + [len(df)]
             ax.set_xticks(breakpoints)
             ax.set_xticklabels([])
