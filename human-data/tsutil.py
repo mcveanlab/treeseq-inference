@@ -14,8 +14,6 @@ import tsinfer
 import daiquiri
 import numpy as np
 import tqdm
-# Used for newick
-from Bio import Phylo
 
 
 def run_simplify(args):
@@ -90,30 +88,6 @@ def run_benchmark_tskit(args):
     total_genotypes = (ts.num_samples * num_variants) / 10**6
     print("Iterated over {} variants in {:.2f}s @ {:.2f} M genotypes/s".format(
         num_variants, duration, total_genotypes / duration))
-
-
-def run_benchmark_newick(args):
-
-    ts = msprime.load(args.input)
-    num_trees = 0
-    total_length = 0
-    total_duration = 0
-    for tree in ts.trees():
-        ns = tree.newick()
-        handle = io.StringIO(ns)
-        before = time.perf_counter()
-        Phylo.read(handle, "newick")
-        total_duration += time.perf_counter() - before
-        total_length += len(ns)
-        num_trees += 1
-        if num_trees == args.num_trees:
-            break
-
-    expected_size = (total_length / num_trees) * ts.num_trees
-    mean_time = total_duration / num_trees
-    print("Expected size of newick file: {:.2f}GiB".format(expected_size / 1024**3))
-    print("Expected time to read {} hours @ {:.2f}/s".format(
-        (mean_time * ts.num_trees) / 3600, 1 / mean_time))
 
 
 def run_combine_ukbb_1kg(args):
@@ -222,14 +196,6 @@ def main():
         "--num-variants", type=int, default=None,
         help="Number of variants to benchmark genotypes decoding performance on")
     subparser.set_defaults(func=run_benchmark_tskit)
-
-    subparser = subparsers.add_parser("benchmark-newick")
-    subparser.add_argument(
-        "input", type=str, help="Input tree sequence")
-    subparser.add_argument(
-        "--num-trees", type=int, default=1000,
-        help="Number of trees to benchmark newick size on.")
-    subparser.set_defaults(func=run_benchmark_newick)
 
     subparser = subparsers.add_parser("compute-1kg-ancestry")
     subparser.add_argument(

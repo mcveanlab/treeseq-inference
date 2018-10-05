@@ -7,6 +7,7 @@ import os
 import os.path
 import argparse
 import subprocess
+import io
 
 import numpy as np
 import msprime
@@ -14,6 +15,8 @@ import scipy.optimize as optimize
 import pandas as pd
 import humanize
 import cyvcf2
+# Used for newick
+from Bio import Phylo
 
 datafile = "data/storing_everyone.csv"
 data_prefix = "data/raw__NOBACKUP__/storing_everyone"
@@ -91,6 +94,29 @@ def benchmark_bcf(ts):
         total_sites, estimated_time / 3600))
 
 
+def run_benchmark_newick(ts, num_trees):
+
+    total_length = 0
+    total_duration = 0
+    for tree in ts.trees():
+        if num_trees == tree.index:
+            break
+        ns = tree.newick()
+        handle = io.StringIO(ns)
+        before = time.perf_counter()
+        Phylo.read(handle, "newick")
+        total_duration += time.perf_counter() - before
+        total_length += len(ns)
+    else:
+        raise ValueError("not enough trees!")
+
+    expected_size = (total_length / num_trees) * ts.num_trees
+    mean_time = total_duration / num_trees
+    print("Expected size of newick file: {:.2f}TiB".format(expected_size / 1024**6))
+    print("Expected time to read {} hours @ {:.2f} secs each".format(
+        (mean_time * ts.num_trees) / 3600, mean_time))
+
+
 def run_benchmark():
     print("msprime version:", msprime.__version__)
 
@@ -98,8 +124,11 @@ def run_benchmark():
     filename = os.path.join(data_prefix, "{}.trees".format(10**7))
     ts = msprime.load(filename)
     duration = time.perf_counter() - before
-    print("loaded {} tree sequense in {:.2f}s".format(
+    print("loaded {} tree sequence in {:.2f}s".format(
         humanize.naturalsize(os.path.getsize(filename), binary=True), duration))
+
+    run_benchmark_newick(ts, 2)
+
     size = ts.num_samples * ts.num_sites
     print("Total size of genotype matrix = ", humanize.naturalsize(size, binary=True))
 
@@ -138,7 +167,7 @@ def run_convert_files():
                 ts.write_vcf(vcf_file, 2)
             print("Wrote ", filename)
             gz_filename = filename + ".gz"
-            subprocess.check_call("gzip -c {} > {}".format(filename, gz_filename))
+            subprocess.check_call("gzip -c {} > {}".format(filename, gz_filename), shell=True)
             print("Wrote ", gz_filename)
 
 
