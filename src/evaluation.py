@@ -5,9 +5,9 @@ in the paper.
 
 Run as e.g.
 
-./plots.py setup metrics_by_mutation_rate -P
-./plots.py infer metrics_by_mutation_rate -P -p 30 -t 8 #this may take a long time
-./plots.py figure kc_rooted_by_mutation_rate
+./evaluation.py setup metrics_by_mutation_rate -P
+./evaluation.py infer metrics_by_mutation_rate -P -p 30 -t 8 #this may take a long time
+./evaluation.py figure kc_rooted_by_mutation_rate
 
 """
 
@@ -834,9 +834,7 @@ class Dataset(object):
     error_filename = "EmpiricalErrorPlatinum1000G.csv"
 
     def __init__(self):
-        self.data_path = os.path.abspath(
-            os.path.join(self.data_dir, "{}".format(self.name)))
-        self.data_file = self.data_path + ".csv"
+        self.data_file = os.path.abspath(os.path.join(self.data_dir, self.name)) + ".csv"
         self.raw_data_dir = os.path.join(self.data_dir, "raw__NOBACKUP__", self.name)
         self.simulations_dir = os.path.join(self.raw_data_dir, "simulations")
         self.last_data_write_time = time.time()
@@ -1150,6 +1148,9 @@ class Dataset(object):
                 store_result(*result)
         self.dump_data(force_flush=True)
 
+        if show_progress:
+            for p in progress.values():
+                p.close()
     #
     # Utilities for running simulations and saving files.
     #
@@ -1872,21 +1873,22 @@ class ARGweaverParamChangesDataset(Dataset):
 
 ######################################
 #
+# Data summaries
+#  Here we take the CSV data files 
+#  produced by setup() and infer() and
+#  condense them into small CSV files
+#  for plotting
+#
+######################################
+
+
+######################################
+#
 # Figures
 #
 ######################################
 
-def error_label(error):
-    """
-    Make a nice label explaining this error parameter
-    """
-    try:
-        error = float(error)
-        return "Error = {}".format(error) if error else "No error"
-    except (ValueError, TypeError):
-        return "{} error".format(error) if error else "No error"
         
-
 
 class Figure(object):
     """
@@ -1924,6 +1926,8 @@ class Figure(object):
     def __init__(self):
         self.dataset = self.datasetClass()
         self.dataset.load_data()
+        self.data_file = os.path.abspath(os.path.join(self.dataset.data_dir, self.name)) + ".csv"
+        
         self.tools = collections.OrderedDict(
             [(tool,a) for tool,a in self.tools_format.items() if tool in self.dataset.tools_and_metrics]
         )
@@ -1936,6 +1940,93 @@ class Figure(object):
             ]
         )
 
+    def error_label(self, error, label_for_no_error = "No error"):
+        """
+        Make a nice label explaining this error parameter
+        """
+        try:
+            error = float(error)
+            return "Error rate = {}".format(error) if error else label_for_no_error
+        except (ValueError, TypeError):
+            return "{} error".format(error) if error else label_for_no_error
+
+    def df_wide_to_long(self, input_df, prefixes_to_split, split_names=['tool']):
+        """
+        Convert an input dataframe to long format, on the basis of columns beginning
+        with a set of prefixes (e.g. tool names)
+        
+        The column names can be of the form
+        
+            "tsinfer_per site_breaking polytomies_rooted_RF_treedist"
+        
+        and values separated by underscores become separate stacking variables, here
+
+        "tsinfer", "per site", "breaking polytomies", "rooted", "RF", "treedist"
+
+        the names to use for each variable is given by the split_names array
+        """
+        # set the non-tool-specific columns to indexes
+        df = input_df.set_index([c for c in input_df.columns
+            if not c.split("_",1)[0] in prefixes_to_split])
+        row_index_depth = len(df.index.names)
+
+        # stack the remaining columns by tool name (and possibly extra params, separated
+        # by underscores, after the tool name, e.g. tsinfer_3_RF_rooted
+        df.columns = pd.MultiIndex.from_tuples(
+            [col.split('_', len(split_names)) for col in df.columns])
+        #first part of name ("ARGweaver_" etc) is the one to stack
+        df = df.stack(level=list(range(len(split_names))))
+
+        # nix any row index levels with the same name as a stacked column (e.g. 'completed')
+        for colname in df.columns:
+            if colname:
+                try:
+                    df.index = df.index.droplevel([colname])
+                    row_index_depth -= 1
+                except KeyError:
+                    pass
+        
+        # set the name of the new tool column 
+        row_index_names = list(df.index.names)
+        row_index_names[row_index_depth:(row_index_depth+len(split_names))] = split_names
+        df.index.names = row_index_names
+
+        # reinstate the unchanged columns (duplicates the params etc)
+        return df.reset_index()
+    
+    def convert_treemetric_colname(self, colname, allowed_prefixes):
+        """
+        for a column name
+        """
+        colsplit = colname.split("_")
+        if colsplit[0] in allowed_prefixes \
+            and len(colsplit) > 1 \
+            and colsplit[-1].endswith("rooted"):
+            # This is a column giving an average tree metric
+            if colsplit[1].isdigit():
+                # This is a bit flag for metrics params:
+                bitflag = int(colsplit[1])
+                # (first bit is location, second is polytomies)
+                bitnames = [
+                    "per variant" if (METRICS_LOCATION_VARIANTS & bitflag) else "per site",
+                    "breaking polytomies" if (METRICS_POLYTOMIES_BREAK & bitflag) else ""
+                ]
+                colsplit = colsplit[0:1] + bitnames + colsplit[2:]
+            if colsplit[-1].endswith("unrooted"):
+                # remove the "unrooted" suffix, and stick it as an earlier param
+                colsplit.append(colsplit[-1][:-len("unrooted")])
+                colsplit[-2] = "unrooted"
+            elif colname.endswith("rooted"):
+                colsplit.append(colsplit[-1][:-len("rooted")])
+                colsplit[-2] = "rooted"
+            colsplit.append("treedist")
+        return "_".join(colsplit)
+            
+    def mean_se(self, df, groupby_columns):
+        g = df.groupby(groupby_columns)
+        df =pd.concat([g.mean().add_suffix("_mean"), g.sem().add_suffix("_se")], axis=1)
+        return df.reset_index()
+        
     def savefig(self, *figures):
         filename = os.path.join(self.figures_dir, "{}.pdf".format(self.name))
         with matplotlib.backends.backend_pdf.PdfPages(filename) as pdf:
@@ -1946,6 +2037,15 @@ class Figure(object):
         raise NotImplementedError()
 
 
+    def summarize(self):
+        """
+        Save a summarized csv file of the results, appropriate for a particular plot.
+        The default is simply to save a long (not wide) version of all the columns.
+        """
+        toolnames = self.dataset.tools_and_metrics.keys()
+        summary_dataset = self.df_wide_to_long(self.dataset.data, toolnames)
+        summary_dataset.to_csv(self.data_file)
+
 class MetricsAllToolsFigure(Figure):
     """
     Simple figure that shows all the metrics at the same time.
@@ -1953,7 +2053,30 @@ class MetricsAllToolsFigure(Figure):
     """
     datasetClass = AllToolsDataset
     name = "metrics_all_tools"
+    
+    
     fillstyles = ['full', 'none']
+
+    def summarize(self):
+        param_cols = ['Ne', 'length', 'sample_size',
+            'recombination_rate', 'mutation_rate', ERROR_COLNAME]
+        toolnames = self.dataset.tools_and_metrics.keys()
+
+        summary_df = self.dataset.data
+        
+        # Turn the column names containing tree metric distances to names containing
+        # rational descriptions of the parameters associated with each metric
+        summary_df.columns = [
+            self.convert_treemetric_colname(cn, toolnames) for cn in summary_df.columns]
+        metric_param_names = ["tool",'averaging', 'polytomy_treatment', 'rooting', 'metric']
+
+        # Remove unused columns (any not in param_cols, or a tree distance measure)
+        response_cols = [cn for cn in summary_df.columns if cn.endswith("treedist")]
+        summary_df = summary_df.loc[:,param_cols+response_cols]
+        # Convert metric params to 
+        summary_df = self.df_wide_to_long(summary_df, toolnames, metric_param_names)
+        summary_df = self.mean_se(summary_df, param_cols+metric_param_names)
+        summary_df.to_csv(self.data_file)
 
     def plot(self):
         from matplotlib.legend_handler import HandlerTuple
@@ -1969,7 +2092,7 @@ class MetricsAllToolsFigure(Figure):
                 ax = axes[j][k] if len(error_params)>1 else axes[j]
                 ax.set_xscale('log')
                 if j == 0:
-                    ax.set_title(error_label(error))
+                    ax.set_title(self.error_label(error))
                 if k == 0:
                     ax.set_ylabel(getattr(self, 'y_axis_label', self.metric_titles[metric]))
                 if j == len(topology_only_metrics) - 1:
@@ -2079,7 +2202,7 @@ class MetricAllToolsFigure(Figure):
         lines = []
         for k, error in enumerate(error_params):
             ax = axes[k] if len(error_params)>1 else axes
-            ax.set_title(error_label(error))
+            ax.set_title(self.error_label(error))
             ax.set_xlabel("Mutation rate")
             ax.set_xscale('log')
             if k == 0:
@@ -2209,7 +2332,7 @@ class CputimeAllToolsFigure(Figure):
 
         fig, (ax_hi, ax_lo) = pyplot.subplots(2, 1, sharex=True)
         lines = []
-        noerror = [e for e in df[ERROR_COLNAME].unique() if error_label(e) == "No error"]
+        noerror = [e for e in df[ERROR_COLNAME].unique() if self.error_label(e, None) is None]
         assert len(noerror) == 1
         noerror = noerror[0]
         ax_lo.set_xlabel("Sample Size")
@@ -2280,7 +2403,7 @@ class MetricsAllToolsAccuracySweepFigure(Figure):
         for error in error_params:
             fig, axes = pyplot.subplots(len(topology_only_metrics),
                 len(output_freqs), figsize=(20, 20))
-            fig.suptitle(error_label(error))
+            fig.suptitle(self.error_label(error))
             for j, metric in enumerate(topology_only_metrics):
                 for k, output_data in enumerate(output_freqs.itertuples()):
                     freq = output_data.output_frequency
@@ -2382,7 +2505,7 @@ class MetricAllToolsAccuracySweepFigure(Figure):
                 ax = axes[j][k]
                 ax.set_xscale('log')
                 if j == 0:
-                    ax.set_title(error_label(error))
+                    ax.set_title(self.error_label(error))
                 if j == len(output_freqs) - 1:
                     ax.set_xlabel("Neutral mutation rate")
                 if k == 0:
@@ -2520,7 +2643,7 @@ class MetricsSubsamplingFigure(Figure):
             first_legend = axes[0][-1].legend(
                 artists, tool_labels, numpoints=1, labelspacing=0.1, loc="lower right")
             fig.suptitle('ARG metric for trees subsampled down to {} tips'.format(
-                restrict_sample_size_comparison[0], error_label(error)))
+                restrict_sample_size_comparison[0], self.error_label(error)))
             figures.append(fig)
         self.savefig(*figures)
 
@@ -2896,6 +3019,10 @@ def run_plot(cls, args):
     f = cls()
     f.plot()
 
+def run_summarize(cls, args):
+    f = cls()
+    f.summarize()
+
 
 def main():
     def get_subclasses(cls):
@@ -2912,7 +3039,9 @@ def main():
     subparsers.required = True
     subparsers.dest = 'command'
 
-    subparser = subparsers.add_parser('setup')
+    subparser = subparsers.add_parser('setup',
+        help="Run simulations, outputting true histories & genome sequences for analysis" +
+            "(created files will overwrite previous runs of the same name)")
     subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
         help='the dataset identifier', choices=sorted([d.name for d in datasets if d.name]))
@@ -2931,7 +3060,9 @@ def main():
          help="Show a progress bar.", )
     subparser.set_defaults(func=run_setup)
 
-    subparser = subparsers.add_parser('infer')
+    subparser = subparsers.add_parser('infer',
+        help="Infer genealogical histories from previously generated sequence data," +
+            " and generate statistics for comparison")
     subparser.add_argument(
         "--processes", '-p', type=int, default=1,
         help="number of worker processes, e.g. 40")
@@ -2960,6 +3091,13 @@ def main():
          '--flush-all',  "-F", action='store_true',
          help="flush the result file after every result.", )
     subparser.set_defaults(func=run_infer)
+
+    subparser = subparsers.add_parser('summarize',
+        help="Create data files for later plotting")
+    subparser.add_argument(
+        'name', metavar='NAME', type=str, nargs=1,
+        help='the figure identifier', choices=sorted([f.name for f in figures if f.name]))
+    subparser.set_defaults(func=run_summarize)
 
     subparser = subparsers.add_parser('figure')
     subparser.add_argument(
