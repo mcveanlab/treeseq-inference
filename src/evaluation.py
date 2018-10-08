@@ -1904,19 +1904,29 @@ class Figure(object):
         (FASTARG,   {"mark":"s", "col":"red"}),
         (TSINFER,   {"mark":"*", "col":"blue"}),
     ])
-    metrics_params_format = collections.OrderedDict([
-        (METRICS_LOCATION_ALL      | METRICS_POLYTOMIES_LEAVE, {"linestyle":"-"}),
-        (METRICS_LOCATION_ALL      | METRICS_POLYTOMIES_BREAK, {"linestyle":"--"}),
-        (METRICS_LOCATION_VARIANTS | METRICS_POLYTOMIES_LEAVE, {"linestyle":"-."}),
-        (METRICS_LOCATION_VARIANTS | METRICS_POLYTOMIES_BREAK, {"linestyle":":"}),
+    
+    polytomy_and_averaging_format = collections.OrderedDict([
+        ("breaking polytomies", {
+            "per site":    {"linestyle":"--"},
+            "per variant": {"linestyle":":"}}),
+        ("leaving polytomies", {
+            "per site":    {"linestyle":"-"},
+            "per variant": {"linestyle":"-."}})
     ])
+        
+    #metric_titles = {
+    #    "RFrooted": "Robinson-Foulds metric",
+    #    "RFunrooted": "Robinson-Foulds metric (unrooted)",
+    #    "SPRunrooted": "estimated SPR difference (unrooted)",
+    #    "pathunrooted": "Path difference (unrooted)",
+    #    "KCrooted": "Kendall-Colijn metric",
+    #}
     
     metric_titles = {
-        "RFrooted": "Robinson-Foulds metric",
-        "RFunrooted": "Robinson-Foulds metric (unrooted)",
-        "SPRunrooted": "estimated SPR difference (unrooted)",
-        "pathunrooted": "Path difference (unrooted)",
-        "KCrooted": "Kendall-Colijn metric",
+        "RF": "Robinson-Foulds metric",
+        "SPR": "estimated SPR difference",
+        "path": "Path difference",
+        "KC": "Kendall-Colijn metric",
     }
     """
     Each figure has a unique name. This is used as the identifier and the
@@ -1928,17 +1938,17 @@ class Figure(object):
         self.dataset.load_data()
         self.data_file = os.path.abspath(os.path.join(self.dataset.data_dir, self.name)) + ".csv"
         
-        self.tools = collections.OrderedDict(
-            [(tool,a) for tool,a in self.tools_format.items() if tool in self.dataset.tools_and_metrics]
-        )
+        #self.tools = collections.OrderedDict(
+        #    [(tool,a) for tool,a in self.tools_format.items() if tool in self.dataset.tools_and_metrics]
+        #)
         
-        self.tools_and_metrics_params = collections.OrderedDict(
-            [(tool + "_" + str(metric_param), dict(a, **b)) 
-                for tool,a in self.tools_format.items()
-                    for metric_param,b in self.metrics_params_format.items()
-                        if tool in self.dataset.tools_and_metrics and metric_param in self.dataset.tools_and_metrics[tool]
-            ]
-        )
+        #self.tools_and_metrics_params = collections.OrderedDict(
+        #    [(tool + "_" + str(metric_param), dict(a, **b)) 
+        #        for tool,a in self.tools_format.items()
+        #            for metric_param,b in self.metrics_params_format.items()
+        #                if tool in self.dataset.tools_and_metrics and metric_param in self.dataset.tools_and_metrics[tool]
+        #    ]
+        #)
 
     def error_label(self, error, label_for_no_error = "No error"):
         """
@@ -1948,6 +1958,11 @@ class Figure(object):
             error = float(error)
             return "Error rate = {}".format(error) if error else label_for_no_error
         except (ValueError, TypeError):
+            try: #make a simplified label
+                if error.startswith("Empirical"):
+                    error = "Empirical"
+            except:
+                pass            
             return "{} error".format(error) if error else label_for_no_error
 
     def df_wide_to_long(self, input_df, prefixes_to_split, split_names=['tool']):
@@ -1996,8 +2011,15 @@ class Figure(object):
     
     def convert_treemetric_colname(self, colname, allowed_prefixes):
         """
-        for a column name
+        for a column name of the form fastARG_0_RFrooted, convert to underscore-delimited
+        format, e.g. fastARG_per site_leaving polytomies_Robinson-Foulds metric_rooted
         """
+        metric_titles = {
+            "RF": "Robinson-Foulds metric",
+            "SPR": "estimated SPR difference",
+            "path": "Path difference",
+            "KC": "Kendall-Colijn metric",
+        }
         colsplit = colname.split("_")
         if colsplit[0] in allowed_prefixes \
             and len(colsplit) > 1 \
@@ -2009,15 +2031,17 @@ class Figure(object):
                 # (first bit is location, second is polytomies)
                 bitnames = [
                     "per variant" if (METRICS_LOCATION_VARIANTS & bitflag) else "per site",
-                    "breaking polytomies" if (METRICS_POLYTOMIES_BREAK & bitflag) else ""
+                    "breaking polytomies" if (METRICS_POLYTOMIES_BREAK & bitflag) else "leaving polytomies"
                 ]
                 colsplit = colsplit[0:1] + bitnames + colsplit[2:]
             if colsplit[-1].endswith("unrooted"):
                 # remove the "unrooted" suffix, and stick it as an earlier param
-                colsplit.append(colsplit[-1][:-len("unrooted")])
+                metric = colsplit[-1][:-len("unrooted")]
+                colsplit.append(metric_titles.get(metric, metric))
                 colsplit[-2] = "unrooted"
             elif colname.endswith("rooted"):
-                colsplit.append(colsplit[-1][:-len("rooted")])
+                metric = colsplit[-1][:-len("rooted")]
+                colsplit.append(metric_titles.get(metric, metric))
                 colsplit[-2] = "rooted"
             colsplit.append("treedist")
         return "_".join(colsplit)
@@ -2073,53 +2097,72 @@ class MetricsAllToolsFigure(Figure):
         # Remove unused columns (any not in param_cols, or a tree distance measure)
         response_cols = [cn for cn in summary_df.columns if cn.endswith("treedist")]
         summary_df = summary_df.loc[:,param_cols+response_cols]
-        # Convert metric params to 
+        # Convert metric params to long format
         summary_df = self.df_wide_to_long(summary_df, toolnames, metric_param_names)
         summary_df = self.mean_se(summary_df, param_cols+metric_param_names)
+
+        # Post-processing
+        #  Remove weighted tree distance measures
+        summary_df = summary_df.loc[[not m.startswith("w") for m in summary_df['metric']]]
+        #  The Robinson-Foulds metric is not well behaved for trees with polytomies 
+        #  (only tsinfer produces such trees, though)
+        summary_df = summary_df.loc[~(
+            (summary_df.polytomy_treatment == 'leaving polytomies') & \
+            (summary_df.tool == 'tsinfer') & \
+            [m.endswith("Robinson-Foulds metric") for m in summary_df['metric']])]
+
         summary_df.to_csv(self.data_file)
 
     def plot(self):
         from matplotlib.legend_handler import HandlerTuple
-        df = self.dataset.data
-        error_params = df[ERROR_COLNAME].unique()
+        try:
+            df = pd.read_csv(self.data_file)
+        except FileNotFoundError:
+            raise FileNotFoundError("You need to run evalution.py" 
+                "(setup + infer + summarize) to generate the data file for plotting")
+        assert len(df.averaging.unique()) == 1
+        averaging = df.averaging.unique()[0]
         sample_sizes = df.sample_size.unique()
-        metrics = ARG_metrics.get_metric_names()
-        topology_only_metrics = [m for m in metrics if not m.startswith('w')]
-        fig, axes = pyplot.subplots(len(topology_only_metrics),
+        # y-direction is different error rates
+        error_params = df.error_param.unique()
+        # x-direction is the permutations of metric + whether it is rooted
+        metric_and_rooting = df.groupby(["metric", "rooting"]).groups
+        # sort this (TO DO)
+        fig, axes = pyplot.subplots(len(metric_and_rooting),
             len(error_params), figsize=(4*len(error_params), 15), sharey='row')
-        for j, metric in enumerate(topology_only_metrics):
+        for j, ((metric, root), rows) in enumerate(metric_and_rooting.items()):
             for k, error in enumerate(error_params):
+                # we are in the j,k th subplot
                 ax = axes[j][k] if len(error_params)>1 else axes[j]
                 ax.set_xscale('log')
                 if j == 0:
                     ax.set_title(self.error_label(error))
-                if k == 0:
-                    ax.set_ylabel(getattr(self, 'y_axis_label', self.metric_titles[metric]))
-                if j == len(topology_only_metrics) - 1:
+                if j == len(metric_and_rooting) - 1:
                     ax.set_xlabel("Mutation rate")
+                if k == 0:
+                    rooting_suffix = " (unrooted)" if root=="unrooted" else ""
+                    if getattr(self, 'y_axis_label', None) is None:
+                        ax.set_ylabel(metric + rooting_suffix)
+                plot_df = df.loc[rows].query("{} == @error".format(ERROR_COLNAME))
+                #now plot each line on this subplot
                 for n, fillstyle in zip(sample_sizes, self.fillstyles):
-                    df_s = df[np.logical_and(df.sample_size == n, df[ERROR_COLNAME] == error)]
-                    group = df_s.groupby(["mutation_rate"])
-                    mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-                    for tool_and_metrics_param, setting in self.tools_and_metrics_params.items():
-                        if metric.startswith("RF") \
-                            and tool_and_metrics_param.startswith(TSINFER) \
-                            and (int(tool_and_metrics_param.rsplit("_",1)[1]) & METRICS_POLYTOMIES_BREAK == 0):
-                                # RF metrics are not well behaved for trees with polytomies (i.e. tsinfer trees)
-                                # so we should omit tsinfer cases where METRICS_POLYTOMIES_BREAK == 0
-                            continue
-                        colname = tool_and_metrics_param + "_" + metric
-                        if colname in df.columns:
-                            ax.errorbar(
-                                [m['mu'] for m in mean_sem],
-                                [m['mean'][tool_and_metrics_param + "_" + metric] for m in mean_sem],
-                                yerr=[m['sem'][tool_and_metrics_param + "_" + metric] for m in mean_sem] \
-                                     if getattr(self, 'error_bars', False) else None,
-                                linestyle=setting["linestyle"],
-                                fillstyle=fillstyle,
-                                color=setting["col"],
-                                marker=None if len(sample_sizes)==1 else setting['mark'],
-                                elinewidth=1)
+                    for tool in df.tool.unique():
+                        for poly in plot_df.polytomy_treatment.unique():
+                            query = []
+                            query.append("sample_size == @n")
+                            query.append("tool == @tool")
+                            query.append("polytomy_treatment == @poly")
+                            line_data = plot_df.query("(" + ") and (".join(query) + ")")
+                            if not line_data.empty:
+                                ax.errorbar(
+                                    line_data.mutation_rate,
+                                    line_data.treedist_mean,
+                                    line_data.treedist_se,
+                                    linestyle=self.polytomy_and_averaging_format[poly][averaging]["linestyle"],
+                                    fillstyle=fillstyle,
+                                    color=self.tools_format[tool]["col"],
+                                    marker=None if len(sample_sizes)==1 else self.tools_format[tool]['mark'],
+                                    elinewidth=1)
                 ax.set_ylim(ymin=0)
                 ax.axvline(x=df.recombination_rate.unique()[0], 
                     color = 'gray', zorder=-1, linestyle=":", linewidth=1)
@@ -2128,12 +2171,13 @@ class MetricsAllToolsFigure(Figure):
                 ax.get_yaxis().set_label_coords(-0.15,0.5)
 
         artists = [
-            pyplot.Line2D((0,1),(0,0), color= setting["col"],
-                linewidth=2, linestyle=setting["linestyle"],
-                marker = None if len(sample_sizes)==1 else setting['mark'])
-            for tool,setting in self.tools_and_metrics_params.items()]
-        tool_labels = [(l.replace("_0", "").replace("_2"," breaking polytomies") if l.startswith(TSINFER) else l.replace("_0", "")) 
-            for l in self.tools_and_metrics_params.keys()]
+            pyplot.Line2D((0,1),(0,0), linewidth=2,
+                color=self.tools_format[tool]["col"],
+                linestyle=self.polytomy_and_averaging_format[poly][averaging]["linestyle"],
+                marker = None if len(sample_sizes)==1 else self.tools_format[tool]['mark'])
+            for tool, poly in df.groupby(["tool", "polytomy_treatment"]).groups.keys()]
+        tool_labels = [tool + ("" if poly == "leaving polytomies" else (" " + poly)) 
+            for tool, poly in df.groupby(["tool", "polytomy_treatment"]).groups.keys()]
         axes[0][0].legend(
             artists, tool_labels, numpoints=1, labelspacing=0.1)
             
@@ -2141,18 +2185,18 @@ class MetricsAllToolsFigure(Figure):
             # bbox_to_anchor=(0.0, 0.1))
         # ax = pyplot.gca().add_artist(first_legend)
         maintitle = "Average tree distance for neutral simulations"
-        if len(sample_sizes)>1:
-            artists = [
-                tuple([
-                    pyplot.Line2D(
-                    (0,0),(0,0), color=setting['col'], fillstyle=fillstyle, marker=setting['mark'], linestyle='None')
-                    for tool, setting in self.tools_and_metrics_params.items()])
-                for fillstyle in self.fillstyles]
-            axes[0][-1].legend(
-                artists, ["Sample size = {}".format(n) for n in [15,20]],
-                loc="upper right", numpoints=1, handler_map={tuple: HandlerTuple(ndivide=None, pad=2)})
-        else:
-            maintitle += " of {} samples".format(sample_sizes[0])
+        #if len(sample_sizes)>1:
+        #    artists = [
+        #        tuple([
+        #            pyplot.Line2D(
+        #            (0,0),(0,0), color=setting['col'], fillstyle=fillstyle, marker=setting['mark'], linestyle='None')
+        #            for tool, setting in self.tools_and_metrics_params.items()])
+        #        for fillstyle in self.fillstyles]
+        #    axes[0][-1].legend(
+        #        artists, ["Sample size = {}".format(n) for n in [15,20]],
+        #        loc="upper right", numpoints=1, handler_map={tuple: HandlerTuple(ndivide=None, pad=2)})
+        #else:
+        #    maintitle += " of {} samples".format(sample_sizes[0])
         maintitle += " spanning "  + ",".join(["{:g}kb\n".format(x/1e3) for x in df.length.unique()])
         if any([isinstance(Ne, str) for Ne in df.Ne.unique()]):
             maintitle += "(Model{}=".format('s' if len(df.Ne.unique()) > 1 else "") \
