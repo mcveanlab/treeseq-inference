@@ -49,6 +49,18 @@ simplebgen: setup.py simplebgenmodule.c
 
 
 #############################################
+# Centromere locations for GRCh37 (aka hg19) from UCSC
+# See https://www.biostars.org/p/2349/
+#############################################
+CENTROMERES_CSV=centromeres.csv
+${CENTROMERES_CSV}:
+	 curl http://hgdownload.cse.ucsc.edu/goldenPath/hg19/database/cytoBand.txt.gz > cytoband.txt.gz
+	 echo "chrom,start,end" > ${CENTROMERES_CSV}
+	 # Start and end coordinates are on different lines, so we merge them.
+	 zcat cytoband.txt.gz | grep acen | sort | paste -d " " - - \
+		 | cut -f 1,2,7 --output-delim="," >> ${CENTROMERES_CSV}
+
+#############################################
 # Ancestral states from Ensembl
 #############################################
 
