@@ -162,8 +162,10 @@ ukbb_chr20.samples: ukbb_chr20_genotypes.bgen chr20_ancestral_states.fa
 ukbb-chr20.augmented_131072.nosimplify.trees: ukbb_chr20.samples ukbb_chr20.ancestors.trees
 	python3 tsutil.py sequential-augment ukbb_chr20.samples --num-threads=${NUM_THREADS}
 
-1kg_ukbb_chr20.samples 1kg_ukbb_chr20.ancestors.trees: ukbb_chr20.samples 1kg_chr20.nosimplify.trees
-	python3 tsutil.py combine-ukbb-1kg chr20
+1kg_ukbb_chr20.samples 1kg_ukbb_chr20.ancestors.trees: ukbb_chr20.samples 1kg_chr20.trees
+	# FIXME: to make things run a bit more quickly use 100K samples. If we try
+	# any less, we end up having no variation at some sites.
+	python3 tsutil.py combine-ukbb-1kg chr20 --num-individuals=50000
 
 clean:
 	rm -f 1kg_samples.ped sgdp_samples.txt *.vcf* *.samples
