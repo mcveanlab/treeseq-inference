@@ -8,6 +8,7 @@ import collections
 import json
 import sys
 import io
+import csv
 
 import msprime
 import tsinfer
@@ -92,7 +93,7 @@ def run_benchmark_tskit(args):
 
 def run_combine_ukbb_1kg(args):
     ukbb_samples_file = "ukbb_{}.samples".format(args.chromosome)
-    tg_ancestors_ts_file = "1kg_{}.ancestors.trees".format(args.chromosome)
+    tg_ancestors_ts_file = "1kg_{}.trees".format(args.chromosome)
     ancestors_ts_file = "1kg_ukbb_{}.ancestors.trees".format(args.chromosome)
     samples_file = "1kg_ukbb_{}.samples".format(args.chromosome)
 
@@ -111,18 +112,57 @@ def run_combine_ukbb_1kg(args):
     tables.mutations.clear()
     for site in tg_ancestors_ts.sites():
         if site.position in intersecting_sites:
+            # Sites must be 0/1 for the ancestors ts.
             site_id = tables.sites.add_row(
-                position=site.position, ancestral_state=site.ancestral_state)
+                position=site.position, ancestral_state="0")
             assert len(site.mutations) == 1
             mutation = site.mutations[0]
             tables.mutations.add_row(
-                site=site_id, node=mutation.node, derived_state=mutation.derived_state)
+                site=site_id, node=mutation.node, derived_state="1")
 
     # Reduce this to the site topology now to make things as quick as possible.
     tables.simplify(reduce_to_site_topology=True, filter_sites=False)
-    reduced_ancestors_ts = tables.tree_sequence()
-    print("Reduced to :", reduced_ancestors_ts.num_nodes, reduced_ancestors_ts.num_edges)
-    reduced_ancestors_ts.dump(ancestors_ts_file)
+    reduced_ts = tables.tree_sequence()
+    # Rewrite the nodes so that 0 is one older than all the other nodes.
+    nodes = tables.nodes.copy()
+    tables.nodes.clear()
+    tables.nodes.add_row(flags=1, time=np.max(nodes.time) + 2)
+    tables.nodes.append_columns(
+        flags=np.bitwise_or(nodes.flags, 1),  # Everything is a sample.
+        time=nodes.time + 1,  # Make sure that all times are > 0
+        population=nodes.population,
+        individual=nodes.individual, 
+        metadata=nodes.metadata,
+        metadata_offset=nodes.metadata_offset)
+    # Add one to all node references to account for this.
+    tables.edges.set_columns(
+        left=tables.edges.left,
+        right=tables.edges.right,
+        parent=tables.edges.parent + 1,
+        child=tables.edges.child + 1)
+    tables.mutations.set_columns(
+        node=tables.mutations.node + 1,
+        site=tables.mutations.site,
+        parent=tables.mutations.parent,
+        derived_state=tables.mutations.derived_state,
+        derived_state_offset=tables.mutations.derived_state_offset,
+        metadata=tables.mutations.metadata,
+        metadata_offset=tables.mutations.metadata_offset)
+
+    trees = reduced_ts.trees()
+    tree = next(trees)
+    left = 0
+    root = tree.root
+    for tree in trees:
+        if tree.root != root:
+            tables.edges.add_row(left, tree.interval[0], 0, root + 1)
+            root = tree.root
+            left = tree.interval[0]
+    tables.edges.add_row(left, reduced_ts.sequence_length, 0, root + 1)
+    tables.sort()
+    ancestors_ts = tables.tree_sequence()
+    print("Writing ancestors_ts")
+    ancestors_ts.dump(ancestors_ts_file)
 
     # Now create a new samples file to get rid of the missing sites.
     git_hash = subprocess.check_output(["git", "rev-parse", "HEAD"])
@@ -133,17 +173,20 @@ def run_combine_ukbb_1kg(args):
         "notes:": (
             "Use the Makefile to download and process the upstream data files")}
 
+    n = args.num_individuals
+    if n is None:
+        n = ukbb_samples.num_individuals
     with tsinfer.SampleData(
             path=samples_file, num_flush_threads=4,
             sequence_length=ukbb_samples.sequence_length) as samples:
 
-        for _ in tqdm.tqdm(range(ukbb_samples.num_individuals)):
+        for _ in tqdm.tqdm(range(n)):
             samples.add_individual(ploidy=2)
         for variant in tqdm.tqdm(ukbb_samples.variants(), total=ukbb_samples.num_sites):
             if variant.site.position in intersecting_sites:
                 samples.add_site(
                     position=variant.site.position, alleles=variant.alleles,
-                    genotypes=variant.genotypes, metadata=variant.site.metadata)
+                    genotypes=variant.genotypes[:2 * n], metadata=variant.site.metadata)
 
         for timestamp, record in ukbb_samples.provenances():
             samples.add_provenance(timestamp, record)
@@ -163,6 +206,34 @@ def run_compute_1kg_ancestry(args):
         superpops[md["super_population"]].extend(ts.samples(population.id))
     A = tsinfer.mean_sample_ancestry(ts, list(superpops.values()), show_progress=True)
     np.save(args.output, A)
+     
+
+def run_snip_centromere(args):
+    with open(args.centromeres) as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            if row["chrom"] == args.chrom:
+                start = int(row["start"])
+                end = int(row["end"])
+                break
+        else:
+            raise ValueError("Did not find row")
+    ts = msprime.load(args.input)
+    position = ts.tables.sites.position
+    s_index = np.searchsorted(position, start)
+    e_index = np.searchsorted(position, end)
+    # We have a bunch of sites within the centromere. Get the largest 
+    # distance between these and call these the start and end. Probably
+    # pointless having the centromere coordinates as input in the first place,
+    # since we're just searching for the largest gap anyway. However, it can
+    # be useful in UKBB, since it's perfectly possible that the largest 
+    # gap between sites isn't in the centromere.
+    X = position[s_index: e_index]
+    j = np.argmax(X[1:] - X[:-1])
+    start = X[j] + 1
+    end = X[j + 1]
+    snipped_ts = tsinfer.snip_centromere(ts, start, end)
+    snipped_ts.dump(args.output)
 
 
 def main():
@@ -187,6 +258,9 @@ def main():
 
     subparser = subparsers.add_parser("combine-ukbb-1kg")
     subparser.add_argument("chromosome", type=str, help="chromosome stem")
+    subparser.add_argument(
+        "--num-individuals", type=int, help="number of individuals to use",
+        default=None)
     subparser.set_defaults(func=run_combine_ukbb_1kg)
 
     subparser = subparsers.add_parser("benchmark-tskit")
@@ -203,6 +277,17 @@ def main():
     subparser.add_argument(
         "output", type=str, help="Filename to write numpy array to.")
     subparser.set_defaults(func=run_compute_1kg_ancestry)
+
+    subparser = subparsers.add_parser("snip-centromere")
+    subparser.add_argument(
+        "input", type=str, help="Input tree sequence")
+    subparser.add_argument(
+        "output", type=str, help="Output tree sequence")
+    subparser.add_argument(
+        "chrom", type=str, help="Chromosome name")
+    subparser.add_argument(
+        "centromeres", type=str, help="CSV file containing centromere coordinates.")
+    subparser.set_defaults(func=run_snip_centromere)
 
     daiquiri.setup(level="INFO")
 
