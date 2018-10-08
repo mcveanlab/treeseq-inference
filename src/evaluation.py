@@ -92,18 +92,6 @@ save_stats = dict(
     ts_filesize = "ts_filesize"
 )
 
-def latex_float(f):
-    """
-    Return an exponential number in nice LaTeX form. 
-    In titles etc for plots this needs to be encased in $ $ signs, and r'' strings used
-    """
-    float_str = "{0:.2g}".format(f)
-    if "e" in float_str:
-        base, exponent = float_str.split("e")
-        return r"{0} \times 10^{{{1}}}".format(base, int(exponent))
-    else:
-        return float_str
-
 def nanblank(val):
     """hack around a horrible pandas syntax, which puts nan instead of blank strings"""
     return "" if pd.isnull(val) else val
@@ -772,9 +760,9 @@ def infer_worker(work):
 class Dataset(object):
     """
     A dataset is some collection of simulations and associated data.
-    Results for datasets are stored in a general data_dir
+    Results for datasets are stored in a general data_dir, relative to the top level
     """
-    data_dir = os.path.join(sys.path[0],"..","data")
+    data_dir = "data"
     """
     Each dataset has a unique name. This is used as the prefix for the data
     file and raw_data_dir directory. Within this, replicate instances of datasets
@@ -1889,14 +1877,14 @@ class ARGweaverParamChangesDataset(Dataset):
 ######################################
 
         
-
 class Figure(object):
     """
-    Superclass of all figures. Each figure depends on a dataset.
+    Superclass of all summaries. Each summary depends on a dataset.
     """
     datasetClass = None
+    # Each summary has a unique name. This is used as the identifier for the csv file.
     name = None
-    figures_dir = os.path.join(sys.path[0],"..","figures")
+    figures_dir = "figures"
 
     tools_format = collections.OrderedDict([
         (ARGWEAVER, {"mark":"o", "col":"green"}),
@@ -1914,41 +1902,13 @@ class Figure(object):
             "per variant": {"linestyle":"-."}})
     ])
         
-    #metric_titles = {
-    #    "RFrooted": "Robinson-Foulds metric",
-    #    "RFunrooted": "Robinson-Foulds metric (unrooted)",
-    #    "SPRunrooted": "estimated SPR difference (unrooted)",
-    #    "pathunrooted": "Path difference (unrooted)",
-    #    "KCrooted": "Kendall-Colijn metric",
-    #}
-    
-    metric_titles = {
-        "RF": "Robinson-Foulds metric",
-        "SPR": "estimated SPR difference",
-        "path": "Path difference",
-        "KC": "Kendall-Colijn metric",
-    }
     """
-    Each figure has a unique name. This is used as the identifier and the
-    file name for the output plots.
     """
 
     def __init__(self):
         self.dataset = self.datasetClass()
         self.dataset.load_data()
         self.data_file = os.path.abspath(os.path.join(self.dataset.data_dir, self.name)) + ".csv"
-        
-        #self.tools = collections.OrderedDict(
-        #    [(tool,a) for tool,a in self.tools_format.items() if tool in self.dataset.tools_and_metrics]
-        #)
-        
-        #self.tools_and_metrics_params = collections.OrderedDict(
-        #    [(tool + "_" + str(metric_param), dict(a, **b)) 
-        #        for tool,a in self.tools_format.items()
-        #            for metric_param,b in self.metrics_params_format.items()
-        #                if tool in self.dataset.tools_and_metrics and metric_param in self.dataset.tools_and_metrics[tool]
-        #    ]
-        #)
 
     def error_label(self, error, label_for_no_error = "No error"):
         """
