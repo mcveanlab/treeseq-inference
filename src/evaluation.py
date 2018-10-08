@@ -5,9 +5,9 @@ in the paper.
 
 Run as e.g.
 
-./plots.py setup metrics_by_mutation_rate -P
-./plots.py infer metrics_by_mutation_rate -P -p 30 -t 8 #this may take a long time
-./plots.py figure kc_rooted_by_mutation_rate
+./evaluation.py setup metrics_by_mutation_rate -P
+./evaluation.py infer metrics_by_mutation_rate -P -p 30 -t 8 #this may take a long time
+./evaluation.py figure kc_rooted_by_mutation_rate
 
 """
 
@@ -834,9 +834,7 @@ class Dataset(object):
     error_filename = "EmpiricalErrorPlatinum1000G.csv"
 
     def __init__(self):
-        self.data_path = os.path.abspath(
-            os.path.join(self.data_dir, "{}".format(self.name)))
-        self.data_file = self.data_path + ".csv"
+        self.data_file = os.path.abspath(os.path.join(self.data_dir, self.name)) + ".csv"
         self.raw_data_dir = os.path.join(self.data_dir, "raw__NOBACKUP__", self.name)
         self.simulations_dir = os.path.join(self.raw_data_dir, "simulations")
         self.last_data_write_time = time.time()
@@ -1150,6 +1148,9 @@ class Dataset(object):
                 store_result(*result)
         self.dump_data(force_flush=True)
 
+        if show_progress:
+            for p in progress.values():
+                p.close()
     #
     # Utilities for running simulations and saving files.
     #
@@ -1872,21 +1873,22 @@ class ARGweaverParamChangesDataset(Dataset):
 
 ######################################
 #
+# Data summaries
+#  Here we take the CSV data files 
+#  produced by setup() and infer() and
+#  condense them into small CSV files
+#  for plotting
+#
+######################################
+
+
+######################################
+#
 # Figures
 #
 ######################################
 
-def error_label(error):
-    """
-    Make a nice label explaining this error parameter
-    """
-    try:
-        error = float(error)
-        return "Error = {}".format(error) if error else "No error"
-    except (ValueError, TypeError):
-        return "{} error".format(error) if error else "No error"
         
-
 
 class Figure(object):
     """
@@ -1902,19 +1904,29 @@ class Figure(object):
         (FASTARG,   {"mark":"s", "col":"red"}),
         (TSINFER,   {"mark":"*", "col":"blue"}),
     ])
-    metrics_params_format = collections.OrderedDict([
-        (METRICS_LOCATION_ALL      | METRICS_POLYTOMIES_LEAVE, {"linestyle":"-"}),
-        (METRICS_LOCATION_ALL      | METRICS_POLYTOMIES_BREAK, {"linestyle":"--"}),
-        (METRICS_LOCATION_VARIANTS | METRICS_POLYTOMIES_LEAVE, {"linestyle":"-."}),
-        (METRICS_LOCATION_VARIANTS | METRICS_POLYTOMIES_BREAK, {"linestyle":":"}),
+    
+    polytomy_and_averaging_format = collections.OrderedDict([
+        ("breaking polytomies", {
+            "per site":    {"linestyle":"--"},
+            "per variant": {"linestyle":":"}}),
+        ("leaving polytomies", {
+            "per site":    {"linestyle":"-"},
+            "per variant": {"linestyle":"-."}})
     ])
+        
+    #metric_titles = {
+    #    "RFrooted": "Robinson-Foulds metric",
+    #    "RFunrooted": "Robinson-Foulds metric (unrooted)",
+    #    "SPRunrooted": "estimated SPR difference (unrooted)",
+    #    "pathunrooted": "Path difference (unrooted)",
+    #    "KCrooted": "Kendall-Colijn metric",
+    #}
     
     metric_titles = {
-        "RFrooted": "Robinson-Foulds metric",
-        "RFunrooted": "Robinson-Foulds metric (unrooted)",
-        "SPRunrooted": "estimated SPR difference (unrooted)",
-        "pathunrooted": "Path difference (unrooted)",
-        "KCrooted": "Kendall-Colijn metric",
+        "RF": "Robinson-Foulds metric",
+        "SPR": "estimated SPR difference",
+        "path": "Path difference",
+        "KC": "Kendall-Colijn metric",
     }
     """
     Each figure has a unique name. This is used as the identifier and the
@@ -1924,18 +1936,121 @@ class Figure(object):
     def __init__(self):
         self.dataset = self.datasetClass()
         self.dataset.load_data()
-        self.tools = collections.OrderedDict(
-            [(tool,a) for tool,a in self.tools_format.items() if tool in self.dataset.tools_and_metrics]
-        )
+        self.data_file = os.path.abspath(os.path.join(self.dataset.data_dir, self.name)) + ".csv"
         
-        self.tools_and_metrics_params = collections.OrderedDict(
-            [(tool + "_" + str(metric_param), dict(a, **b)) 
-                for tool,a in self.tools_format.items()
-                    for metric_param,b in self.metrics_params_format.items()
-                        if tool in self.dataset.tools_and_metrics and metric_param in self.dataset.tools_and_metrics[tool]
-            ]
-        )
+        #self.tools = collections.OrderedDict(
+        #    [(tool,a) for tool,a in self.tools_format.items() if tool in self.dataset.tools_and_metrics]
+        #)
+        
+        #self.tools_and_metrics_params = collections.OrderedDict(
+        #    [(tool + "_" + str(metric_param), dict(a, **b)) 
+        #        for tool,a in self.tools_format.items()
+        #            for metric_param,b in self.metrics_params_format.items()
+        #                if tool in self.dataset.tools_and_metrics and metric_param in self.dataset.tools_and_metrics[tool]
+        #    ]
+        #)
 
+    def error_label(self, error, label_for_no_error = "No error"):
+        """
+        Make a nice label explaining this error parameter
+        """
+        try:
+            error = float(error)
+            return "Error rate = {}".format(error) if error else label_for_no_error
+        except (ValueError, TypeError):
+            try: #make a simplified label
+                if error.startswith("Empirical"):
+                    error = "Empirical"
+            except:
+                pass            
+            return "{} error".format(error) if error else label_for_no_error
+
+    def df_wide_to_long(self, input_df, prefixes_to_split, split_names=['tool']):
+        """
+        Convert an input dataframe to long format, on the basis of columns beginning
+        with a set of prefixes (e.g. tool names)
+        
+        The column names can be of the form
+        
+            "tsinfer_per site_breaking polytomies_rooted_RF_treedist"
+        
+        and values separated by underscores become separate stacking variables, here
+
+        "tsinfer", "per site", "breaking polytomies", "rooted", "RF", "treedist"
+
+        the names to use for each variable is given by the split_names array
+        """
+        # set the non-tool-specific columns to indexes
+        df = input_df.set_index([c for c in input_df.columns
+            if not c.split("_",1)[0] in prefixes_to_split])
+        row_index_depth = len(df.index.names)
+
+        # stack the remaining columns by tool name (and possibly extra params, separated
+        # by underscores, after the tool name, e.g. tsinfer_3_RF_rooted
+        df.columns = pd.MultiIndex.from_tuples(
+            [col.split('_', len(split_names)) for col in df.columns])
+        #first part of name ("ARGweaver_" etc) is the one to stack
+        df = df.stack(level=list(range(len(split_names))))
+
+        # nix any row index levels with the same name as a stacked column (e.g. 'completed')
+        for colname in df.columns:
+            if colname:
+                try:
+                    df.index = df.index.droplevel([colname])
+                    row_index_depth -= 1
+                except KeyError:
+                    pass
+        
+        # set the name of the new tool column 
+        row_index_names = list(df.index.names)
+        row_index_names[row_index_depth:(row_index_depth+len(split_names))] = split_names
+        df.index.names = row_index_names
+
+        # reinstate the unchanged columns (duplicates the params etc)
+        return df.reset_index()
+    
+    def convert_treemetric_colname(self, colname, allowed_prefixes):
+        """
+        for a column name of the form fastARG_0_RFrooted, convert to underscore-delimited
+        format, e.g. fastARG_per site_leaving polytomies_Robinson-Foulds metric_rooted
+        """
+        metric_titles = {
+            "RF": "Robinson-Foulds metric",
+            "SPR": "estimated SPR difference",
+            "path": "Path difference",
+            "KC": "Kendall-Colijn metric",
+        }
+        colsplit = colname.split("_")
+        if colsplit[0] in allowed_prefixes \
+            and len(colsplit) > 1 \
+            and colsplit[-1].endswith("rooted"):
+            # This is a column giving an average tree metric
+            if colsplit[1].isdigit():
+                # This is a bit flag for metrics params:
+                bitflag = int(colsplit[1])
+                # (first bit is location, second is polytomies)
+                bitnames = [
+                    "per variant" if (METRICS_LOCATION_VARIANTS & bitflag) else "per site",
+                    "breaking polytomies" if (METRICS_POLYTOMIES_BREAK & bitflag) else "leaving polytomies"
+                ]
+                colsplit = colsplit[0:1] + bitnames + colsplit[2:]
+            if colsplit[-1].endswith("unrooted"):
+                # remove the "unrooted" suffix, and stick it as an earlier param
+                metric = colsplit[-1][:-len("unrooted")]
+                colsplit.append(metric_titles.get(metric, metric))
+                colsplit[-2] = "unrooted"
+            elif colname.endswith("rooted"):
+                metric = colsplit[-1][:-len("rooted")]
+                colsplit.append(metric_titles.get(metric, metric))
+                colsplit[-2] = "rooted"
+            colsplit.append("treedist")
+        return "_".join(colsplit)
+            
+    def mean_se(self, df, groupby_columns):
+        g = df.groupby(groupby_columns)
+        df =pd.concat([g.mean().add_suffix("_mean"), g.sem().add_suffix("_se")], axis=1)
+        return df.reset_index()
+        
     def savefig(self, *figures):
         filename = os.path.join(self.figures_dir, "{}.pdf".format(self.name))
         with matplotlib.backends.backend_pdf.PdfPages(filename) as pdf:
@@ -1946,6 +2061,15 @@ class Figure(object):
         raise NotImplementedError()
 
 
+    def summarize(self):
+        """
+        Save a summarized csv file of the results, appropriate for a particular plot.
+        The default is simply to save a long (not wide) version of all the columns.
+        """
+        toolnames = self.dataset.tools_and_metrics.keys()
+        summary_dataset = self.df_wide_to_long(self.dataset.data, toolnames)
+        summary_dataset.to_csv(self.data_file)
+
 class MetricsAllToolsFigure(Figure):
     """
     Simple figure that shows all the metrics at the same time.
@@ -1953,50 +2077,92 @@ class MetricsAllToolsFigure(Figure):
     """
     datasetClass = AllToolsDataset
     name = "metrics_all_tools"
+    
+    
     fillstyles = ['full', 'none']
+
+    def summarize(self):
+        param_cols = ['Ne', 'length', 'sample_size',
+            'recombination_rate', 'mutation_rate', ERROR_COLNAME]
+        toolnames = self.dataset.tools_and_metrics.keys()
+
+        summary_df = self.dataset.data
+        
+        # Turn the column names containing tree metric distances to names containing
+        # rational descriptions of the parameters associated with each metric
+        summary_df.columns = [
+            self.convert_treemetric_colname(cn, toolnames) for cn in summary_df.columns]
+        metric_param_names = ["tool",'averaging', 'polytomy_treatment', 'rooting', 'metric']
+
+        # Remove unused columns (any not in param_cols, or a tree distance measure)
+        response_cols = [cn for cn in summary_df.columns if cn.endswith("treedist")]
+        summary_df = summary_df.loc[:,param_cols+response_cols]
+        # Convert metric params to long format
+        summary_df = self.df_wide_to_long(summary_df, toolnames, metric_param_names)
+        summary_df = self.mean_se(summary_df, param_cols+metric_param_names)
+
+        # Post-processing
+        #  Remove weighted tree distance measures
+        summary_df = summary_df.loc[[not m.startswith("w") for m in summary_df['metric']]]
+        #  The Robinson-Foulds metric is not well behaved for trees with polytomies 
+        #  (only tsinfer produces such trees, though)
+        summary_df = summary_df.loc[~(
+            (summary_df.polytomy_treatment == 'leaving polytomies') & \
+            (summary_df.tool == 'tsinfer') & \
+            [m.endswith("Robinson-Foulds metric") for m in summary_df['metric']])]
+
+        summary_df.to_csv(self.data_file)
 
     def plot(self):
         from matplotlib.legend_handler import HandlerTuple
-        df = self.dataset.data
-        error_params = df[ERROR_COLNAME].unique()
+        try:
+            df = pd.read_csv(self.data_file)
+        except FileNotFoundError:
+            raise FileNotFoundError("You need to run evalution.py" 
+                "(setup + infer + summarize) to generate the data file for plotting")
+        assert len(df.averaging.unique()) == 1
+        averaging = df.averaging.unique()[0]
         sample_sizes = df.sample_size.unique()
-        metrics = ARG_metrics.get_metric_names()
-        topology_only_metrics = [m for m in metrics if not m.startswith('w')]
-        fig, axes = pyplot.subplots(len(topology_only_metrics),
+        # y-direction is different error rates
+        error_params = df.error_param.unique()
+        # x-direction is the permutations of metric + whether it is rooted
+        metric_and_rooting = df.groupby(["metric", "rooting"]).groups
+        # sort this (TO DO)
+        fig, axes = pyplot.subplots(len(metric_and_rooting),
             len(error_params), figsize=(4*len(error_params), 15), sharey='row')
-        for j, metric in enumerate(topology_only_metrics):
+        for j, ((metric, root), rows) in enumerate(metric_and_rooting.items()):
             for k, error in enumerate(error_params):
+                # we are in the j,k th subplot
                 ax = axes[j][k] if len(error_params)>1 else axes[j]
                 ax.set_xscale('log')
                 if j == 0:
-                    ax.set_title(error_label(error))
-                if k == 0:
-                    ax.set_ylabel(getattr(self, 'y_axis_label', self.metric_titles[metric]))
-                if j == len(topology_only_metrics) - 1:
+                    ax.set_title(self.error_label(error))
+                if j == len(metric_and_rooting) - 1:
                     ax.set_xlabel("Mutation rate")
+                if k == 0:
+                    rooting_suffix = " (unrooted)" if root=="unrooted" else ""
+                    if getattr(self, 'y_axis_label', None) is None:
+                        ax.set_ylabel(metric + rooting_suffix)
+                plot_df = df.loc[rows].query("{} == @error".format(ERROR_COLNAME))
+                #now plot each line on this subplot
                 for n, fillstyle in zip(sample_sizes, self.fillstyles):
-                    df_s = df[np.logical_and(df.sample_size == n, df[ERROR_COLNAME] == error)]
-                    group = df_s.groupby(["mutation_rate"])
-                    mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-                    for tool_and_metrics_param, setting in self.tools_and_metrics_params.items():
-                        if metric.startswith("RF") \
-                            and tool_and_metrics_param.startswith(TSINFER) \
-                            and (int(tool_and_metrics_param.rsplit("_",1)[1]) & METRICS_POLYTOMIES_BREAK == 0):
-                                # RF metrics are not well behaved for trees with polytomies (i.e. tsinfer trees)
-                                # so we should omit tsinfer cases where METRICS_POLYTOMIES_BREAK == 0
-                            continue
-                        colname = tool_and_metrics_param + "_" + metric
-                        if colname in df.columns:
-                            ax.errorbar(
-                                [m['mu'] for m in mean_sem],
-                                [m['mean'][tool_and_metrics_param + "_" + metric] for m in mean_sem],
-                                yerr=[m['sem'][tool_and_metrics_param + "_" + metric] for m in mean_sem] \
-                                     if getattr(self, 'error_bars', False) else None,
-                                linestyle=setting["linestyle"],
-                                fillstyle=fillstyle,
-                                color=setting["col"],
-                                marker=None if len(sample_sizes)==1 else setting['mark'],
-                                elinewidth=1)
+                    for tool in df.tool.unique():
+                        for poly in plot_df.polytomy_treatment.unique():
+                            query = []
+                            query.append("sample_size == @n")
+                            query.append("tool == @tool")
+                            query.append("polytomy_treatment == @poly")
+                            line_data = plot_df.query("(" + ") and (".join(query) + ")")
+                            if not line_data.empty:
+                                ax.errorbar(
+                                    line_data.mutation_rate,
+                                    line_data.treedist_mean,
+                                    line_data.treedist_se,
+                                    linestyle=self.polytomy_and_averaging_format[poly][averaging]["linestyle"],
+                                    fillstyle=fillstyle,
+                                    color=self.tools_format[tool]["col"],
+                                    marker=None if len(sample_sizes)==1 else self.tools_format[tool]['mark'],
+                                    elinewidth=1)
                 ax.set_ylim(ymin=0)
                 ax.axvline(x=df.recombination_rate.unique()[0], 
                     color = 'gray', zorder=-1, linestyle=":", linewidth=1)
@@ -2005,12 +2171,13 @@ class MetricsAllToolsFigure(Figure):
                 ax.get_yaxis().set_label_coords(-0.15,0.5)
 
         artists = [
-            pyplot.Line2D((0,1),(0,0), color= setting["col"],
-                linewidth=2, linestyle=setting["linestyle"],
-                marker = None if len(sample_sizes)==1 else setting['mark'])
-            for tool,setting in self.tools_and_metrics_params.items()]
-        tool_labels = [(l.replace("_0", "").replace("_2"," breaking polytomies") if l.startswith(TSINFER) else l.replace("_0", "")) 
-            for l in self.tools_and_metrics_params.keys()]
+            pyplot.Line2D((0,1),(0,0), linewidth=2,
+                color=self.tools_format[tool]["col"],
+                linestyle=self.polytomy_and_averaging_format[poly][averaging]["linestyle"],
+                marker = None if len(sample_sizes)==1 else self.tools_format[tool]['mark'])
+            for tool, poly in df.groupby(["tool", "polytomy_treatment"]).groups.keys()]
+        tool_labels = [tool + ("" if poly == "leaving polytomies" else (" " + poly)) 
+            for tool, poly in df.groupby(["tool", "polytomy_treatment"]).groups.keys()]
         axes[0][0].legend(
             artists, tool_labels, numpoints=1, labelspacing=0.1)
             
@@ -2018,18 +2185,18 @@ class MetricsAllToolsFigure(Figure):
             # bbox_to_anchor=(0.0, 0.1))
         # ax = pyplot.gca().add_artist(first_legend)
         maintitle = "Average tree distance for neutral simulations"
-        if len(sample_sizes)>1:
-            artists = [
-                tuple([
-                    pyplot.Line2D(
-                    (0,0),(0,0), color=setting['col'], fillstyle=fillstyle, marker=setting['mark'], linestyle='None')
-                    for tool, setting in self.tools_and_metrics_params.items()])
-                for fillstyle in self.fillstyles]
-            axes[0][-1].legend(
-                artists, ["Sample size = {}".format(n) for n in [15,20]],
-                loc="upper right", numpoints=1, handler_map={tuple: HandlerTuple(ndivide=None, pad=2)})
-        else:
-            maintitle += " of {} samples".format(sample_sizes[0])
+        #if len(sample_sizes)>1:
+        #    artists = [
+        #        tuple([
+        #            pyplot.Line2D(
+        #            (0,0),(0,0), color=setting['col'], fillstyle=fillstyle, marker=setting['mark'], linestyle='None')
+        #            for tool, setting in self.tools_and_metrics_params.items()])
+        #        for fillstyle in self.fillstyles]
+        #    axes[0][-1].legend(
+        #        artists, ["Sample size = {}".format(n) for n in [15,20]],
+        #        loc="upper right", numpoints=1, handler_map={tuple: HandlerTuple(ndivide=None, pad=2)})
+        #else:
+        #    maintitle += " of {} samples".format(sample_sizes[0])
         maintitle += " spanning "  + ",".join(["{:g}kb\n".format(x/1e3) for x in df.length.unique()])
         if any([isinstance(Ne, str) for Ne in df.Ne.unique()]):
             maintitle += "(Model{}=".format('s' if len(df.Ne.unique()) > 1 else "") \
@@ -2079,7 +2246,7 @@ class MetricAllToolsFigure(Figure):
         lines = []
         for k, error in enumerate(error_params):
             ax = axes[k] if len(error_params)>1 else axes
-            ax.set_title(error_label(error))
+            ax.set_title(self.error_label(error))
             ax.set_xlabel("Mutation rate")
             ax.set_xscale('log')
             if k == 0:
@@ -2209,7 +2376,7 @@ class CputimeAllToolsFigure(Figure):
 
         fig, (ax_hi, ax_lo) = pyplot.subplots(2, 1, sharex=True)
         lines = []
-        noerror = [e for e in df[ERROR_COLNAME].unique() if error_label(e) == "No error"]
+        noerror = [e for e in df[ERROR_COLNAME].unique() if self.error_label(e, None) is None]
         assert len(noerror) == 1
         noerror = noerror[0]
         ax_lo.set_xlabel("Sample Size")
@@ -2280,7 +2447,7 @@ class MetricsAllToolsAccuracySweepFigure(Figure):
         for error in error_params:
             fig, axes = pyplot.subplots(len(topology_only_metrics),
                 len(output_freqs), figsize=(20, 20))
-            fig.suptitle(error_label(error))
+            fig.suptitle(self.error_label(error))
             for j, metric in enumerate(topology_only_metrics):
                 for k, output_data in enumerate(output_freqs.itertuples()):
                     freq = output_data.output_frequency
@@ -2382,7 +2549,7 @@ class MetricAllToolsAccuracySweepFigure(Figure):
                 ax = axes[j][k]
                 ax.set_xscale('log')
                 if j == 0:
-                    ax.set_title(error_label(error))
+                    ax.set_title(self.error_label(error))
                 if j == len(output_freqs) - 1:
                     ax.set_xlabel("Neutral mutation rate")
                 if k == 0:
@@ -2520,7 +2687,7 @@ class MetricsSubsamplingFigure(Figure):
             first_legend = axes[0][-1].legend(
                 artists, tool_labels, numpoints=1, labelspacing=0.1, loc="lower right")
             fig.suptitle('ARG metric for trees subsampled down to {} tips'.format(
-                restrict_sample_size_comparison[0], error_label(error)))
+                restrict_sample_size_comparison[0], self.error_label(error)))
             figures.append(fig)
         self.savefig(*figures)
 
@@ -2896,6 +3063,10 @@ def run_plot(cls, args):
     f = cls()
     f.plot()
 
+def run_summarize(cls, args):
+    f = cls()
+    f.summarize()
+
 
 def main():
     def get_subclasses(cls):
@@ -2912,7 +3083,9 @@ def main():
     subparsers.required = True
     subparsers.dest = 'command'
 
-    subparser = subparsers.add_parser('setup')
+    subparser = subparsers.add_parser('setup',
+        help="Run simulations, outputting true histories & genome sequences for analysis" +
+            "(created files will overwrite previous runs of the same name)")
     subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
         help='the dataset identifier', choices=sorted([d.name for d in datasets if d.name]))
@@ -2931,7 +3104,9 @@ def main():
          help="Show a progress bar.", )
     subparser.set_defaults(func=run_setup)
 
-    subparser = subparsers.add_parser('infer')
+    subparser = subparsers.add_parser('infer',
+        help="Infer genealogical histories from previously generated sequence data," +
+            " and generate statistics for comparison")
     subparser.add_argument(
         "--processes", '-p', type=int, default=1,
         help="number of worker processes, e.g. 40")
@@ -2960,6 +3135,13 @@ def main():
          '--flush-all',  "-F", action='store_true',
          help="flush the result file after every result.", )
     subparser.set_defaults(func=run_infer)
+
+    subparser = subparsers.add_parser('summarize',
+        help="Create data files for later plotting")
+    subparser.add_argument(
+        'name', metavar='NAME', type=str, nargs=1,
+        help='the figure identifier', choices=sorted([f.name for f in figures if f.name]))
+    subparser.set_defaults(func=run_summarize)
 
     subparser = subparsers.add_parser('figure')
     subparser.add_argument(
