@@ -207,7 +207,7 @@ class MetricFigure(ToolsFigure):
 
     fillstyles = ['full', 'none']
             
-    def single_metric_plot(self, df, ax, sample_sizes, rho, averaging):
+    def single_metric_plot(self, df, ax, sample_sizes, rho, averaging, markers = True):
         #now plot each line on this subplot
         for n, fillstyle in zip(sample_sizes, self.fillstyles):
             for tool in df.tool.unique():
@@ -225,7 +225,7 @@ class MetricFigure(ToolsFigure):
                             linestyle=self.polytomy_and_averaging_format[poly][averaging]["linestyle"],
                             fillstyle=fillstyle,
                             color=self.tools_format[tool]["col"],
-                            marker=None if len(sample_sizes)==1 else self.tools_format[tool]['mark'],
+                            marker=self.tools_format[tool]['mark'] if markers else None,
                             elinewidth=1)
         ax.set_ylim(ymin=0)
         ax.axvline(x=rho, color = 'gray', zorder=-1, linestyle=":", linewidth=1)
@@ -271,7 +271,8 @@ class MetricsAllToolsFigure(MetricFigure):
                         ax.set_ylabel(metric + rooting_suffix)
                 self.single_metric_plot(
                     self.data.loc[rows].query("error_param == @error"),
-                    ax, sample_sizes, rhos[0], averaging[0])
+                    ax, sample_sizes, rhos[0], averaging[0],
+                    markers = (len(sample_sizes)==1))
 
         artists = [
             plt.Line2D((0,1),(0,0), linewidth=2,
