@@ -16,6 +16,8 @@ class Figure(object):
     """
     Superclass of figures for the paper. Each figure is a concrete subclass.
     """
+    name = None
+
     def __init__(self):
         datafile_name = "data/{}.csv".format(self.name)
         self.data = pd.read_csv(datafile_name)
@@ -205,6 +207,32 @@ class MetricFigure(ToolsFigure):
 
     fillstyles = ['full', 'none']
             
+    def single_metric_plot(self, df, ax, sample_sizes, rho, averaging):
+        #now plot each line on this subplot
+        for n, fillstyle in zip(sample_sizes, self.fillstyles):
+            for tool in df.tool.unique():
+                for poly in df.polytomy_treatment.unique():
+                    query = []
+                    query.append("sample_size == @n")
+                    query.append("tool == @tool")
+                    query.append("polytomy_treatment == @poly")
+                    line_data = df.query("(" + ") and (".join(query) + ")")
+                    if not line_data.empty:
+                        ax.errorbar(
+                            line_data.mutation_rate,
+                            line_data.treedist_mean,
+                            line_data.treedist_se,
+                            linestyle=self.polytomy_and_averaging_format[poly][averaging]["linestyle"],
+                            fillstyle=fillstyle,
+                            color=self.tools_format[tool]["col"],
+                            marker=None if len(sample_sizes)==1 else self.tools_format[tool]['mark'],
+                            elinewidth=1)
+        ax.set_ylim(ymin=0)
+        ax.axvline(x=rho, color = 'gray', zorder=-1, linestyle=":", linewidth=1)
+        ax.text(rho, ax.get_ylim()[1]/40,  r'$\mu=\rho$',
+            va="bottom",  ha="right", color='gray', rotation=90)
+        ax.get_yaxis().set_label_coords(-0.15,0.5)
+
 
 class MetricsAllToolsFigure(MetricFigure):
     """
@@ -241,32 +269,9 @@ class MetricsAllToolsFigure(MetricFigure):
                     rooting_suffix = " (unrooted)" if root=="unrooted" else ""
                     if getattr(self, 'y_axis_label', None) is None:
                         ax.set_ylabel(metric + rooting_suffix)
-                plot_df = self.data.loc[rows].query("error_param == @error")
-                #now plot each line on this subplot
-                for n, fillstyle in zip(sample_sizes, self.fillstyles):
-                    for tool in plot_df.tool.unique():
-                        for poly in plot_df.polytomy_treatment.unique():
-                            query = []
-                            query.append("sample_size == @n")
-                            query.append("tool == @tool")
-                            query.append("polytomy_treatment == @poly")
-                            line_data = plot_df.query("(" + ") and (".join(query) + ")")
-                            if not line_data.empty:
-                                ax.errorbar(
-                                    line_data.mutation_rate,
-                                    line_data.treedist_mean,
-                                    line_data.treedist_se,
-                                    linestyle=self.polytomy_and_averaging_format[poly][averaging[0]]["linestyle"],
-                                    fillstyle=fillstyle,
-                                    color=self.tools_format[tool]["col"],
-                                    marker=None if len(sample_sizes)==1 else self.tools_format[tool]['mark'],
-                                    elinewidth=1)
-                ax.set_ylim(ymin=0)
-                ax.axvline(x=rhos[0], 
-                    color = 'gray', zorder=-1, linestyle=":", linewidth=1)
-                ax.text(self.data.recombination_rate.unique()[0], ax.get_ylim()[1]/40, 
-                    r'$\mu=\rho$', va="bottom",  ha="right", color='gray', rotation=90)
-                ax.get_yaxis().set_label_coords(-0.15,0.5)
+                self.single_metric_plot(
+                    self.data.loc[rows].query("error_param == @error"),
+                    ax, sample_sizes, rhos[0], averaging[0])
 
         artists = [
             plt.Line2D((0,1),(0,0), linewidth=2,
@@ -308,6 +313,96 @@ class MetricsAllToolsFigure(MetricFigure):
         fig.tight_layout(rect=[0, 0, 1, 0.95])
         self.save()
 
+
+class MetricsAllToolsAccuracyFigure(MetricsAllToolsFigure):
+    """
+    Show the metrics tending to 0 as mutation rate increases
+    """
+    name = "metrics_all_tools_accuracy"
+    error_bars = True
+    
+class MetricsAllToolsAccuracyDemographyFigure(MetricsAllToolsFigure):
+    """
+    Simple figure that shows all the metrics at the same time for
+    a genome under a more complex demographic model (the Gutenkunst 
+    Out Of Africa model), as mutation rate increases to high values
+    """
+    name = "metrics_all_tools_accuracy_demography"
+
+
+class MetricAllToolsFigure(MetricFigure):
+    """
+    Superclass of the metric all tools figure. Each subclass should be a
+    single figure for a particular metric.
+    """
+    def plot(self):
+        metrics = self.data.metric.unique()
+        # y-direction is different error rates
+        error_params = self.data.error_param.unique()
+
+        averaging = self.data.averaging.unique()
+        eff_sizes = self.data.Ne.unique()
+        rhos = self.data.recombination_rate.unique()
+        lengths = self.data.length.unique()
+        assert len(averaging) == len(eff_sizes) == len(rhos) == len(metrics) == 1
+        
+        metric = metrics[0]
+        sample_sizes = self.data.sample_size.unique()
+
+        fig, axes = plt.subplots(1, len(error_params),
+            figsize=getattr(self,'figsize',(12, 6)), sharey=True)
+        lines = []
+        for k, error in enumerate(error_params):
+            ax = axes[k] if len(error_params)>1 else axes
+            ax.set_title(self.error_label(error))
+            ax.set_xlabel("Mutation rate")
+            ax.set_xscale('log')
+            if k == 0:
+                ax.set_ylim(self.ylim)
+                ax.set_ylabel(getattr(self, 'y_axis_label', metric))
+            self.single_metric_plot(
+                self.data.query("error_param == @error"),
+                ax, sample_sizes, rhos[0], averaging[0])
+
+        # Create legends from custom artists
+        #artists = [
+        #    pyplot.Line2D((0,1),(0,0), color= setting["col"], fillstyle=self.fillstyles[0],
+        #        marker= setting["mark"], linestyle=setting["linestyle"])
+        #    for tool,setting in self.tools_and_metrics_params.items()]
+        #tool_labels = [(l.replace("_0", "").replace("_2"," breaking polytomies") if l.startswith(TSINFER) else l.replace("_0", "")) 
+        #    for l in self.tools_and_metrics_params.keys()]
+        #first_legend = axes[0].legend(
+        #    artists, tool_labels, numpoints=1, labelspacing=0.1, loc="upper right")
+        #    # bbox_to_anchor=(0.0, 0.1))
+        ## ax = pyplot.gca().add_artist(first_legend)
+        #if len(sample_sizes)>1:
+        #    artists = [
+        #        pyplot.Line2D(
+        #            (0,0),(0,0), color="black", fillstyle=fillstyle, linewidth=2)
+        #        for n, fillstyle in zip(sample_sizes, self.fillstyles)]
+        #    axes[-1].legend(
+        #        artists, ["Sample size = {}".format(n) for n, fillstyle in zip(sample_sizes, self.fillstyles)],
+        #        loc="upper right")
+        self.save()
+
+class MetricAllToolsAccuracyFigure(MetricAllToolsFigure):
+    """
+    Superclass of the metric all tools figure. Each subclass should be a
+    single figure for a particular metric.
+    """
+    pass
+
+
+class KCAllToolsFigure(MetricAllToolsFigure):
+    """For the publication: make symbols small and solid"""
+    name = "kc_all_tools"
+    ylim = (0, 24)
+    fillstyles = ['full']
+    figsize = (9,4.5)
+    error_bars = True
+    y_axis_label="Average distance from true trees (mean $\pm$ s.e.)"
+
+
 ######################################
 #
 # Helper functions
@@ -341,7 +436,7 @@ def latex_float(f):
 def main():
     figures = list(get_subclasses(Figure))
 
-    name_map = {fig.name: fig for fig in figures if hasattr(fig, "name")}
+    name_map = {fig.name: fig for fig in figures if fig.name is not None}
 
     parser = argparse.ArgumentParser(description="Make the plots for specific figures.")
     parser.add_argument(
