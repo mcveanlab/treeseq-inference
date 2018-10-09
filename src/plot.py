@@ -272,7 +272,7 @@ class MetricsAllToolsFigure(MetricFigure):
                 self.single_metric_plot(
                     self.data.loc[rows].query("error_param == @error"),
                     ax, sample_sizes, rhos[0], averaging[0],
-                    markers = (len(sample_sizes)==1))
+                    markers = (len(sample_sizes)!=1))
 
         artists = [
             plt.Line2D((0,1),(0,0), linewidth=2,
