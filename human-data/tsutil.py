@@ -198,13 +198,8 @@ def run_combine_ukbb_1kg(args):
 
 def run_compute_1kg_ancestry(args):
     ts = msprime.load(args.input)
-    # This is specialised for the 1000 genomes metadata format. We could compute the
-    # ancestry for all populations, but it's a good bit slower.
-    superpops = collections.defaultdict(list)
-    for population in ts.populations():
-        md = json.loads(population.metadata.decode())
-        superpops[md["super_population"]].extend(ts.samples(population.id))
-    A = tsinfer.mean_sample_ancestry(ts, list(superpops.values()), show_progress=True)
+    populations = [ts.samples(pop) for pop in range(ts.num_populations)]
+    A = tsinfer.mean_sample_ancestry(ts, populations, show_progress=True)
     np.save(args.output, A)
      
 
