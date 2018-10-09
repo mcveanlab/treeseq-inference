@@ -228,11 +228,12 @@ def run_snip_centromere(args):
     # since we're just searching for the largest gap anyway. However, it can
     # be useful in UKBB, since it's perfectly possible that the largest 
     # gap between sites isn't in the centromere.
-    X = position[s_index: e_index]
+    X = position[s_index: e_index + 1]
     j = np.argmax(X[1:] - X[:-1])
-    start = X[j] + 1
-    end = X[j + 1]
-    snipped_ts = tsinfer.snip_centromere(ts, start, end)
+    real_start = X[j] + 1
+    real_end = X[j + 1]
+    print("Centromere at", start, end, "Snipping topology from ", real_start, real_end)
+    snipped_ts = tsinfer.snip_centromere(ts, real_start, real_end)
     snipped_ts.dump(args.output)
 
 
