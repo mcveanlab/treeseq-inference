@@ -415,13 +415,13 @@ class MetricAllToolsFigure(TreeMetricsFigure):
     name = "metric_all_tools"
     figsize = (9,4.5)
     y_axis_label="Average distance from true trees (mean $\pm$ s.e.)"
-    show_broken_polytomies = False
+    hide_broken_polytomies = False
     output_metrics = [("KC","rooted")] #can add extras in here if necessary
 
     def plot(self):
         for metric, rooting in self.output_metrics:
             query = ["metric == @metric", "rooting == @rooting"]
-            if self.show_broken_polytomies:
+            if self.hide_broken_polytomies:
                 query.append("polytomy_treatment != 'breaking polytomies'")
             df = self.data.query("(" + ") and (".join(query) + ")")
             averaging_method = df.averaging.unique()
@@ -475,7 +475,6 @@ class MetricAllToolsAccuracyFigure(MetricAllToolsFigure):
     """
     name = "metric_all_tools_accuracy"    
     y_axis_label="Average distance from true trees (mean $\pm$ s.e.)"
-    show_broken_polytomies = False
     output_metrics = [("KC","rooted")] #can add extras in here if necessary
 
 
@@ -485,13 +484,13 @@ class MetricSubsamplingFigure(TreeMetricsFigure):
     reconstructing the ARG for a fixed subsample. We only use tsinfer for this.
     """
     name = "metrics_subsampling"
-    show_broken_polytomies = True
+    hide_broken_polytomies = False
     output_metrics = [("KC","rooted")] #can add extras in here if necessary
 
     def plot(self):
         for metric, rooting in self.output_metrics:
             query = ["metric == @metric", "rooting == @rooting"]
-            if self.show_broken_polytomies:
+            if self.hide_broken_polytomies:
                 query.append("polytomy_treatment != 'breaking polytomies'")
             df = self.data.query("(" + ") and (".join(query) + ")")
             subsample_size = df.subsample_size.unique()
