@@ -198,13 +198,8 @@ def run_combine_ukbb_1kg(args):
 
 def run_compute_1kg_ancestry(args):
     ts = msprime.load(args.input)
-    # This is specialised for the 1000 genomes metadata format. We could compute the
-    # ancestry for all populations, but it's a good bit slower.
-    superpops = collections.defaultdict(list)
-    for population in ts.populations():
-        md = json.loads(population.metadata.decode())
-        superpops[md["super_population"]].extend(ts.samples(population.id))
-    A = tsinfer.mean_sample_ancestry(ts, list(superpops.values()), show_progress=True)
+    populations = [ts.samples(pop) for pop in range(ts.num_populations)]
+    A = tsinfer.mean_sample_ancestry(ts, populations, show_progress=True)
     np.save(args.output, A)
      
 
@@ -228,11 +223,12 @@ def run_snip_centromere(args):
     # since we're just searching for the largest gap anyway. However, it can
     # be useful in UKBB, since it's perfectly possible that the largest 
     # gap between sites isn't in the centromere.
-    X = position[s_index: e_index]
+    X = position[s_index: e_index + 1]
     j = np.argmax(X[1:] - X[:-1])
-    start = X[j] + 1
-    end = X[j + 1]
-    snipped_ts = tsinfer.snip_centromere(ts, start, end)
+    real_start = X[j] + 1
+    real_end = X[j + 1]
+    print("Centromere at", start, end, "Snipping topology from ", real_start, real_end)
+    snipped_ts = tsinfer.snip_centromere(ts, real_start, real_end)
     snipped_ts.dump(args.output)
 
 
