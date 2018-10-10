@@ -1492,7 +1492,7 @@ class AllToolsPerformanceDataset(AllToolsDataset):
     fixed_length = 2 * 10**5
     num_points = 4
     #Ensure sample sizes are even so we can output diploid VCF.
-    sample_sizes = [10, 20, 40, 65, 100]
+    sample_sizes = [10, 20, 40, 64, 100]
     lengths = np.linspace(fixed_length / 5, 4 * fixed_length, num_points).astype(int)
 
     #params that change BETWEEN simulations. Keys should correspond
@@ -1879,6 +1879,9 @@ class Summary(object):
     # Each summary has a unique name. This is used as the identifier for the csv file.
     name = None
 
+    standard_param_cols = ['Ne', 'length', 'sample_size',
+            'recombination_rate', 'mutation_rate', ERROR_COLNAME]
+
     def __init__(self):
         self.dataset = self.datasetClass()
         self.dataset.load_data()
@@ -1942,6 +1945,36 @@ class Summary(object):
         """
         raise NotImplementedError()
 
+class CputimeAllTools(Summary):
+    """
+    Superclass comparing cpu times for tsinfer vs other tools. 
+    We can only really get the CPU times for all four methods for tiny examples.
+    """
+    datasetClass = AllToolsPerformanceDataset
+    
+    def summarize(self, return_mean_plus_sterr=True):
+        param_cols = self.standard_param_cols
+        toolnames = self.dataset.tools_and_metrics.keys()
+        summary_df = self.dataset.data
+        # Remove unused columns (any not in param_cols, or CPU time)
+        response_cols = [cn for cn in summary_df.columns if cn.endswith("_cputime")]
+        summary_df = summary_df.loc[:,param_cols+response_cols]
+        # Convert metric params to long format
+        summary_df = self.df_wide_to_long(summary_df, toolnames, ["tool"])
+        if return_mean_plus_sterr:
+            summary_df = self.mean_se(summary_df, param_cols+["tool"])
+        return summary_df
+
+class CputimeAllToolsBySampleSizeSummary(Summary):
+    """
+    Show change in cpu time with sample size.
+    """
+    name = "cputime_all_tools_by_sample_size"
+    def summarize(self, *args, **vars):
+        fixed_length = self.dataset.fixed_length
+        summary_df = super().summarize(*args, **vars)
+        return sqummary_df.query("length = @fixed_length")
+
 class MetricsSummary(Summary):
     """
     Superclass for summaries of tree distance metrics.
@@ -1985,10 +2018,8 @@ class MetricsSummary(Summary):
         return "_".join(colsplit)
 
     def summarize(self, return_mean_plus_sterr=True):
-        param_cols = ['Ne', 'length', 'sample_size',
-            'recombination_rate', 'mutation_rate', ERROR_COLNAME]
+        param_cols = self.standard_param_cols
         toolnames = self.dataset.tools_and_metrics.keys()
-
         summary_df = self.dataset.data
         
         # Turn the column names containing tree metric distances to names containing
@@ -2065,15 +2096,12 @@ class MetricAllToolsSummary(MetricsSummary):
 class MetricAllToolsAccuracySummary(MetricAllToolsSummary):
     """
     Superclass of the metric all tools figure. Each subclass should be a
-    single figure for a particular metric.
+    single figure for a particular metric, for example, we could define
+        name = "rf_rooted_all_tools"
+        metric = "RF"
+        rooting = "rooted"
     """
     datasetClass = AllToolsAccuracyDataset
-
-
-class RFRootedAllToolsSummary(MetricAllToolsSummary):
-    name = "rf_rooted_all_tools"
-    metric = "RF"
-    rooting = "rooted"
 
 
 class KCAllToolsSummary(MetricAllToolsSummary):
@@ -2089,18 +2117,6 @@ class KCAllToolsSummary(MetricAllToolsSummary):
         summary_df = summary_df.query("polytomy_treatment != 'breaking polytomies'")
         return summary_df
 
-class RFRootedAllToolsAccuracySummary(MetricAllToolsAccuracySummary):
-    name = "rf_rooted_all_tools_accuracy"
-    metric = "RF"
-    #rooting = "rooted"
-    #ylim = None
-
-
-class KCAllToolsAccuracySummary(MetricAllToolsAccuracySummary):
-    name = "kc_all_tools_accuracy"
-    metric = "KC"
-    #ylim = (0, 40)
-    #error_bars = True
 
 class MetricAllToolsAccuracyDemographySummary(MetricAllToolsSummary):
     """
@@ -2112,75 +2128,7 @@ class MetricAllToolsAccuracyDemographySummary(MetricAllToolsSummary):
 class KCAllToolsAccuracyDemographySummary(MetricAllToolsAccuracyDemographySummary):
     name = "kc_rooted_all_tools_accuracy_demography"
     metric = "KC"
-    #ylim = (0, 20)
-    #error_bars = True
 
-class CputimeAllToolsSummary(Summary):
-    """
-    This figure is useful because we can only really get the CPU times
-    for all four methods in the same scale for these tiny examples.
-    We can show that ARGWeaver and RentPlus are much slower than tsinfer
-    and FastARG here and compare tsinfer and FastARG more thoroughly
-    in a dedicated figure.
-    """
-    name = "cputime_all_tools"
-    datasetClass = AllToolsPerformanceDataset
-    error_bars = True
-
-    def plot(self):
-        df = self.dataset.data
-        sample_sizes = df.sample_size.unique()
-
-        fig, (ax_hi, ax_lo) = pyplot.subplots(2, 1, sharex=True)
-        lines = []
-        noerror = [e for e in df[ERROR_COLNAME].unique() if self.error_label(e, None) is None]
-        assert len(noerror) == 1
-        noerror = noerror[0]
-        ax_lo.set_xlabel("Sample Size")
-        ax_hi.set_ylabel("CPU time (hours)")
-        #ax_lo.set_xlim(sample_sizes.min(), sample_sizes.max())
-
-        # zoom-in / limit the view to different portions of the data
-        #ax_hi.set_ylim(0.6, 2.7)  # outliers only
-        ax_lo.set_ylim(0, 0.005)  # most of the data
-        #ax_hi.set_ylim(0.01, 3)  # outliers only
-        #ax_lo.set_ylim(0, 0.002)  # most of the data
-        
-        # hide the spines between ax and ax2
-        ax_hi.spines['bottom'].set_visible(False)
-        ax_lo.spines['top'].set_visible(False)
-        ax_hi.xaxis.tick_top()
-        ax_hi.tick_params(labeltop='off')  # don't put tick labels at the top
-        ax_lo.xaxis.tick_bottom()
-
-        df_s = df[np.logical_and(
-            df[ERROR_COLNAME] == noerror, 
-            df['length'] == self.dataset.fixed_length)]
-        group = df_s.groupby(["sample_size"])
-        mean_sem = [{'sz':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-        for tool, setting in self.tools.items():
-            for ax in (ax_lo, ax_hi):
-                ax.errorbar(
-                    [m['sz'] for m in mean_sem],
-                    [m['mean'][tool + "_" + "cputime"]/60/60 for m in mean_sem],
-                    yerr=[m['sem'][tool + "_" + "cputime"]/60/60 for m in mean_sem] \
-                         if getattr(self, 'error_bars', False) else None,
-                    color=setting["col"],
-                    marker=setting["mark"],
-                    elinewidth=1,
-                    label=tool)
-        d = .015  # how big to make the diagonal lines in axes coordinates
-        # arguments to pass to plot, just so we don't keep repeating them
-        kwargs = dict(transform=ax_hi.transAxes, color='k', clip_on=False)
-        ax_hi.plot((-d, +d), (-d, +d), **kwargs)        # top-left diagonal
-        ax_hi.plot((1 - d, 1 + d), (-d, +d), **kwargs)  # top-right diagonal
-        
-        kwargs.update(transform=ax_lo.transAxes)  # switch to the bottom axes
-        ax_lo.plot((-d, +d), (1 - d, 1 + d), **kwargs)  # bottom-left diagonal
-        ax_lo.plot((1 - d, 1 + d), (1 - d, 1 + d), **kwargs)  # bottom-right diagonal
-
-        ax_hi.legend(loc="upper left")
-        self.savefig(fig)
 
 class MetricsAllToolsAccuracySweepSummary(MetricsSummary):
     """

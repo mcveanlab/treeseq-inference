@@ -193,6 +193,66 @@ class ToolsFigure(Figure):
                 pass            
             return "{} error".format(error) if error else label_for_no_error
 
+class CputimeAllToolsBySampleSizeFigure(ToolsFigure):
+    """
+    Compare cpu times for tsinfer vs other tools. We can only really get the CPU times
+    for all four methods in the same scale for tiny examples.
+    We can show that ARGWeaver and RentPlus are much slower than tsinfer
+    and FastARG here and compare tsinfer and FastARG more thoroughly
+    in a dedicated figure.
+    """
+    name = "cputime_all_tools_by_sample_size"
+    error_bars = True
+
+    def plot(self):
+        df = self.dataset.data
+        sample_sizes = df.sample_size.unique()
+        fig, (ax_hi, ax_lo) = plt.subplots(2, 1, sharex=True)
+        errs = df.error_params.unique()
+        lengths = df.length.unique()
+        #check these have fixed error rates & lengths
+        assert len(errs) == len(lengths) == 1
+        #check these are all without error
+        assert self.error_label(errs[0], label_for_no_error=None) is None
+        ax_lo.set_xlabel("Sample Size")
+        ax_hi.set_ylabel("CPU time (hours)")
+        #ax_lo.set_xlim(sample_sizes.min(), sample_sizes.max())
+
+        # zoom-in / limit the view to different portions of the data
+        #ax_hi.set_ylim(0.6, 2.7)  # outliers only
+        ax_lo.set_ylim(0, 0.005)  # most of the data
+        #ax_hi.set_ylim(0.01, 3)  # outliers only
+        #ax_lo.set_ylim(0, 0.002)  # most of the data
+        
+        # hide the spines between ax and ax2
+        ax_hi.spines['bottom'].set_visible(False)
+        ax_lo.spines['top'].set_visible(False)
+        ax_hi.xaxis.tick_top()
+        ax_hi.tick_params(labeltop='off')  # don't put tick labels at the top
+        ax_lo.xaxis.tick_bottom()
+
+        for tool in df.tool.unique():
+            line_data = df.query("tool == @tool")
+            for ax in (ax_lo, ax_hi):
+                ax.errorbar(
+                    line_data.sample_size,
+                    line_data.cputime_mean/60/60,
+                    yerr=line_data.cputime_se/60/60,
+                    color=self.tools_format[tool]["col"],
+                    marker=self.tools_format[tool]['mark'],
+                    elinewidth=1,
+                    label=tool)
+        d = .015  # how big to make the diagonal lines in axes coordinates
+        # arguments to pass to plot, just so we don't keep repeating them
+        kwargs = dict(transform=ax_hi.transAxes, color='k', clip_on=False)
+        ax_hi.plot((-d, +d), (-d, +d), **kwargs)        # top-left diagonal
+        ax_hi.plot((1 - d, 1 + d), (-d, +d), **kwargs)  # top-right diagonal
+        
+        kwargs.update(transform=ax_lo.transAxes)  # switch to the bottom axes
+        ax_lo.plot((-d, +d), (1 - d, 1 + d), **kwargs)  # bottom-left diagonal
+        ax_lo.plot((1 - d, 1 + d), (1 - d, 1 + d), **kwargs)  # bottom-right diagonal
+        ax_hi.legend(loc="upper left")
+
 
 class MetricFigure(ToolsFigure):
 
@@ -206,9 +266,12 @@ class MetricFigure(ToolsFigure):
     ])
 
     fillstyles = ['full', 'none']
-            
-    def single_metric_plot(self, df, ax, sample_sizes, rho, averaging, markers = True):
-        #now plot each line on this subplot
+
+    def single_metric_plot(self, df, ax, sample_sizes, rho, averaging, 
+        markers = True, plot_mu_rho_line = True):
+        """
+        A single plot on an ax. Thie requires plotting separate lines, e.g. for each tool
+        """
         for n, fillstyle in zip(sample_sizes, self.fillstyles):
             for tool in df.tool.unique():
                 for poly in df.polytomy_treatment.unique():
@@ -228,10 +291,10 @@ class MetricFigure(ToolsFigure):
                             marker=self.tools_format[tool]['mark'] if markers else None,
                             elinewidth=1)
         ax.set_ylim(ymin=0)
-        ax.axvline(x=rho, color = 'gray', zorder=-1, linestyle=":", linewidth=1)
-        ax.text(rho, ax.get_ylim()[1]/40,  r'$\mu=\rho$',
-            va="bottom",  ha="right", color='gray', rotation=90)
-        ax.get_yaxis().set_label_coords(-0.15,0.5)
+        if plot_mu_rho_line:
+            ax.axvline(x=rho, color = 'gray', zorder=-1, linestyle=":", linewidth=1)
+            ax.text(rho, ax.get_ylim()[1]/40,  r'$\mu=\rho$',
+                va="bottom",  ha="right", color='gray', rotation=90)
 
 
 class MetricsAllToolsFigure(MetricFigure):
@@ -273,6 +336,8 @@ class MetricsAllToolsFigure(MetricFigure):
                     self.data.loc[rows].query("error_param == @error"),
                     ax, sample_sizes, rhos[0], averaging[0],
                     markers = (len(sample_sizes)!=1))
+                # Make the labels on each Y axis line up properly
+                ax.get_yaxis().set_label_coords(-0.15,0.5)
 
         artists = [
             plt.Line2D((0,1),(0,0), linewidth=2,
@@ -366,24 +431,16 @@ class MetricAllToolsFigure(MetricFigure):
                 ax, sample_sizes, rhos[0], averaging[0])
 
         # Create legends from custom artists
-        #artists = [
-        #    pyplot.Line2D((0,1),(0,0), color= setting["col"], fillstyle=self.fillstyles[0],
-        #        marker= setting["mark"], linestyle=setting["linestyle"])
-        #    for tool,setting in self.tools_and_metrics_params.items()]
-        #tool_labels = [(l.replace("_0", "").replace("_2"," breaking polytomies") if l.startswith(TSINFER) else l.replace("_0", "")) 
-        #    for l in self.tools_and_metrics_params.keys()]
-        #first_legend = axes[0].legend(
-        #    artists, tool_labels, numpoints=1, labelspacing=0.1, loc="upper right")
-        #    # bbox_to_anchor=(0.0, 0.1))
-        ## ax = pyplot.gca().add_artist(first_legend)
-        #if len(sample_sizes)>1:
-        #    artists = [
-        #        pyplot.Line2D(
-        #            (0,0),(0,0), color="black", fillstyle=fillstyle, linewidth=2)
-        #        for n, fillstyle in zip(sample_sizes, self.fillstyles)]
-        #    axes[-1].legend(
-        #        artists, ["Sample size = {}".format(n) for n, fillstyle in zip(sample_sizes, self.fillstyles)],
-        #        loc="upper right")
+        artists = [
+            plt.Line2D((0,1),(0,0),
+                color=self.tools_format[tool]["col"],
+                linestyle=self.polytomy_and_averaging_format[poly][averaging[0]]["linestyle"],
+                marker = self.tools_format[tool]['mark'])
+            for tool, poly in self.data.groupby(["tool", "polytomy_treatment"]).groups.keys()]
+        tool_labels = [tool + ("" if poly == "leaving polytomies" else (" " + poly)) 
+            for tool, poly in self.data.groupby(["tool", "polytomy_treatment"]).groups.keys()]
+        first_legend = axes[0].legend(
+            artists, tool_labels, numpoints=1, labelspacing=0.1, loc="upper right")
         self.save()
 
 class MetricAllToolsAccuracyFigure(MetricAllToolsFigure):
@@ -402,7 +459,6 @@ class KCAllToolsFigure(MetricAllToolsFigure):
     figsize = (9,4.5)
     error_bars = True
     y_axis_label="Average distance from true trees (mean $\pm$ s.e.)"
-
 
 ######################################
 #
