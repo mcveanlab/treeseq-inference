@@ -68,6 +68,7 @@ TSINFER = "tsinfer"
 #names for optional columns in the dataset
 ERROR_COLNAME = 'error_param'
 SUBSAMPLE_COLNAME = 'subsample_size'
+SUBCOMPARISON_COLNAME = 'restrict_sample_size_comparison'
 SIMTOOL_COLNAME = 'sim_tool' #if column does not exist, default simulation tool = 'msprime'
 MUTATION_SEED_COLNAME = 'mut_seed'
 SELECTION_COEFF_COLNAME = 'selection_coefficient'
@@ -366,7 +367,7 @@ class InferenceRunner(object):
         self.orig_sim_fn = mk_sim_name_from_row(row, simulations_dir, subsample_col=None, error_col=None)
         #the known tree file to compare inference against: is subset but no err
         self.cmp_fn = mk_sim_name_from_row(
-            row, simulations_dir, subsample_col='restrict_sample_size_comparison', error_col=None)
+            row, simulations_dir, subsample_col=SUBCOMPARISON_COLNAME, error_col=None)
         #sample_fn is used for sample data from the simulation, so must include error,
         #and (if used) the subsample size
         self.sample_fn = mk_sim_name_from_row(row, simulations_dir)
@@ -426,7 +427,7 @@ class InferenceRunner(object):
     def __run_tsinfer(self, skip_infer=False):
         #default to no subsampling
         subsample_size = getattr(self.row,'subsample_size', None)
-        restrict_sample_size_comparison = getattr(self.row,'restrict_sample_size_comparison', None)
+        restrict_sample_size_comparison = getattr(self.row,SUBCOMPARISON_COLNAME, None)
         #construct filenames - these can be used even if inference does not occur
         samples_fn = self.sample_fn + ".samples"
         out_fn = construct_tsinfer_name(self.sample_fn,
@@ -947,9 +948,9 @@ class Dataset(object):
         if iterate_over_dict is None:
             iterate_over_dict = self.within_sim_params
         if any(self.tools_and_metrics.values()):
-            if base_params.get('restrict_sample_size_comparison'):
+            if base_params.get(SUBCOMPARISON_COLNAME):
                 #we are not comparing the trees with all samples, but just the first n
-                n = base_params['restrict_sample_size_comparison']
+                n = base_params[SUBCOMPARISON_COLNAME]
                 cmp_fn = add_subsample_param_to_name(base_fn, n)
                 small_ts = ts.simplify(list(range(n)))
                 small_ts.save_nexus_trees(cmp_fn +".nex")
@@ -1641,12 +1642,12 @@ class SubsamplingDataset(Dataset):
     # to column names in the csv file. Values should all be arrays.
     between_sim_params = {
         'sample_size':        [1000], #the maximum sample size - we will trim this down
-        'length':             [10000, 100000, 1000000],
+        'length':             [50000, 500000, 5000000],
         'Ne':                 [5000],
         'mutation_rate':      [1e-8],
         'recombination_rate': [1e-8],
          #we always simplify down to the first n samples for comparison purposes
-        'restrict_sample_size_comparison': [6],
+        SUBCOMPARISON_COLNAME: [6],
     }
 
     within_sim_params = {
@@ -1656,7 +1657,7 @@ class SubsamplingDataset(Dataset):
     }
 
 
-    extra_sim_cols = [SUBSAMPLE_COLNAME, 'restrict_sample_size_comparison']
+    extra_sim_cols = [SUBSAMPLE_COLNAME, SUBCOMPARISON_COLNAME]
 
     def single_sim(self, row_id, sim_params, rng):
         assert max(self.within_sim_params[SUBSAMPLE_COLNAME]) <= sim_params['sample_size']
@@ -1666,7 +1667,7 @@ class SubsamplingDataset(Dataset):
             try:
                 # Run the simulation until we get an acceptable one
                 base_ts, fn = self.single_neutral_simulation(
-                    **{k:v for k,v in sim_params.items() if k != 'restrict_sample_size_comparison'})
+                    **{k:v for k,v in sim_params.items() if k != SUBCOMPARISON_COLNAME})
                 break
             except ValueError as e: #No non-singleton variants
                 logging.warning(e)
@@ -1953,9 +1954,9 @@ class CputimeAllTools(Summary):
     datasetClass = AllToolsPerformanceDataset
     
     def summarize(self, return_mean_plus_sterr=True):
-        param_cols = self.standard_param_cols
         toolnames = self.dataset.tools_and_metrics.keys()
         summary_df = self.dataset.data
+        param_cols = self.standard_param_cols
         # Remove unused columns (any not in param_cols, or CPU time)
         response_cols = [cn for cn in summary_df.columns if cn.endswith("_cputime")]
         summary_df = summary_df.loc[:,param_cols+response_cols]
@@ -1967,7 +1968,7 @@ class CputimeAllTools(Summary):
 
 class CputimeAllToolsBySampleSizeSummary(Summary):
     """
-    Show change in cpu time with sample size.
+    Show change in cpu time with sample size (easy to do a similar thing with length)
     """
     name = "cputime_all_tools_by_sample_size"
     def summarize(self, *args, **vars):
@@ -1975,16 +1976,11 @@ class CputimeAllToolsBySampleSizeSummary(Summary):
         summary_df = super().summarize(*args, **vars)
         return sqummary_df.query("length = @fixed_length")
 
-class MetricsSummary(Summary):
+class TreeMetricsSummary(Summary):
     """
     Superclass for summaries of tree distance metrics.
     """
-    metric_titles = {
-        "RF": "Robinson-Foulds metric",
-        "SPR": "estimated SPR difference",
-        "path": "Path difference",
-        "KC": "Kendall-Colijn metric",
-    }
+    param_cols = Summary.standard_param_cols
 
     def convert_treemetric_colname(self, colname, allowed_prefixes):
         """
@@ -2008,17 +2004,16 @@ class MetricsSummary(Summary):
             if colsplit[-1].endswith("unrooted"):
                 # remove the "unrooted" suffix, and stick it as an earlier param
                 metric = colsplit[-1][:-len("unrooted")]
-                colsplit.append(self.metric_titles.get(metric, metric))
+                colsplit.append(metric)
                 colsplit[-2] = "unrooted"
             elif colname.endswith("rooted"):
                 metric = colsplit[-1][:-len("rooted")]
-                colsplit.append(self.metric_titles.get(metric, metric))
+                colsplit.append(metric)
                 colsplit[-2] = "rooted"
             colsplit.append("treedist")
         return "_".join(colsplit)
 
     def summarize(self, return_mean_plus_sterr=True):
-        param_cols = self.standard_param_cols
         toolnames = self.dataset.tools_and_metrics.keys()
         summary_df = self.dataset.data
         
@@ -2030,23 +2025,25 @@ class MetricsSummary(Summary):
 
         # Remove unused columns (any not in param_cols, or a tree distance measure)
         response_cols = [cn for cn in summary_df.columns if cn.endswith("treedist")]
-        summary_df = summary_df.loc[:,param_cols+response_cols]
+        summary_df = summary_df.loc[:,self.param_cols+response_cols]
         # Convert metric params to long format
         summary_df = self.df_wide_to_long(summary_df, toolnames, metric_param_names)
         if return_mean_plus_sterr:
-            summary_df = self.mean_se(summary_df, param_cols+metric_param_names)
+            summary_df = self.mean_se(summary_df, self.param_cols + metric_param_names)
 
         # Post-processing
+        #  Don't use the weighted RF metric (only valid for trees with branch lengths
+        summary_df = summary_df.query("metric != 'wRF'")
         #  The Robinson-Foulds metric is not well behaved for trees with polytomies 
         #  (only tsinfer produces such trees, though)
         summary_df = summary_df.loc[~(
             (summary_df.polytomy_treatment == 'leaving polytomies') & \
             (summary_df.tool == 'tsinfer') & \
-            [m.endswith("Robinson-Foulds metric") for m in summary_df['metric']])]
+            [m.endswith("RF") for m in summary_df['metric']])]
         return summary_df
 
 
-class MetricsAllToolsSummary(MetricsSummary):
+class MetricsAllToolsSummary(TreeMetricsSummary):
     """
     Data for a plot showing many metrics in different subplots
     """
@@ -2073,64 +2070,19 @@ class MetricsAllToolsAccuracyDemographySummary(MetricsAllToolsSummary):
     name = "metrics_all_tools_accuracy_demography"
 
 
-class MetricAllToolsSummary(MetricsSummary):
+
+class MetricAllToolsSummary(TreeMetricsSummary):
     """
-    Base class for plots with single metrics.
+    Plot data for a single metric.
+    Note that we save data for all metrics into the CSV, which allows us to output
+    multiple plots (one for each metric) when plotting, and reduces the number of 
+    subclasses defined in this file
     """
     datasetClass = AllToolsDataset
-
-    def summarize(self):
-        summary_df = super().summarize()
-        #  Remove all but one specific tree distance measure
-        if self.metric in self.metric_titles:
-            metric = self.metric_titles[self.metric]
-        else:
-            metric = self.metric
-        query = ["metric == @metric"]
-        if hasattr(self, "rooting"):
-            rooting = self.rooting
-            query += ["rooting = @rooting"]
-        summary_df = summary_df.query("(" + ") and (".join(query) + ")")
-        return summary_df
-
-class MetricAllToolsAccuracySummary(MetricAllToolsSummary):
-    """
-    Superclass of the metric all tools figure. Each subclass should be a
-    single figure for a particular metric, for example, we could define
-        name = "rf_rooted_all_tools"
-        metric = "RF"
-        rooting = "rooted"
-    """
-    datasetClass = AllToolsAccuracyDataset
+    name = "metric_all_tools"
 
 
-class KCAllToolsSummary(MetricAllToolsSummary):
-    """
-    For the publication: remove the line where polytomies are broken,
-    and make symbols small and solid
-    """
-    name = "kc_all_tools"
-    metric = "KC"
-
-    def summarize(self):
-        summary_df = super().summarize()
-        summary_df = summary_df.query("polytomy_treatment != 'breaking polytomies'")
-        return summary_df
-
-
-class MetricAllToolsAccuracyDemographySummary(MetricAllToolsSummary):
-    """
-    Superclass of the metric all tools figure for demographic simulations. 
-    Each subclass should be a single figure for a particular metric.
-    """
-    datasetClass = AllToolsAccuracyWithDemographyDataset
-
-class KCAllToolsAccuracyDemographySummary(MetricAllToolsAccuracyDemographySummary):
-    name = "kc_rooted_all_tools_accuracy_demography"
-    metric = "KC"
-
-
-class MetricsAllToolsAccuracySweepSummary(MetricsSummary):
+class MetricsAllToolsAccuracySweepSummary(TreeMetricsSummary):
     """
     Simple figure that shows all the metrics at the same time for
     a genome under a selective sweep
@@ -2227,12 +2179,11 @@ class MetricsAllToolsAccuracySweepSummary(MetricsSummary):
 
 
 
-class MetricAllToolsAccuracySweepSummary(MetricsSummary):
+class MetricAllToolsAccuracySweepSummary(TreeMetricsSummary):
     """
     Superclass of the metric all tools figure for simulations with selection. 
     Each subclass should be a single figure for a particular metric.
     """
-    datasetClass = AllToolsAccuracyWithSelectiveSweepDataset
     datasetClass = AllToolsAccuracyWithSelectiveSweepDataset
     name = "metric_all_tools_accuracy_sweep"
     error_bars = True
@@ -2326,78 +2277,18 @@ class KCAllToolsAccuracySweepSummary(MetricAllToolsAccuracySweepSummary):
     error_bars = True
 
 
-class MetricsSubsamplingSummary(MetricsSummary):
+class MetricSubsamplingSummary(MetricAllToolsSummary):
     """
     Figure that shows whether increasing sample size helps with the accuracy of
     reconstructing the ARG for a fixed subsample. We only use tsinfer for this.
     """
     datasetClass = SubsamplingDataset
     name = "metrics_subsampling"
-    error_bars=True
-
-    def plot(self):
-        figures = [] #save figures for putting onto a multi-page pdf
-        df = self.dataset.data
-        lengths = df.length.unique()
-        restrict_sample_size_comparison = df.restrict_sample_size_comparison.unique()
-        assert len(restrict_sample_size_comparison) == 1
-        col="black"
-        metrics = ARG_metrics.get_metric_names()
-        topology_only_metrics = [m for m in metrics if not m.startswith('w')]
-        for error in df[ERROR_COLNAME].unique():
-            fig, axes = pyplot.subplots(len(topology_only_metrics),
-                len(lengths), figsize=(12, 16))
-            for j, metric in enumerate(topology_only_metrics):
-                for k, length in enumerate(lengths):
-                    ax = axes[j][k]
-                    if j == 0:
-                        ax.set_title("Sequence length = {} Kb".format(int(length/1000)))
-                    if k == 0:
-                        ax.set_ylabel(getattr(self, 'y_axis_label', metric + " metric"))
-                    if j == len(topology_only_metrics) - 1:
-                        ax.set_xlabel("Original sample size")
-                    for tool_and_metrics_param, setting in self.tools_and_metrics_params.items():
-                        colname = tool_and_metrics_param + "_" + metric
-                        if colname in df.columns \
-                            and metric.startswith("RF") \
-                            and tool_and_metrics_param.startswith(TSINFER) \
-                            and (int(tool_and_metrics_param.rsplit("_",1)[1]) & METRICS_POLYTOMIES_BREAK == 0):
-                                # RF metrics are not well behaved for trees with polytomies (i.e. tsinfer trees)
-                                # so we should omit tsinfer cases where METRICS_POLYTOMIES_BREAK == 0
-                                continue
-                        dfp = df[np.logical_and(df.length == length, df[ERROR_COLNAME] == error)]
-                        group = dfp.groupby(["subsample_size"])
-                        mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-                        #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
-                        #print(mean_sem)
-                        if getattr(self, 'error_bars', None):
-                            yerr=[m['sem'][colname] for m in mean_sem]
-                        else:
-                            yerr = None
-                        ax.errorbar(
-                            [m['mu'] for m in mean_sem],
-                            [m['mean'][colname] for m in mean_sem],
-                            yerr=yerr,
-                            color= setting['col'],
-                            linestyle=setting['linestyle'],
-                            marker=setting['mark'],
-                            #elinewidth=1
-                            )
-            artists = [
-                pyplot.Line2D((0,1),(0,0), color= setting["col"],
-                    marker= setting["mark"], linestyle=setting["linestyle"])
-                for tool,setting in self.tools_and_metrics_params.items()]
-            tool_labels = [(l.replace("_1", "").replace("_3"," breaking polytomies") if l.startswith(TSINFER) else l.replace("_0", "")) 
-                for l in self.tools_and_metrics_params.keys()]
-            first_legend = axes[0][-1].legend(
-                artists, tool_labels, numpoints=1, labelspacing=0.1, loc="lower right")
-            fig.suptitle('ARG metric for trees subsampled down to {} tips'.format(
-                restrict_sample_size_comparison[0], self.error_label(error)))
-            figures.append(fig)
-        self.savefig(*figures)
+    param_cols = MetricAllToolsSummary.standard_param_cols + \
+        [SUBSAMPLE_COLNAME, SUBCOMPARISON_COLNAME]
 
 
-class MetricARGweaverParametersSummary(MetricsSummary):
+class MetricARGweaverParametersSummary(TreeMetricsSummary):
     """
     See the effect of burnin time and number of timeslices on the accuracy of ARGweaver
     as compared to TSinfer, when looking at tree metrics.
@@ -2769,6 +2660,7 @@ def run_summarize(cls, args):
     f = cls()
     df = f.summarize()
     df.to_csv(f.data_file)
+    logging.info("CSV file for plot {} written to {}".format(f.name, f.data_file))
 
 def main():
     def get_subclasses(cls):
