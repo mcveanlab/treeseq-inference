@@ -1881,7 +1881,7 @@ class Summary(object):
     name = None
 
     standard_param_cols = ['Ne', 'length', 'sample_size',
-            'recombination_rate', 'mutation_rate', ERROR_COLNAME]
+            'recombination_rate', 'mutation_rate']
 
     def __init__(self):
         self.dataset = self.datasetClass()
@@ -1897,11 +1897,11 @@ class Summary(object):
         
         The column names can be of the form
         
-            "tsinfer_per site_breaking polytomies_rooted_RF_treedist"
+            "tsinfer_per site_broken_rooted_RF_treedist"
         
         and values separated by underscores become separate stacking variables, here
 
-        "tsinfer", "per site", "breaking polytomies", "rooted", "RF", "treedist"
+        "tsinfer", "per site", "broken", "rooted", "RF", "treedist"
 
         the names to use for each variable is given by the split_names array
         """
@@ -1998,7 +1998,7 @@ class TreeMetricsSummary(Summary):
                 # (first bit is location, second is polytomies)
                 bitnames = [
                     "per variant" if (METRICS_LOCATION_VARIANTS & bitflag) else "per site",
-                    "breaking polytomies" if (METRICS_POLYTOMIES_BREAK & bitflag) else "leaving polytomies"
+                    "broken" if (METRICS_POLYTOMIES_BREAK & bitflag) else "retained"
                 ]
                 colsplit = colsplit[0:1] + bitnames + colsplit[2:]
             if colsplit[-1].endswith("unrooted"):
@@ -2016,12 +2016,12 @@ class TreeMetricsSummary(Summary):
     def summarize(self, return_mean_plus_sterr=True):
         toolnames = self.dataset.tools_and_metrics.keys()
         summary_df = self.dataset.data
-        
+        assert summary_df.empty == False
         # Turn the column names containing tree metric distances to names containing
         # rational descriptions of the parameters associated with each metric
         summary_df.columns = [
             self.convert_treemetric_colname(cn, toolnames) for cn in summary_df.columns]
-        metric_param_names = ["tool",'averaging', 'polytomy_treatment', 'rooting', 'metric']
+        metric_param_names = ["tool",'averaging', 'polytomies', 'rooting', 'metric']
 
         # Remove unused columns (any not in param_cols, or a tree distance measure)
         response_cols = [cn for cn in summary_df.columns if cn.endswith("treedist")]
@@ -2036,10 +2036,11 @@ class TreeMetricsSummary(Summary):
         summary_df = summary_df.query("metric != 'wRF'")
         #  The Robinson-Foulds metric is not well behaved for trees with polytomies 
         #  (only tsinfer produces such trees, though)
-        summary_df = summary_df.loc[~(
-            (summary_df.polytomy_treatment == 'leaving polytomies') & \
-            (summary_df.tool == 'tsinfer') & \
-            [m.endswith("RF") for m in summary_df['metric']])]
+        summary_df = summary_df.query(
+            "not ("
+            "(polytomies == 'retained') and "
+            "(tool == 'tsinfer') and "
+            "(metric == 'wRF' or metric == 'RF'))")
         return summary_df
 
 
@@ -2049,6 +2050,7 @@ class MetricsAllToolsSummary(TreeMetricsSummary):
     """
     datasetClass = AllToolsDataset
     name = "metrics_all_tools"
+    param_cols = TreeMetricsSummary.standard_param_cols + [ERROR_COLNAME]
     
 
 class MetricsAllToolsAccuracySummary(MetricsAllToolsSummary):
@@ -2080,9 +2082,10 @@ class MetricAllToolsSummary(TreeMetricsSummary):
     """
     datasetClass = AllToolsDataset
     name = "metric_all_tools"
+    param_cols = TreeMetricsSummary.standard_param_cols + [ERROR_COLNAME]
 
 
-class MetricsAllToolsAccuracySweepSummary(TreeMetricsSummary):
+class MetricsAllToolsAccuracySweepSummary(MetricsAllToolsSummary):
     """
     Simple figure that shows all the metrics at the same time for
     a genome under a selective sweep
@@ -2179,7 +2182,7 @@ class MetricsAllToolsAccuracySweepSummary(TreeMetricsSummary):
 
 
 
-class MetricAllToolsAccuracySweepSummary(TreeMetricsSummary):
+class MetricAllToolsAccuracySweepSummary(MetricAllToolsSummary):
     """
     Superclass of the metric all tools figure for simulations with selection. 
     Each subclass should be a single figure for a particular metric.
@@ -2283,9 +2286,9 @@ class MetricSubsamplingSummary(MetricAllToolsSummary):
     reconstructing the ARG for a fixed subsample. We only use tsinfer for this.
     """
     datasetClass = SubsamplingDataset
-    name = "metrics_subsampling"
+    name = "metric_subsampling"
     param_cols = MetricAllToolsSummary.standard_param_cols + \
-        [SUBSAMPLE_COLNAME, SUBCOMPARISON_COLNAME]
+        [ERROR_COLNAME, SUBSAMPLE_COLNAME, SUBCOMPARISON_COLNAME]
 
 
 class MetricARGweaverParametersSummary(TreeMetricsSummary):
@@ -2395,75 +2398,6 @@ class TsinferPerformanceLengthSamplesSummary(Summary):
     of the different combinations of tsinfer parameters
     """
     datasetClass = TsinferPerformanceDataset
-    plotted_column = None
-    y_axis_label = None
-
-    def plot(self):
-        df = self.dataset.data
-        # Rescale the length to MB
-        df.length /= 10**6
-        # Set statistics to the ratio of observed over expected
-        source_colour = "red"
-        inferred_colour = self.tools[TSINFER]["col"]
-        recombination_linestyles = [':', '-', '--']
-        recombination_rates = df.recombination_rate.unique()
-        mutation_rates = self.datasetClass.between_sim_params['mutation_rate']
-        assert len(recombination_linestyles) >= len(recombination_rates)
-        assert len(mutation_rates) ==1
-        mu = mutation_rates[0]
-        #inferred_markers =    {False:'s',True:'b'}
-        fig, (ax1, ax2) = pyplot.subplots(1, 2, figsize=(12, 6), sharey=True)
-        ax1.set_title("Fixed number of chromosomes ({})".format(self.datasetClass.fixed_sample_size))
-        ax1.set_xlabel("Sequence length (MB)")
-        ax1.set_ylabel(self.y_axis_label)
-        for rho_index, rho in enumerate(recombination_rates):
-            dfp = df[np.logical_and.reduce((
-                df.sample_size == self.datasetClass.fixed_sample_size,
-                df.recombination_rate == rho))]
-            group = dfp.groupby(["length"])
-            #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
-            mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-            ax1.errorbar(
-                [m['mu'] for m in mean_sem],
-                [m['mean'][self.plotted_column] for m in mean_sem],
-                yerr=[m['sem'][self.plotted_column] for m in mean_sem] if getattr(self, 'error_bars', False) else None,
-                linestyle= recombination_linestyles[rho_index],
-                color=inferred_colour,
-                #elinewidth=1
-                )
-
-
-        ax2.set_title("Fixed sequence length ({:g} Mb)".format(self.datasetClass.fixed_length / 10**6))
-        ax2.set_xlabel("Sample size")
-        ax2.set_ylabel(self.y_axis_label)
-        for rho_index, rho in enumerate(recombination_rates):
-            dfp = df[np.logical_and.reduce((
-                df.length == self.datasetClass.fixed_length / 10**6,
-                df.recombination_rate == rho))]
-            group = dfp.groupby(["sample_size"])
-            #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
-            mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-            ax2.errorbar(
-                [m['mu'] for m in mean_sem],
-                [m['mean'][self.plotted_column] for m in mean_sem],
-                yerr=[m['sem'][self.plotted_column] for m in mean_sem] if getattr(self, 'error_bars', False) else None,
-                linestyle= recombination_linestyles[rho_index],
-                color=inferred_colour,
-                #elinewidth=1
-                )
-        params = [
-            pyplot.Line2D(
-                (0,0),(0,0), color= inferred_colour,
-                linestyle=recombination_linestyles[rho_index], linewidth=2)
-            for rho_index, rho in enumerate(recombination_rates)]
-        ax1.legend(
-            params, [r"$\rho$ = {}".format("$\mu$" if rho==mu else r"{:g}$\mu$".format(rho/mu) if rho>mu else r"$\mu$/{:g}".format(mu/rho))
-                for rho_index, rho in enumerate(recombination_rates)],
-            loc="lower right", fontsize=10, title="Relative rate of\nrecombination")
-    
-        pyplot.suptitle(r'Tsinfer large dataset performance for $\mu$=${}$'.format(latex_float(mu)))
-        self.savefig(fig)
-
 
 class TsinferEdgesPerformanceSummary(TsinferPerformanceLengthSamplesSummary):
     name = "tsinfer_edges_ln"

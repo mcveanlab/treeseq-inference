@@ -1,5 +1,8 @@
-# Generates all the actual figures. Run like
-# python3 src/plot.py PLOT_NAME
+#!/usr/bin/env python3
+"""
+Generates all the actual figures. Run like
+ python3 src/plot.py PLOT_NAME
+"""
 
 import argparse
 import collections
@@ -255,6 +258,83 @@ class CputimeAllToolsBySampleSizeFigure(ToolsFigure):
         ax_hi.legend(loc="upper left")
 
 
+class TsinferPerformanceLengthSamplesFigure(ToolsFigure):
+    """
+    Superclass for the performance metrics figures. Each of these figures
+    has two panels; one for scaling by sequence length and the other
+    for scaling by sample size. Different lines are given for each
+    of the different combinations of tsinfer parameters
+    """
+    plotted_column = None
+    y_axis_label = None
+
+    def plot(self):
+        df = self.dataset.data
+        # Rescale the length to MB
+        df.length /= 10**6
+        # Set statistics to the ratio of observed over expected
+        source_colour = "red"
+        inferred_colour = self.tools[TSINFER]["col"]
+        recombination_linestyles = [':', '-', '--']
+        recombination_rates = df.recombination_rate.unique()
+        mutation_rates = self.datasetClass.between_sim_params['mutation_rate']
+        assert len(recombination_linestyles) >= len(recombination_rates)
+        assert len(mutation_rates) ==1
+        mu = mutation_rates[0]
+        #inferred_markers =    {False:'s',True:'b'}
+        fig, (ax1, ax2) = pyplot.subplots(1, 2, figsize=(12, 6), sharey=True)
+        ax1.set_title("Fixed number of chromosomes ({})".format(self.datasetClass.fixed_sample_size))
+        ax1.set_xlabel("Sequence length (MB)")
+        ax1.set_ylabel(self.y_axis_label)
+        for rho_index, rho in enumerate(recombination_rates):
+            dfp = df[np.logical_and.reduce((
+                df.sample_size == self.datasetClass.fixed_sample_size,
+                df.recombination_rate == rho))]
+            group = dfp.groupby(["length"])
+            #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
+            mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
+            ax1.errorbar(
+                [m['mu'] for m in mean_sem],
+                [m['mean'][self.plotted_column] for m in mean_sem],
+                yerr=[m['sem'][self.plotted_column] for m in mean_sem] if getattr(self, 'error_bars', False) else None,
+                linestyle= recombination_linestyles[rho_index],
+                color=inferred_colour,
+                #elinewidth=1
+                )
+
+
+        ax2.set_title("Fixed sequence length ({:g} Mb)".format(self.datasetClass.fixed_length / 10**6))
+        ax2.set_xlabel("Sample size")
+        ax2.set_ylabel(self.y_axis_label)
+        for rho_index, rho in enumerate(recombination_rates):
+            dfp = df[np.logical_and.reduce((
+                df.length == self.datasetClass.fixed_length / 10**6,
+                df.recombination_rate == rho))]
+            group = dfp.groupby(["sample_size"])
+            #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
+            mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
+            ax2.errorbar(
+                [m['mu'] for m in mean_sem],
+                [m['mean'][self.plotted_column] for m in mean_sem],
+                yerr=[m['sem'][self.plotted_column] for m in mean_sem] if getattr(self, 'error_bars', False) else None,
+                linestyle= recombination_linestyles[rho_index],
+                color=inferred_colour,
+                #elinewidth=1
+                )
+        params = [
+            pyplot.Line2D(
+                (0,0),(0,0), color= inferred_colour,
+                linestyle=recombination_linestyles[rho_index], linewidth=2)
+            for rho_index, rho in enumerate(recombination_rates)]
+        ax1.legend(
+            params, [r"$\rho$ = {}".format("$\mu$" if rho==mu else r"{:g}$\mu$".format(rho/mu) if rho>mu else r"$\mu$/{:g}".format(mu/rho))
+                for rho_index, rho in enumerate(recombination_rates)],
+            loc="lower right", fontsize=10, title="Relative rate of\nrecombination")
+    
+        pyplot.suptitle(r'Tsinfer large dataset performance for $\mu$=${}$'.format(latex_float(mu)))
+        self.savefig(fig)
+
+
 class TreeMetricsFigure(ToolsFigure):
 
     metric_titles = {
@@ -266,45 +346,49 @@ class TreeMetricsFigure(ToolsFigure):
     }
 
     polytomy_and_averaging_format = collections.OrderedDict([
-        ("breaking polytomies", {
+        ("broken", {
             "per site":    {"linestyle":"--"},
             "per variant": {"linestyle":":"}}),
-        ("leaving polytomies", {
+        ("retained", {
             "per site":    {"linestyle":"-"},
             "per variant": {"linestyle":"-."}})
     ])
 
-    fillstyles = ['full', 'none']
+    sample_size_format = [
+        {'fillstyle':'full'}, #smaller ss
+        {'fillstyle':'none'} #assume only max 2 sample sizes per plot
+        ]
 
-    def single_metric_plot(self, df, x_variable, ax, sample_sizes, rho, av_method, 
-        markers = True, plot_mu_rho_line = True):
+    def single_metric_plot(self, df, x_variable, ax, av_method, 
+        rho = None, markers = True):
         """
         A single plot on an ax. This requires plotting separate lines, e.g. for each tool
+        If rho is give, plot an x=rho vertical line, assuming x is the mutation_rate
         """
-        for n, fillstyle in zip(sample_sizes, self.fillstyles):
-            for tool in df.tool.unique():
-                for poly in df.polytomy_treatment.unique():
-                    query = []
-                    query.append("sample_size == @n")
-                    query.append("tool == @tool")
-                    query.append("polytomy_treatment == @poly")
-                    line_data = df.query("(" + ") and (".join(query) + ")")
-                    if not line_data.empty:
-                        ax.errorbar(
-                            line_data[x_variable],
-                            line_data.treedist_mean,
-                            yerr=line_data.treedist_se if self.error_bars else None,
-                            linestyle=self.polytomy_and_averaging_format[poly][av_method]["linestyle"],
-                            fillstyle=fillstyle,
-                            color=self.tools_format[tool]["col"],
-                            marker=self.tools_format[tool]['mark'] if markers else None,
-                            elinewidth=1)
-        ax.set_ylim(ymin=0)
-        if plot_mu_rho_line:
+        v_cols = ['sample_size', 'tool', 'polytomies']
+        v_order = df[v_cols].drop_duplicates() #find unique combinations
+        v_order = v_order.sort_values(v_cols, ascending=[True, True, False]) #sort for display
+        for r in v_order.itertuples():       
+            query = []
+            query.append("sample_size == @r.sample_size")
+            query.append("tool == @r.tool")
+            query.append("polytomies == @r.polytomies")
+            line_data = df.query("(" + ") and (".join(query) + ")")
+            if not line_data.empty:
+                ax.errorbar(
+                    line_data[x_variable],
+                    line_data.treedist_mean,
+                    yerr=line_data.treedist_se if self.error_bars else None,
+                    linestyle=self.polytomy_and_averaging_format[r.polytomies][av_method]["linestyle"],
+                    #fillstyle=fillstyle,
+                    color=self.tools_format[r.tool]["col"],
+                    marker=self.tools_format[r.tool]['mark'] if markers else None,
+                    elinewidth=1)
+        if rho is not None:
             ax.axvline(x=rho, color = 'gray', zorder=-1, linestyle=":", linewidth=1)
             ax.text(rho, ax.get_ylim()[1]/40,  r'$\mu=\rho$',
                 va="bottom",  ha="right", color='gray', rotation=90)
-
+        return v_order
 
 class MetricsAllToolsFigure(TreeMetricsFigure):
     """
@@ -335,10 +419,9 @@ class MetricsAllToolsFigure(TreeMetricsFigure):
                 # we are in the j,k th subplot
                 ax = axes[j][k] if len(error_params)>1 else axes[j]
                 ax.set_xscale('log')
-                self.single_metric_plot(
+                display_order = self.single_metric_plot(
                     self.data.loc[rows].query("error_param == @error"), "mutation_rate",
-                    ax, sample_sizes, rho, method,
-                    markers = (len(sample_sizes)!=1))
+                    ax, method, rho, markers = (len(sample_sizes)!=1))
                 # Make the labels on each Y axis line up properly
                 ax.get_yaxis().set_label_coords(-0.15,0.5)
                 if j == 0:
@@ -353,12 +436,12 @@ class MetricsAllToolsFigure(TreeMetricsFigure):
 
         artists = [
             plt.Line2D((0,1),(0,0), linewidth=2,
-                color=self.tools_format[tool]["col"],
-                linestyle=self.polytomy_and_averaging_format[poly][method]["linestyle"],
-                marker = None if len(sample_sizes)==1 else self.tools_format[tool]['mark'])
-            for tool, poly in self.data.groupby(["tool", "polytomy_treatment"]).groups.keys()]
-        tool_labels = [tool + ("" if poly == "leaving polytomies" else (" " + poly)) 
-            for tool, poly in self.data.groupby(["tool", "polytomy_treatment"]).groups.keys()]
+                color=self.tools_format[d.tool]["col"],
+                linestyle=self.polytomy_and_averaging_format[d.polytomies][method]["linestyle"],
+                marker = None if len(sample_sizes)==1 else self.tools_format[d.tool]['mark'])
+            for d in display_order[['tool', 'polytomies']].drop_duplicates().itertuples()]
+        tool_labels = [d.tool + ("" if d.polytomies == "retained" else (" (polytomies " + d.polytomies + ")"))
+            for d in display_order[['tool', 'polytomies']].drop_duplicates().itertuples()]
         axes[0][0].legend(
             artists, tool_labels, numpoints=1, labelspacing=0.1)
             
@@ -371,7 +454,7 @@ class MetricsAllToolsFigure(TreeMetricsFigure):
                         marker=self.tools_format[tool]['mark'],
                         fillstyle=fillstyle, 
                         linestyle='None')
-                    for tool, poly in self.data.groupby(["tool", "polytomy_treatment"]).groups.keys()])
+                    for tool, poly in self.data.groupby(["tool", "polytomies"]).groups.keys()])
                 for fillstyle in self.fillstyles]
             axes[0][-1].legend(
                 artists, ["Sample size = {}".format(n) for n in sample_sizes],
@@ -415,35 +498,34 @@ class MetricAllToolsFigure(TreeMetricsFigure):
     name = "metric_all_tools"
     figsize = (9,4.5)
     y_axis_label="Average distance from true trees (mean $\pm$ s.e.)"
-    hide_broken_polytomies = False
+    hide_broken_polytomies = True
     output_metrics = [("KC","rooted")] #can add extras in here if necessary
 
     def plot(self):
+        if self.hide_broken_polytomies:
+            df = self.data.query("polytomies != 'broken'")
+        else:
+            df = self.data
         for metric, rooting in self.output_metrics:
             query = ["metric == @metric", "rooting == @rooting"]
-            if self.hide_broken_polytomies:
-                query.append("polytomy_treatment != 'breaking polytomies'")
-            df = self.data.query("(" + ") and (".join(query) + ")")
             averaging_method = df.averaging.unique()
             eff_sizes = df.Ne.unique()
             rhos = df.recombination_rate.unique()
-            lengths = self.data.length.unique()
+            lengths = df.length.unique()
             assert len(averaging_method) == len(eff_sizes) == len(rhos) == 1 
             rho = rhos[0]
             method = averaging_method[0]
             
             # y-direction is different error rates
-            error_params = self.data.error_param.unique()
-    
-            sample_sizes = self.data.sample_size.unique()
+            error_params = df.error_param.unique()
     
             fig, axes = plt.subplots(1, len(error_params),
                 figsize=getattr(self,'figsize',(12, 6)), sharey=True)
             for k, error in enumerate(error_params):
                 ax = axes[k] if len(error_params)>1 else axes
-                self.single_metric_plot(
-                    df.query("error_param == @error"),  "mutation_rate",
-                    ax, sample_sizes, rho, method)
+                display_order = self.single_metric_plot(
+                    df.query("(" + ") and (".join(query + ["error_param == @error"]) + ")"),  
+                    "mutation_rate", ax, method, rho)
                 ax.set_title(self.error_label(error))
                 ax.set_xlabel("Mutation rate")
                 ax.set_xscale('log')
@@ -456,12 +538,12 @@ class MetricAllToolsFigure(TreeMetricsFigure):
             # Create legends from custom artists
             artists = [
                 plt.Line2D((0,1),(0,0),
-                    color=self.tools_format[tool]["col"],
-                    linestyle=self.polytomy_and_averaging_format[poly][method]["linestyle"],
-                    marker = self.tools_format[tool]['mark'])
-                for tool, poly in self.data.groupby(["tool", "polytomy_treatment"]).groups.keys()]
-            tool_labels = [tool + ("" if poly == "leaving polytomies" else (" " + poly)) 
-                for tool, poly in self.data.groupby(["tool", "polytomy_treatment"]).groups.keys()]
+                    color=self.tools_format[d.tool]["col"],
+                    linestyle=self.polytomy_and_averaging_format[d.polytomies][method]["linestyle"],
+                    marker = self.tools_format[d.tool]['mark'])
+                for d in display_order[['tool', 'polytomies']].drop_duplicates().itertuples()]
+            tool_labels = [d.tool + ("" if d.polytomies == "retained" else (" (polytomies " + d.polytomies + ")"))
+                for d in display_order[['tool', 'polytomies']].drop_duplicates().itertuples()]
             first_legend = axes[0].legend(
                 artists, tool_labels, numpoints=1, labelspacing=0.1, loc="upper right")
             if len(self.output_metrics)==1:
@@ -483,7 +565,7 @@ class MetricSubsamplingFigure(TreeMetricsFigure):
     Figure that shows whether increasing sample size helps with the accuracy of
     reconstructing the ARG for a fixed subsample. We only use tsinfer for this.
     """
-    name = "metrics_subsampling"
+    name = "metric_subsampling"
     hide_broken_polytomies = False
     output_metrics = [("KC","rooted")] #can add extras in here if necessary
 
@@ -491,42 +573,46 @@ class MetricSubsamplingFigure(TreeMetricsFigure):
         for metric, rooting in self.output_metrics:
             query = ["metric == @metric", "rooting == @rooting"]
             if self.hide_broken_polytomies:
-                query.append("polytomy_treatment != 'breaking polytomies'")
+                query.append("polytomies != 'broken'")
             df = self.data.query("(" + ") and (".join(query) + ")")
             subsample_size = df.subsample_size.unique()
-            restrict_sample_size_comparison = df.restrict_sample_size_comparison.unique()
+            # all should have the same similarion sample size (but inference occurs on
+            # different subsample sizes, and tree comparisons on a fixed small tip #.
+            averaging_method = self.data.averaging.unique()
+            sample_sizes = df.sample_size.unique()
+            tree_tips = df.restrict_sample_size_comparison.unique()
             mutation_rates = df.mutation_rate.unique()
-            assert len(restrict_sample_size_comparison) == len(mutation_rates) == 1
+            assert len(tree_tips) == len(mutation_rates) == len(sample_sizes) == len(averaging_method) == 1
+            method = averaging_method[0]
             lengths = df.length.unique()
             error_params = df.error_param.unique()
             fig, axes = plt.subplots(len(lengths), len(error_params),
-                figsize=(12, 16), sharey='row')
-            for j, length in enumerate(lengths):
+                figsize=(12, 16), sharey=True)
+            for j, l in enumerate(lengths):
                 for k, error in enumerate(error_params):
                     ax = axes[j][k]
-                    
-                    self.single_metric_plot(
-                        df.query("(error_param == @error) and (length == @length)"),
-                        "subsample_size", ax, sample_sizes, rho, method,
-                        markers = (len(sample_sizes)!=1))
+                    display_order = self.single_metric_plot(
+                        df.query("(error_param == @error) and (length == @l)"),
+                        "subsample_size", ax, method, 
+                        rho = None, markers = False)
                     if j == 0:
                         ax.set_title(self.error_label(error))
                     if k == 0:
-                        ylab = getattr(self, 'y_axis_label', self.metric_titles[metric] +\
-                            "over {} kb".format(length//1000))
+                        ylab = getattr(self, 'y_axis_label', "Average " + \
+                            self.metric_titles[metric] + " over {}kb".format(l//1000))
                         ax.set_ylabel(ylab)
-                    if j == len(topology_only_metrics) - 1:
+                    if j == len(lengths) - 1:
                         ax.set_xlabel("Original sample size")
-            artists = [
-                pyplot.Line2D((0,1),(0,0), color= setting["col"],
-                    marker= setting["mark"], linestyle=setting["linestyle"])
-                for tool,setting in self.tools_and_metrics_params.items()]
-            tool_labels = [(l.replace("_1", "").replace("_3"," breaking polytomies") if l.startswith(TSINFER) else l.replace("_0", "")) 
-                for l in self.tools_and_metrics_params.keys()]
-            first_legend = axes[0][-1].legend(
-                artists, tool_labels, numpoints=1, labelspacing=0.1, loc="lower right")
+            #artists = [
+            #    pyplot.Line2D((0,1),(0,0), color= setting["col"],
+            #        marker= setting["mark"], linestyle=setting["linestyle"])
+            #    for tool,setting in self.tools_and_metrics_params.items()]
+            #tool_labels = [(l.replace("_1", "").replace("_3"," breaking polytomies") if l.startswith(TSINFER) else l.replace("_0", "")) 
+            #    for l in self.tools_and_metrics_params.keys()]
+            #first_legend = axes[0][-1].legend(
+            #    artists, tool_labels, numpoints=1, labelspacing=0.1, loc="lower right")
             fig.suptitle('Accuracy with increased sampling (trees subsampled down to {} tips)'.format(
-                restrict_sample_size_comparison[0]))
+                tree_tips))
             if len(self.output_metrics)==1:
                 self.save()
             else:
