@@ -368,7 +368,8 @@ class TreeMetricsFigure(ToolsFigure):
         v_cols = ['sample_size', 'tool', 'polytomies']
         v_order = df[v_cols].drop_duplicates() #find unique combinations
         v_order = v_order.sort_values(v_cols, ascending=[True, True, False]) #sort for display
-        for r in v_order.itertuples():       
+        ss_order = {v:k for k,v in enumerate(df.sample_size.unique())}
+        for r in v_order.itertuples():
             query = []
             query.append("sample_size == @r.sample_size")
             query.append("tool == @r.tool")
@@ -380,7 +381,7 @@ class TreeMetricsFigure(ToolsFigure):
                     line_data.treedist_mean,
                     yerr=line_data.treedist_se if self.error_bars else None,
                     linestyle=self.polytomy_and_averaging_format[r.polytomies][av_method]["linestyle"],
-                    #fillstyle=fillstyle,
+                    fillstyle=self.sample_size_format[ss_order[r.sample_size]]['fillstyle'],
                     color=self.tools_format[r.tool]["col"],
                     marker=self.tools_format[r.tool]['mark'] if markers else None,
                     elinewidth=1)
@@ -407,9 +408,9 @@ class MetricsAllToolsFigure(TreeMetricsFigure):
         method = averaging_method[0]
         
         sample_sizes = self.data.sample_size.unique()
-        # y-direction is different error rates
+        # x-direction is different error rates
         error_params = self.data.error_param.unique()
-        # x-direction is the permutations of metric + whether it is rooted
+        # y-direction is the permutations of metric + whether it is rooted
         metric_and_rooting = self.data.groupby(["metric", "rooting"]).groups
         # sort this so that metrics come out in a set order (TO DO)
         fig, axes = plt.subplots(len(metric_and_rooting),
@@ -429,7 +430,7 @@ class MetricsAllToolsFigure(TreeMetricsFigure):
                 if j == len(metric_and_rooting) - 1:
                     ax.set_xlabel("Mutation rate")
                 if k == 0:
-                    ax.set_ylim(bottom=0, top=None)
+                    ax.set_ylim(getattr(self,'ylim', 0))
                     rooting_suffix = " (unrooted)" if root=="unrooted" else ""
                     ylab = getattr(self, 'y_axis_label', self.metric_titles[metric] + rooting_suffix)
                     ax.set_ylabel(ylab)
@@ -446,22 +447,22 @@ class MetricsAllToolsFigure(TreeMetricsFigure):
             artists, tool_labels, numpoints=1, labelspacing=0.1)
             
         maintitle = "Average tree distance for neutral simulations"
-        if len(sample_sizes)>1:
-            artists = [
-                tuple([
-                    plt.Line2D((0,0),(0,0),
-                        color=self.tools_format[tool]['col'],
-                        marker=self.tools_format[tool]['mark'],
-                        fillstyle=fillstyle, 
-                        linestyle='None')
-                    for tool, poly in self.data.groupby(["tool", "polytomies"]).groups.keys()])
-                for fillstyle in self.fillstyles]
-            axes[0][-1].legend(
-                artists, ["Sample size = {}".format(n) for n in sample_sizes],
-                loc="upper right", numpoints=1, 
-                handler_map={tuple: matplotlib.legend_handler.HandlerTuple(ndivide=None, pad=2)})
-        else:
-            maintitle += " of {} samples\n".format(sample_sizes[0])
+        #if len(sample_sizes)>1:
+        #    artists = [
+        #        tuple([
+        #            plt.Line2D((0,0),(0,0),
+        #                color=self.tools_format[tool]['col'],
+        #                marker=self.tools_format[tool]['mark'],
+        #                fillstyle=fillstyle, 
+        #                linestyle='None')
+        #            for tool, poly in self.data.groupby(["tool", "polytomies"]).groups.keys()])
+        #        for fillstyle in self.sample_size_format]
+        #    axes[0][-1].legend(
+        #        artists, ["Sample size = {}".format(n) for n in sample_sizes],
+        #        loc="upper right", numpoints=1, 
+        #        handler_map={tuple: matplotlib.legend_handler.HandlerTuple(ndivide=None, pad=2)})
+        #else:
+        maintitle += " of {} samples\n".format(sample_sizes[0])
         if any([isinstance(Ne, str) for Ne in eff_sizes]):
             maintitle += "(Model{}=".format('s' if len(eff_sizes) > 1 else "") \
                 + ",".join(["“{}”".format(x.replace("."," ")) for x in eff_sizes])
@@ -498,11 +499,11 @@ class MetricAllToolsFigure(TreeMetricsFigure):
     name = "metric_all_tools"
     figsize = (9,4.5)
     y_axis_label="Average distance from true trees (mean $\pm$ s.e.)"
-    hide_broken_polytomies = True
+    hide_polytomy_breaking = True
     output_metrics = [("KC","rooted")] #can add extras in here if necessary
 
     def plot(self):
-        if self.hide_broken_polytomies:
+        if getattr(self,"hide_polytomy_breaking", None):
             df = self.data.query("polytomies != 'broken'")
         else:
             df = self.data
@@ -516,7 +517,7 @@ class MetricAllToolsFigure(TreeMetricsFigure):
             rho = rhos[0]
             method = averaging_method[0]
             
-            # y-direction is different error rates
+            # x-direction is different error rates
             error_params = df.error_param.unique()
     
             fig, axes = plt.subplots(1, len(error_params),
@@ -530,7 +531,7 @@ class MetricAllToolsFigure(TreeMetricsFigure):
                 ax.set_xlabel("Mutation rate")
                 ax.set_xscale('log')
                 if k == 0:
-                    ax.set_ylim(0)
+                    ax.set_ylim(getattr(self,'ylim', 0))
                     rooting_suffix = " (unrooted)" if rooting=="unrooted" else ""
                     ylab = getattr(self, 'y_axis_label', self.metric_titles[metric] + rooting_suffix)
                     ax.set_ylabel(ylab)
@@ -560,19 +561,88 @@ class MetricAllToolsAccuracyFigure(MetricAllToolsFigure):
     output_metrics = [("KC","rooted")] #can add extras in here if necessary
 
 
+class MetricAllToolsAccuracySweepFigure(TreeMetricsFigure):
+    """
+    Figure for simulations with selection. 
+    Each page should be a single figure for a particular metric, with error on the 
+    """
+    name = "metric_all_tools_accuracy_sweep"
+    error_bars = True
+    output_metrics = [("KC","rooted")] #can add extras in here if necessary
+
+    def plot(self):
+        if getattr(self,"hide_polytomy_breaking", None):
+            df = self.data.query("polytomies != 'broken'")
+        else:
+            df = self.data
+        for metric, rooting in self.output_metrics:
+            df = df.query("(metric == @metric) and (rooting == @rooting)")
+            output_freqs = df[['output_frequency', 'output_after_generations']].drop_duplicates()
+            averaging_method = df.averaging.unique()
+            eff_sizes = df.Ne.unique()
+            rhos = df.recombination_rate.unique()
+            lengths = df.length.unique()
+            assert len(averaging_method) == len(eff_sizes) == len(rhos) == 1 
+            rho = rhos[0]
+            method = averaging_method[0]
+            # x-direction is different error rates
+            error_params = df.error_param.unique()
+            fig, axes = plt.subplots(len(output_freqs), len(error_params),
+                figsize=getattr(self,'figsize',(7*len(error_params), 3*len(output_freqs))),
+                sharey=True)
+            for j, output_data in enumerate(output_freqs.itertuples()):
+                for k, error in enumerate(error_params):
+                    ax = axes[j][k] if len(error_params)>1 else axes[j]
+                    freq = output_data.output_frequency
+                    gens = output_data.output_after_generations
+                    query = ["error_param == @error"]
+                    query.append("output_frequency == @freq")
+                    query.append("output_after_generations == @gens")
+                    display_order = self.single_metric_plot(
+                        df.query("(" + ") and (".join(query) + ")"),  
+                        "mutation_rate", ax, method, rho)
+                    ax.set_xscale('log')
+                    if j == 0:
+                        ax.set_title(self.error_label(error))
+                    if j == len(output_freqs) - 1:
+                        ax.set_xlabel("Neutral mutation rate")
+                    if k == 0:
+                        ax.set_ylabel(getattr(self, 'y_axis_label', metric + " metric") + 
+                            " @ {}{}".format(
+                                "fixation " if np.isclose(freq, 1.0) else "freq {}".format(freq),
+                                "+{} gens".format(int(gens)) if gens else ""))
+                    if np.isclose(freq, 1.0) and not gens:
+                        # This is *at* fixation - set the plot background colour
+                        ax.set_facecolor('0.9')
+            # Create legends from custom artists
+            artists = [
+                plt.Line2D((0,1),(0,0),
+                    color=self.tools_format[d.tool]["col"],
+                    linestyle=self.polytomy_and_averaging_format[d.polytomies][method]["linestyle"],
+                    marker = self.tools_format[d.tool]['mark'])
+                for d in display_order[['tool', 'polytomies']].drop_duplicates().itertuples()]
+            tool_labels = [d.tool + ("" if d.polytomies == "retained" else (" (polytomies " + d.polytomies + ")"))
+                for d in display_order[['tool', 'polytomies']].drop_duplicates().itertuples()]
+            first_legend = axes[0][0].legend(
+                artists, tool_labels, numpoints=1, labelspacing=0.1, loc="upper right")
+            if len(self.output_metrics)==1:
+                self.save()
+            else:
+                self.save("_".join([self.name, metric, rooting]))                
+
 class MetricSubsamplingFigure(TreeMetricsFigure):
     """
     Figure that shows whether increasing sample size helps with the accuracy of
     reconstructing the ARG for a fixed subsample. We only use tsinfer for this.
     """
     name = "metric_subsampling"
-    hide_broken_polytomies = False
+    hide_polytomy_breaking = True
     output_metrics = [("KC","rooted")] #can add extras in here if necessary
 
     def plot(self):
         for metric, rooting in self.output_metrics:
             query = ["metric == @metric", "rooting == @rooting"]
-            if self.hide_broken_polytomies:
+            if getattr(self,"hide_polytomy_breaking", None):
                 query.append("polytomies != 'broken'")
             df = self.data.query("(" + ") and (".join(query) + ")")
             subsample_size = df.subsample_size.unique()
@@ -603,16 +673,17 @@ class MetricSubsamplingFigure(TreeMetricsFigure):
                         ax.set_ylabel(ylab)
                     if j == len(lengths) - 1:
                         ax.set_xlabel("Original sample size")
-            artists = [
-                plt.Line2D((0,1),(0,0),
-                    color=self.tools_format[d.tool]["col"],
-                    linestyle=self.polytomy_and_averaging_format[d.polytomies][method]["linestyle"],
-                    marker = self.tools_format[d.tool]['mark'])
-                for d in display_order[['tool', 'polytomies']].drop_duplicates().itertuples()]
-            tool_labels = [d.tool + ("" if d.polytomies == "retained" else (" (polytomies " + d.polytomies + ")"))
-                for d in display_order[['tool', 'polytomies']].drop_duplicates().itertuples()]
-            first_legend = axes[0][0].legend(
-                artists, tool_labels, numpoints=1, labelspacing=0.1, loc="upper right")
+            if len(display_order)>1:
+                artists = [
+                    plt.Line2D((0,1),(0,0),
+                        color=self.tools_format[d.tool]["col"],
+                        linestyle=self.polytomy_and_averaging_format[d.polytomies][method]["linestyle"],
+                        marker = self.tools_format[d.tool]['mark'])
+                    for d in display_order[['tool', 'polytomies']].drop_duplicates().itertuples()]
+                tool_labels = [d.tool + ("" if d.polytomies == "retained" else (" (polytomies " + d.polytomies + ")"))
+                    for d in display_order[['tool', 'polytomies']].drop_duplicates().itertuples()]
+                first_legend = axes[0][0].legend(
+                    artists, tool_labels, numpoints=1, labelspacing=0.1, loc="upper right")
             fig.suptitle('Accuracy with increased sampling (trees subsampled down to {} tips)'.format(
                 ", ".join(str(t) for t in tree_tips)))
             if len(self.output_metrics)==1:

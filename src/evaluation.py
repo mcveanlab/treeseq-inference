@@ -2023,8 +2023,11 @@ class TreeMetricsSummary(Summary):
             self.convert_treemetric_colname(cn, toolnames) for cn in summary_df.columns]
         metric_param_names = ["tool",'averaging', 'polytomies', 'rooting', 'metric']
 
+
         # Remove unused columns (any not in param_cols, or a tree distance measure)
         response_cols = [cn for cn in summary_df.columns if cn.endswith("treedist")]
+        for c in self.param_cols+response_cols:
+            assert c in summary_df.columns, "{} missing from columns".format(c)
         summary_df = summary_df.loc[:,self.param_cols+response_cols]
         # Convert metric params to long format
         summary_df = self.df_wide_to_long(summary_df, toolnames, metric_param_names)
@@ -2189,89 +2192,8 @@ class MetricAllToolsAccuracySweepSummary(MetricAllToolsSummary):
     """
     datasetClass = AllToolsAccuracyWithSelectiveSweepDataset
     name = "metric_all_tools_accuracy_sweep"
-    error_bars = True
-    fillstyles = ['full', 'none']
-
-    def plot(self):
-        df = self.dataset.data
-        metric = self.metric
-        error_params = df[ERROR_COLNAME].unique()
-        output_freqs = df[[SELECTED_FREQ_COLNAME, SELECTED_POSTGEN_COLNAME]].drop_duplicates()
-        sample_sizes = df.sample_size.unique()
-
-        fig, axes = pyplot.subplots(len(output_freqs), len(error_params),
-            figsize=(7*len(error_params), 3*len(output_freqs)))
-        for j, output_data in enumerate(output_freqs.itertuples()):
-            for k, error in enumerate(error_params):
-                freq = output_data.output_frequency
-                gens = output_data.output_after_generations
-                ax = axes[j][k]
-                ax.set_xscale('log')
-                if j == 0:
-                    ax.set_title(self.error_label(error))
-                if j == len(output_freqs) - 1:
-                    ax.set_xlabel("Neutral mutation rate")
-                if k == 0:
-                    ax.set_ylabel(getattr(self, 'y_axis_label', self.metric_titles[metric].replace("Kendall-Colijn", "KC")) + 
-                        " @ {}{}".format(
-                            "fixation " if np.isclose(freq, 1.0) else "freq {}".format(freq),
-                            "+{} gens".format(int(gens)) if gens else ""))
-                if np.isclose(freq, 1.0) and not gens:
-                    # This is *at* fixation - set the plot background colour
-                    ax.set_facecolor('0.9')
-                for n, fillstyle in zip(sample_sizes, self.fillstyles):
-                    df_s = df[np.logical_and.reduce((
-                        df.sample_size == n,
-                        df[ERROR_COLNAME] == error,
-                        df[SELECTED_FREQ_COLNAME] == freq,
-                        df[SELECTED_POSTGEN_COLNAME] == gens))]
-                    group = df_s.groupby(["mutation_rate"])
-                    #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
-                    mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-                    for tool_and_metrics_param, setting in self.tools_and_metrics_params.items():
-                        if metric.startswith("RF") \
-                            and tool_and_metrics_param.startswith(TSINFER) \
-                            and (int(tool_and_metrics_param.rsplit("_",1)[1]) & METRICS_POLYTOMIES_BREAK == 0):
-                                # RF metrics are not well behaved for trees with polytomies (i.e. tsinfer trees)
-                                # so we should omit tsinfer cases where METRICS_POLYTOMIES_BREAK == 0
-                            continue
-                        if all(np.isnan(m['mean'][tool_and_metrics_param + "_" + metric]) for m in mean_sem):
-                            #don't plot if all NAs
-                            continue
-                        ax.errorbar(
-                            [m['mu'] for m in mean_sem],
-                            [m['mean'][tool_and_metrics_param + "_" + metric] for m in mean_sem],
-                            yerr=[m['sem'][tool_and_metrics_param + "_" + metric] for m in mean_sem] \
-                                if getattr(self, 'error_bars', False) else None,
-                            color=setting["col"],
-                            linestyle=setting["linestyle"],
-                            marker=setting["mark"],
-                            fillstyle=fillstyle,
-                            elinewidth=1)
-                ax.set_ylim(getattr(self,'ylim',0))
-                ax.axvline(x=df.recombination_rate.unique()[0], 
-                    color = 'gray', zorder=-1, linestyle=":", linewidth=1)
-                ax.text(df.recombination_rate.unique()[0], ax.get_ylim()[1]/40, r'$\mu=\rho$',
-                    va = "bottom",  ha="right", color = 'gray', rotation=90)
-
-        # Create legends from custom artists
-        artists = [
-            pyplot.Line2D((0,1),(0,0), color= setting["col"], fillstyle=self.fillstyles[0],
-                marker= setting["mark"], linestyle=setting["linestyle"])
-            for tool,setting in self.tools_and_metrics_params.items()]
-        tool_labels = [(l.replace("_0", "").replace("_2"," breaking polytomies") if l.startswith(TSINFER) else l.replace("_0", "")) 
-            for l in self.tools_and_metrics_params.keys()]
-        first_legend = axes[0][0].legend(
-            artists, tool_labels, numpoints=1, labelspacing=0.1, loc="upper right")
-        if len(sample_sizes)>1:
-            artists = [
-                pyplot.Line2D(
-                    (0,0),(0,0), color="black", fillstyle=fillstyle, linewidth=2)
-                for n, fillstyle in zip(sample_sizes, self.fillstyles)]
-            axes[0][-1].legend(
-                artists, ["Sample size = {}".format(n) for n, fillstyle in zip(sample_sizes, self.fillstyles)],
-                loc="upper right")
-        self.savefig(fig)
+    param_cols = MetricAllToolsSummary.standard_param_cols + \
+        [SELECTED_FREQ_COLNAME, SELECTED_POSTGEN_COLNAME, ERROR_COLNAME]
 
 class KCAllToolsAccuracySweepSummary(MetricAllToolsAccuracySweepSummary):
     name = "kc_rooted_all_tools_accuracy_sweep"
