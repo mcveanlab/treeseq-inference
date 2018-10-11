@@ -14,6 +14,7 @@ import msprime
 import tsinfer
 import daiquiri
 import numpy as np
+import pandas as pd
 import tqdm
 
 
@@ -203,6 +204,30 @@ def run_compute_1kg_ancestry(args):
     np.save(args.output, A)
      
 
+def run_compute_ukbb_ancestry(args):
+    ts = msprime.load(args.input)
+    # TODO this is temporary --- we should be doing this with metadata encoded in the
+    # tree sequence.
+    mdf = pd.read_csv("/well/mcvean/ukbb12788/ukb_metadata.csv")
+    total = 0
+    total_nan = 0
+    samples = ts.samples()
+    sample_sets = []
+    for centre_id in sorted(mdf.CentreID.unique()):
+        order = mdf.loc[mdf.CentreID == centre_id].Order.values
+        total += order.shape[0]
+        nans = np.isnan(order)
+        total_nan += np.sum(nans)
+        order = order[np.logical_not(nans)].astype(int)
+        sample_ids = np.hstack([samples[2 * order], samples[2 * order + 1]])    
+        sample_sets.append(sample_ids)
+
+    print("total = ", total, "missing = ", total_nan, "usable", total - total_nan)
+
+    A = tsinfer.mean_sample_ancestry(ts, sample_sets, show_progress=True)
+    np.save(args.output, A)
+     
+
 def run_snip_centromere(args):
     with open(args.centromeres) as csvfile:
         reader = csv.DictReader(csvfile)
@@ -273,6 +298,13 @@ def main():
     subparser.add_argument(
         "output", type=str, help="Filename to write numpy array to.")
     subparser.set_defaults(func=run_compute_1kg_ancestry)
+
+    subparser = subparsers.add_parser("compute-ukbb-ancestry")
+    subparser.add_argument(
+        "input", type=str, help="Input tree sequence")
+    subparser.add_argument(
+        "output", type=str, help="Filename to write numpy array to.")
+    subparser.set_defaults(func=run_compute_ukbb_ancestry)
 
     subparser = subparsers.add_parser("snip-centromere")
     subparser.add_argument(
