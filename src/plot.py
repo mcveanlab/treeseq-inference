@@ -603,16 +603,18 @@ class MetricSubsamplingFigure(TreeMetricsFigure):
                         ax.set_ylabel(ylab)
                     if j == len(lengths) - 1:
                         ax.set_xlabel("Original sample size")
-            #artists = [
-            #    pyplot.Line2D((0,1),(0,0), color= setting["col"],
-            #        marker= setting["mark"], linestyle=setting["linestyle"])
-            #    for tool,setting in self.tools_and_metrics_params.items()]
-            #tool_labels = [(l.replace("_1", "").replace("_3"," breaking polytomies") if l.startswith(TSINFER) else l.replace("_0", "")) 
-            #    for l in self.tools_and_metrics_params.keys()]
-            #first_legend = axes[0][-1].legend(
-            #    artists, tool_labels, numpoints=1, labelspacing=0.1, loc="lower right")
+            artists = [
+                plt.Line2D((0,1),(0,0),
+                    color=self.tools_format[d.tool]["col"],
+                    linestyle=self.polytomy_and_averaging_format[d.polytomies][method]["linestyle"],
+                    marker = self.tools_format[d.tool]['mark'])
+                for d in display_order[['tool', 'polytomies']].drop_duplicates().itertuples()]
+            tool_labels = [d.tool + ("" if d.polytomies == "retained" else (" (polytomies " + d.polytomies + ")"))
+                for d in display_order[['tool', 'polytomies']].drop_duplicates().itertuples()]
+            first_legend = axes[0][0].legend(
+                artists, tool_labels, numpoints=1, labelspacing=0.1, loc="upper right")
             fig.suptitle('Accuracy with increased sampling (trees subsampled down to {} tips)'.format(
-                tree_tips))
+                ", ".join(str(t) for t in tree_tips)))
             if len(self.output_metrics)==1:
                 self.save()
             else:
