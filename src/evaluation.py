@@ -2305,13 +2305,13 @@ class FastargTsinferComparisonSummary(CputimeMemoryAllToolsSummary):
 class FastargTsinferComparisonTimeSummary(FastargTsinferComparisonSummary):
     name = "fastarg_tsinfer_comparison_time"
     def summarize(self, return_mean_plus_sterr=True):
-        return super().summarize_cols_ending("memory", return_mean_plus_sterr)
+        return super().summarize_cols_ending("cputime", return_mean_plus_sterr)
 
 
 class FastargTsinferComparisonMemorySummary(FastargTsinferComparisonSummary):
     name = "fastarg_tsinfer_comparison_memory"
     def summarize(self, return_mean_plus_sterr=True):
-        return super().summarize_cols_ending("cputime", return_mean_plus_sterr)
+        return super().summarize_cols_ending("memory", return_mean_plus_sterr)
 
 
 def run_setup(cls, args):
@@ -2356,7 +2356,8 @@ def main():
             "(created files will overwrite previous runs of the same name)")
     subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
-        help='the dataset identifier', choices=sorted([d.name for d in datasets if d.name]))
+        help='the dataset identifier',
+        choices=sorted([d.name for d in datasets] + ['all']))
     subparser.add_argument(
         "--processes", '-p', type=int, default=1,
         help="number of worker processes, e.g. 40")
@@ -2390,7 +2391,7 @@ def main():
     subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
         help='the dataset identifier',
-        choices=sorted([d.name for d in datasets if d.name] + ['all']))
+        choices=sorted([d.name for d in datasets] + ['all']))
     subparser.add_argument(
          '--force',  "-f", action='store_true',
          help="redo all the inferences, even if we have already filled out some", )
@@ -2410,7 +2411,7 @@ def main():
     subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
         help='the figure identifier',
-        choices=sorted([f.name for f in summaries if f.name] + ['all']))
+        choices=sorted([f.name for f in summaries] + ['all']))
     subparser.set_defaults(func=run_summarize)
 
     args = parser.parse_args()
