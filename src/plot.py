@@ -165,8 +165,6 @@ class SampleEdges(Figure):
             df = df.reset_index()
             self.plot_region(df, dataset, region)
 
-    def plot(self):
-        raise NotImplementedError()
 
 
 class ToolsFigure(Figure):
@@ -810,11 +808,17 @@ def main():
 
     parser = argparse.ArgumentParser(description="Make the plots for specific figures.")
     parser.add_argument(
-        "name", type=str, help="figure name", choices=list(name_map.keys()))
+        "name", type=str, help="figure name",
+        choices=sorted(list(name_map.keys()) + ['all']))
     
     args = parser.parse_args()
-    fig = name_map[args.name]()
-    fig.plot()
+    if args.name == 'all':
+        for name, fig in name_map.items():
+            if fig in figures:
+                fig().plot()
+    else:
+        fig = name_map[args.name]()
+        fig.plot()
 
 
 if __name__ == "__main__":
