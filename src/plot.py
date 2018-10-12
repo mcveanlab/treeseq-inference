@@ -30,8 +30,7 @@ class Figure(object):
             figure_name = self.name
         print("Saving figure '{}'".format(figure_name))
         plt.savefig("figures/{}.pdf".format(figure_name))
-        plt.clf()
-
+        plt.close()
 
 class StoringEveryone(Figure):
     """
@@ -339,80 +338,84 @@ class FastargTsinferComparisonMemoryFigure(FastargTsinferComparisonFigure):
         mem_cols = [c for c in self.data.columns if c.startswith("memory")]
         self.data[mem_cols] /= 1024 * 1024 * 1024
 
-class TsinferPerformanceLengthSamplesFigure(ToolsFigure):
+class PerformanceLengthSamplesFigure(ToolsFigure):
     """
     Superclass for the performance metrics figures. Each of these figures
     has two panels; one for scaling by sequence length and the other
     for scaling by sample size. Different lines are given for each
     of the different combinations of tsinfer parameters
     """
-    plotted_column = None
+    y_name = "plotted_column"
     y_axis_label = None
 
+    def __init__(self):
+        super().__init__()
+        # Rescale the length to Mb
+        length_scale = 10**6
+        self.data.length /= length_scale
+        length_sample_size_combos = self.data[["length", "sample_size"]].drop_duplicates()
+        self.fixed_length = length_sample_size_combos['length'].value_counts().idxmax()
+        self.fixed_sample_size = length_sample_size_combos['sample_size'].value_counts().idxmax()
+
     def plot(self):
-        df = self.dataset.data
-        # Rescale the length to MB
-        df.length /= 10**6
+        df = self.data
         # Set statistics to the ratio of observed over expected
-        inferred_colour = self.tools[TSINFER]["col"]
         recombination_linestyles = [':', '-', '--']
         recombination_rates = df.recombination_rate.unique()
-        mutation_rates = self.datasetClass.between_sim_params['mutation_rate']
+        mutation_rates = df.mutation_rate.unique()
+        tools = df.tool.unique()
         assert len(recombination_linestyles) >= len(recombination_rates)
-        assert len(mutation_rates) ==1
+        assert len(mutation_rates) == len(tools) == 1
         mu = mutation_rates[0]
-        #inferred_markers =    {False:'s',True:'b'}
-        fig, (ax1, ax2) = pyplot.subplots(1, 2, figsize=(12, 6), sharey=True)
-        ax1.set_title("Fixed number of chromosomes ({})".format(self.datasetClass.fixed_sample_size))
+        tool = tools[0]
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6), sharey=True)
+        ax1.set_title("Fixed number of chromosomes ({})".format(self.fixed_sample_size))
         ax1.set_xlabel("Sequence length (MB)")
         ax1.set_ylabel(self.y_axis_label)
-        for rho_index, rho in enumerate(recombination_rates):
-            dfp = df[np.logical_and.reduce((
-                df.sample_size == self.datasetClass.fixed_sample_size,
-                df.recombination_rate == rho))]
-            group = dfp.groupby(["length"])
-            #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
-            mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
+        for linestyle, rho in zip(recombination_linestyles, recombination_rates):
+            line_data = df.query("(sample_size == @self.fixed_sample_size) and (recombination_rate == @rho)")
             ax1.errorbar(
-                [m['mu'] for m in mean_sem],
-                [m['mean'][self.plotted_column] for m in mean_sem],
-                yerr=[m['sem'][self.plotted_column] for m in mean_sem] if getattr(self, 'error_bars', False) else None,
-                linestyle= recombination_linestyles[rho_index],
-                color=inferred_colour,
+                line_data.length, line_data[self.plotted_column + "_mean"],
+                yerr=None, # line_data[self.plotted_column + "_se"],
+                linestyle=linestyle,
+                color=self.tools_format[tool]["col"],
                 #elinewidth=1
                 )
 
 
-        ax2.set_title("Fixed sequence length ({:g} Mb)".format(self.datasetClass.fixed_length / 10**6))
+        ax2.set_title("Fixed sequence length ({:g} Mb)".format(self.fixed_length))
         ax2.set_xlabel("Sample size")
-        ax2.set_ylabel(self.y_axis_label)
-        for rho_index, rho in enumerate(recombination_rates):
-            dfp = df[np.logical_and.reduce((
-                df.length == self.datasetClass.fixed_length / 10**6,
-                df.recombination_rate == rho))]
-            group = dfp.groupby(["sample_size"])
-            #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
-            mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
+        for linestyle, rho in zip(recombination_linestyles, recombination_rates):
+            line_data = df.query("(length == @self.fixed_length) and (recombination_rate == @rho)")
             ax2.errorbar(
-                [m['mu'] for m in mean_sem],
-                [m['mean'][self.plotted_column] for m in mean_sem],
-                yerr=[m['sem'][self.plotted_column] for m in mean_sem] if getattr(self, 'error_bars', False) else None,
-                linestyle= recombination_linestyles[rho_index],
-                color=inferred_colour,
+                line_data.sample_size, line_data[self.plotted_column + "_mean"],
+                yerr=None, # line_data[self.plotted_column + "_se"],
+                linestyle=linestyle,
+                color=self.tools_format[tool]["col"],
                 #elinewidth=1
                 )
         params = [
-            pyplot.Line2D(
-                (0,0),(0,0), color= inferred_colour,
-                linestyle=recombination_linestyles[rho_index], linewidth=2)
-            for rho_index, rho in enumerate(recombination_rates)]
+            plt.Line2D((0,0),(0,0), color=self.tools_format[tool]["col"], 
+                linestyle=linestyle, linewidth=2)
+            for linestyle, rho in zip(recombination_linestyles, recombination_rates)]
         ax1.legend(
             params, [r"$\rho$ = {}".format("$\mu$" if rho==mu else r"{:g}$\mu$".format(rho/mu) if rho>mu else r"$\mu$/{:g}".format(mu/rho))
                 for rho_index, rho in enumerate(recombination_rates)],
             loc="lower right", fontsize=10, title="Relative rate of\nrecombination")
     
-        pyplot.suptitle(r'Tsinfer large dataset performance for $\mu$=${}$'.format(latex_float(mu)))
-        self.savefig(fig)
+        plt.suptitle(r'Tsinfer large dataset performance for $\mu$=${}$'.format(latex_float(mu)))
+        self.save()
+
+class EdgesPerformanceSummary(PerformanceLengthSamplesFigure):
+    name = "tsinfer_edges_ln"
+    plotted_column = "edge_ratio"
+    y_axis_label = "inferred_edges / real_edges"
+
+
+class CompressionPerformanceFigure(PerformanceLengthSamplesFigure):
+    name = "tsinfer_compression_ln"
+    plotted_column = "file_compression_factor"
+    y_axis_label = "Compression factor relative to vcf.gz"
 
 
 class TreeMetricsFigure(ToolsFigure):
@@ -562,15 +565,6 @@ class MetricsAllToolsAccuracyFigure(MetricsAllToolsFigure):
     """
     name = "metrics_all_tools_accuracy"
     
-class MetricsAllToolsAccuracyDemographyFigure(MetricsAllToolsFigure):
-    """
-    Simple figure that shows all the metrics at the same time for
-    a genome under a more complex demographic model (the Gutenkunst 
-    Out Of Africa model), as mutation rate increases to high values
-    """
-    name = "metrics_all_tools_accuracy_demography"
-
-
 class MetricAllToolsFigure(TreeMetricsFigure):
     """
     Plot each metric in a different pdf file.
@@ -632,14 +626,14 @@ class MetricAllToolsFigure(TreeMetricsFigure):
             else:
                 self.save("_".join([self.name, metric, rooting]))                
 
-class MetricAllToolsAccuracyFigure(MetricAllToolsFigure):
-    """
-    Superclass of the metric all tools figure. 
-    """
-    name = "metric_all_tools_accuracy"    
-    y_axis_label="Average distance from true trees (mean $\pm$ s.e.)"
-    output_metrics = [("KC","rooted")] #can add extras in here if necessary
 
+class MetricAllToolsAccuracyDemographyFigure(MetricAllToolsFigure):
+    """
+    Simple figure that shows an ARG metrics for a genome under a more complex demographic
+    model (the Gutenkunst Out Of Africa model), as mutation rate increases to high values
+    """
+    name = "metric_all_tools_accuracy_demography"
+    hide_polytomy_breaking = False
 
 class MetricAllToolsAccuracySweepFigure(TreeMetricsFigure):
     """

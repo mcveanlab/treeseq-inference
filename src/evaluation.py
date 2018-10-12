@@ -2199,8 +2199,9 @@ class MetricARGweaverParametersSummary(TreeMetricsSummary):
         self.savefig(fig)
 
 
-class TsinferPerformanceLengthSamplesSummary(Summary):
+class PerformanceLengthSamplesSummary(Summary):
     """
+    Only for tsinfer.
     Superclass for the performance metrics figures. Each of these figures
     has two panels; one for scaling by sequence length and the other
     for scaling by sample size. Different lines are given for each
@@ -2208,27 +2209,22 @@ class TsinferPerformanceLengthSamplesSummary(Summary):
     """
     datasetClass = TsinferPerformanceDataset
 
-class TsinferEdgesPerformanceSummary(TsinferPerformanceLengthSamplesSummary):
+class EdgesPerformanceSummary(PerformanceLengthSamplesSummary):
     name = "tsinfer_edges_ln"
-    plotted_column = "metric"
-    y_axis_label = "inferred_edges / real_edges"
     
-    def summarize(self, return_mean_plus_sterr=True):
-        self.dataset.data['tsinfer_plotted_column'] = \
+    def summarize(self):
+        self.dataset.data['tsinfer_edge_ratio'] = \
             self.dataset.data.tsinfer_edges / self.dataset.data.edges
-        return super().summarize_cols_ending("plotted_column", return_mean_plus_sterr)
+        return super().summarize_cols_ending("edge_ratio")
             
 
-class CompressionPerformanceFigure(TsinferPerformanceLengthSamplesSummary):
+class CompressionPerformanceFigure(PerformanceLengthSamplesSummary):
     name = "tsinfer_compression_ln"
-    plotted_column = "metric"
-    y_axis_label = "inferred_filesize / real_filesize"
-    y_axis_label = "Compression factor relative to vcf.gz"
 
-    def summarize(self, return_mean_plus_sterr=True):
-        self.dataset.data['tsinfer_plotted_column'] = \
+    def summarize(self):
+        self.dataset.data['tsinfer_file_compression_factor'] = \
             self.dataset.data.vcfgz_filesize / self.dataset.data.tsinfer_ts_filesize
-        return super().summarize_cols_ending("plotted_column", return_mean_plus_sterr)
+        return super().summarize_cols_ending("file_compression_factor")
 
 
 class TsinferPerformanceSizesSamplesSummary(Summary):
