@@ -209,39 +209,25 @@ class CputimeAllToolsBySampleSizeFigure(ToolsFigure):
     name = "cputime_all_tools_by_sample_size"
 
     def plot(self):
-        df = self.dataset.data
+        df = self.data
+        # convert to hours
+        df.cputime_mean = df.cputime_mean/60/60
+        df.cputime_se = df.cputime_se/60/60
         sample_sizes = df.sample_size.unique()
         fig, (ax_hi, ax_lo) = plt.subplots(2, 1, sharex=True)
-        errs = df.error_params.unique()
         lengths = df.length.unique()
-        #check these have fixed error rates & lengths
-        assert len(errs) == len(lengths) == 1
-        #check these are all without error
-        assert self.error_label(errs[0], label_for_no_error=None) is None
-        ax_lo.set_xlabel("Sample Size")
-        ax_hi.set_ylabel("CPU time (hours)")
-        #ax_lo.set_xlim(sample_sizes.min(), sample_sizes.max())
-
-        # zoom-in / limit the view to different portions of the data
-        #ax_hi.set_ylim(0.6, 2.7)  # outliers only
-        ax_lo.set_ylim(0, 0.005)  # most of the data
-        #ax_hi.set_ylim(0.01, 3)  # outliers only
-        #ax_lo.set_ylim(0, 0.002)  # most of the data
-        
-        # hide the spines between ax and ax2
-        ax_hi.spines['bottom'].set_visible(False)
-        ax_lo.spines['top'].set_visible(False)
-        ax_hi.xaxis.tick_top()
-        ax_hi.tick_params(labeltop='off')  # don't put tick labels at the top
-        ax_lo.xaxis.tick_bottom()
-
+        # check these have fixed lengths
+        assert len(lengths) == 1
+        max_non_AW = 0
         for tool in df.tool.unique():
             line_data = df.query("tool == @tool")
+            if tool != 'ARGweaver':
+                max_non_AW = max(max_non_AW, max(line_data.cputime_mean+line_data.cputime_se))
             for ax in (ax_lo, ax_hi):
                 ax.errorbar(
                     line_data.sample_size,
-                    line_data.cputime_mean/60/60,
-                    yerr=line_data.cputime_se/60/60,
+                    line_data.cputime_mean,
+                    yerr=line_data.cputime_se,
                     color=self.tools_format[tool]["col"],
                     marker=self.tools_format[tool]['mark'],
                     elinewidth=1,
@@ -251,11 +237,28 @@ class CputimeAllToolsBySampleSizeFigure(ToolsFigure):
         kwargs = dict(transform=ax_hi.transAxes, color='k', clip_on=False)
         ax_hi.plot((-d, +d), (-d, +d), **kwargs)        # top-left diagonal
         ax_hi.plot((1 - d, 1 + d), (-d, +d), **kwargs)  # top-right diagonal
+        ax_lo.set_xlabel("Sample Size")
+        ax_hi.set_ylabel("CPU time (hours)")
+        #ax_lo.set_xlim(sample_sizes.min(), sample_sizes.max())
+
+        # zoom-in / limit the view to different portions of the data
+        ax_hi.set_ylim(bottom = max_non_AW*20)  # outliers only
+        ax_lo.set_ylim(bottom = 0-max_non_AW/20, top=max_non_AW+max_non_AW/20)  # most of the data
+        #ax_hi.set_ylim(0.01, 3)  # outliers only
+        #ax_lo.set_ylim(0, 0.002)  # most of the data
+        
+        # hide the spines between ax and ax2
+        ax_hi.spines['bottom'].set_visible(False)
+        ax_lo.spines['top'].set_visible(False)
+        ax_hi.xaxis.tick_top()
+        ax_hi.tick_params(labeltop=False)  # don't put tick labels at the top
+        ax_lo.xaxis.tick_bottom()
         
         kwargs.update(transform=ax_lo.transAxes)  # switch to the bottom axes
         ax_lo.plot((-d, +d), (1 - d, 1 + d), **kwargs)  # bottom-left diagonal
         ax_lo.plot((1 - d, 1 + d), (1 - d, 1 + d), **kwargs)  # bottom-right diagonal
-        ax_hi.legend(loc="upper left")
+        ax_hi.legend(loc="lower right")
+        self.save()
 
 
 class TsinferPerformanceLengthSamplesFigure(ToolsFigure):
@@ -657,7 +660,7 @@ class MetricSubsamplingFigure(TreeMetricsFigure):
             lengths = df.length.unique()
             error_params = df.error_param.unique()
             fig, axes = plt.subplots(len(lengths), len(error_params),
-                figsize=(12, 16), sharey=True)
+                figsize=(12, 12), sharey=True)
             for j, l in enumerate(lengths):
                 for k, error in enumerate(error_params):
                     ax = axes[j][k]

@@ -1647,7 +1647,7 @@ class SubsamplingDataset(Dataset):
         'mutation_rate':      [1e-8],
         'recombination_rate': [1e-8],
          #we always simplify down to the first n samples for comparison purposes
-        SUBCOMPARISON_COLNAME: [6],
+        SUBCOMPARISON_COLNAME: [10],
     }
 
     within_sim_params = {
@@ -1946,7 +1946,7 @@ class Summary(object):
         """
         raise NotImplementedError()
 
-class CputimeAllTools(Summary):
+class CputimeAllToolsSummary(Summary):
     """
     Superclass comparing cpu times for tsinfer vs other tools. 
     We can only really get the CPU times for all four methods for tiny examples.
@@ -1957,6 +1957,9 @@ class CputimeAllTools(Summary):
         toolnames = self.dataset.tools_and_metrics.keys()
         summary_df = self.dataset.data
         param_cols = self.standard_param_cols
+        # check these are without error
+        assert len(self.dataset.data[ERROR_COLNAME].unique()) == 1
+        assert int(self.dataset.data[ERROR_COLNAME].unique()[0]) == 0
         # Remove unused columns (any not in param_cols, or CPU time)
         response_cols = [cn for cn in summary_df.columns if cn.endswith("_cputime")]
         summary_df = summary_df.loc[:,param_cols+response_cols]
@@ -1966,7 +1969,7 @@ class CputimeAllTools(Summary):
             summary_df = self.mean_se(summary_df, param_cols+["tool"])
         return summary_df
 
-class CputimeAllToolsBySampleSizeSummary(Summary):
+class CputimeAllToolsBySampleSizeSummary(CputimeAllToolsSummary):
     """
     Show change in cpu time with sample size (easy to do a similar thing with length)
     """
@@ -1974,7 +1977,18 @@ class CputimeAllToolsBySampleSizeSummary(Summary):
     def summarize(self, *args, **vars):
         fixed_length = self.dataset.fixed_length
         summary_df = super().summarize(*args, **vars)
-        return sqummary_df.query("length = @fixed_length")
+        return summary_df.query("length == @fixed_length")
+
+class CputimeAllToolsByLengthSummary(CputimeAllToolsSummary):
+    """
+    Show change in cpu time with length
+    """
+    name = "cputime_all_tools_by_length"
+    def summarize(self, *args, **vars):
+        fixed_sample_size = self.dataset.fixed_sample_size
+        summary_df = super().summarize(*args, **vars)
+        return summary_df.query("sample_size == @fixed_sample_size")
+
 
 class TreeMetricsSummary(Summary):
     """
