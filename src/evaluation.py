@@ -1863,10 +1863,8 @@ class ARGweaverParamChangesDataset(Dataset):
 ######################################
 #
 # Data summaries
-#  Here we take the CSV data files 
-#  produced by setup() and infer() and
-#  condense them into small CSV files
-#  for plotting
+#  Here we take the CSV data files produced by setup() and infer() and condense them into
+#  small CSV files for plotting
 #
 ######################################
 
@@ -1946,48 +1944,42 @@ class Summary(object):
         """
         raise NotImplementedError()
 
-class CputimeAllToolsSummary(Summary):
+class CputimeMemoryAllToolsSummary(Summary):
     """
     Superclass comparing cpu times for tsinfer vs other tools. 
     We can only really get the CPU times for all four methods for tiny examples.
     """
     datasetClass = AllToolsPerformanceDataset
-    
+    param_cols = Summary.standard_param_cols
+
     def summarize(self, return_mean_plus_sterr=True):
         toolnames = self.dataset.tools_and_metrics.keys()
         summary_df = self.dataset.data
         param_cols = self.standard_param_cols
         # check these are without error
-        assert len(self.dataset.data[ERROR_COLNAME].unique()) == 1
-        assert int(self.dataset.data[ERROR_COLNAME].unique()[0]) == 0
+        if ERROR_COLNAME in self.dataset.data.columns:
+            assert len(self.dataset.data[ERROR_COLNAME].unique()) == 1
+            assert int(self.dataset.data[ERROR_COLNAME].unique()[0]) == 0
         # Remove unused columns (any not in param_cols, or CPU time)
-        response_cols = [cn for cn in summary_df.columns if cn.endswith("_cputime")]
-        summary_df = summary_df.loc[:,param_cols+response_cols]
+        response_cols = [cn for cn in summary_df.columns if cn.endswith("_cputime") or cn.endswith("_memory")]
+        summary_df = summary_df.filter(items=param_cols+response_cols)
         # Convert metric params to long format
         summary_df = self.df_wide_to_long(summary_df, toolnames, ["tool"])
         if return_mean_plus_sterr:
             summary_df = self.mean_se(summary_df, param_cols+["tool"])
         return summary_df
 
-class CputimeAllToolsBySampleSizeSummary(CputimeAllToolsSummary):
+class CputimeAllToolsBySampleSizeSummary(CputimeMemoryAllToolsSummary):
     """
     Show change in cpu time with sample size (easy to do a similar thing with length)
     """
     name = "cputime_all_tools_by_sample_size"
+
     def summarize(self, *args, **vars):
         fixed_length = self.dataset.fixed_length
         summary_df = super().summarize(*args, **vars)
+        summary_df = summary_df.filter(regex=r"^(?!memory)")
         return summary_df.query("length == @fixed_length")
-
-class CputimeAllToolsByLengthSummary(CputimeAllToolsSummary):
-    """
-    Show change in cpu time with length
-    """
-    name = "cputime_all_tools_by_length"
-    def summarize(self, *args, **vars):
-        fixed_sample_size = self.dataset.fixed_sample_size
-        summary_df = super().summarize(*args, **vars)
-        return summary_df.query("sample_size == @fixed_sample_size")
 
 
 class TreeMetricsSummary(Summary):
@@ -2042,7 +2034,7 @@ class TreeMetricsSummary(Summary):
         response_cols = [cn for cn in summary_df.columns if cn.endswith("treedist")]
         for c in self.param_cols+response_cols:
             assert c in summary_df.columns, "{} missing from columns".format(c)
-        summary_df = summary_df.loc[:,self.param_cols+response_cols]
+        summary_df = summary_df.filter(items=self.param_cols+response_cols)
         # Convert metric params to long format
         summary_df = self.df_wide_to_long(summary_df, toolnames, metric_param_names)
         if return_mean_plus_sterr:
@@ -2072,131 +2064,22 @@ class MetricsAllToolsSummary(TreeMetricsSummary):
 
 class MetricsAllToolsAccuracySummary(MetricsAllToolsSummary):
     """
-    Show the metrics tending to 0 as mutation rate increases
+    Show all metrics tending to 0 as mutation rate increases
     """
     datasetClass = AllToolsAccuracyDataset
     name = "metrics_all_tools_accuracy"
-    error_bars = True
-
-
-class MetricsAllToolsAccuracyDemographySummary(MetricsAllToolsSummary):
-    """
-    Simple summary that saves all the metrics at the same time for
-    a genome under a more complex demographic model (the Gutenkunst 
-    Out Of Africa model), as mutation rate increases to high values
-    """
-    datasetClass = AllToolsAccuracyWithDemographyDataset
-    name = "metrics_all_tools_accuracy_demography"
-
 
 
 class MetricAllToolsSummary(TreeMetricsSummary):
     """
     Plot data for a single metric.
-    Note that we save data for all metrics into the CSV, which allows us to output
+    Note that we save data for *all* metrics into the CSV, which allows us to output
     multiple plots (one for each metric) when plotting, and reduces the number of 
-    subclasses defined in this file
+    subclasses defined in this file.
     """
     datasetClass = AllToolsDataset
     name = "metric_all_tools"
     param_cols = TreeMetricsSummary.standard_param_cols + [ERROR_COLNAME]
-
-
-class MetricsAllToolsAccuracySweepSummary(MetricsAllToolsSummary):
-    """
-    Simple figure that shows all the metrics at the same time for
-    a genome under a selective sweep
-    """
-    datasetClass = AllToolsAccuracyWithSelectiveSweepDataset
-    name = "metrics_all_tools_accuracy_sweep"
-    error_bars = True
-    fillstyles = ['full', 'none']
-
-    def plot(self):
-        df = self.dataset.data
-        error_params = df[ERROR_COLNAME].unique()
-        output_freqs = df[[SELECTED_FREQ_COLNAME, SELECTED_POSTGEN_COLNAME]].drop_duplicates()
-        sample_sizes = df.sample_size.unique()
-
-        metrics = ARG_metrics.get_metric_names()
-        topology_only_metrics = [m for m in metrics if not m.startswith('w')] #don't use the weighted metrics
-        figures = [] #save figures for putting onto a multi-page pdf
-        for error in error_params:
-            fig, axes = pyplot.subplots(len(topology_only_metrics),
-                len(output_freqs), figsize=(20, 20))
-            fig.suptitle(self.error_label(error))
-            for j, metric in enumerate(topology_only_metrics):
-                for k, output_data in enumerate(output_freqs.itertuples()):
-                    freq = output_data.output_frequency
-                    gens = output_data.output_after_generations
-                    ax = axes[j][k]
-                    ax.set_xscale('log')
-                    if j == 0:
-                        ax.set_title("Swept variant @ freq {}{}".format(
-                            freq, "+{} gens".format(int(gens)) if gens else ""))
-                    if k == 0:
-                        ax.set_ylabel(getattr(self, 'y_axis_label', self.metric_titles[metric]))
-                    if j == len(topology_only_metrics) - 1:
-                        ax.set_xlabel("Mutation rate")
-                    if np.isclose(freq, 1.0) and not gens:
-                        # This is *at* fixation - set the plot background colour
-                        ax.set_facecolor('0.9')
-                    for n, fillstyle in zip(sample_sizes, self.fillstyles):
-                        df_s = df[np.logical_and.reduce((
-                            df.sample_size == n,
-                            df[ERROR_COLNAME] == error,
-                            df[SELECTED_FREQ_COLNAME] == freq,
-                            df[SELECTED_POSTGEN_COLNAME] == gens))]
-                        group = df_s.groupby(["mutation_rate"])
-                        #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
-                        mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-                        for tool_and_metrics_param, setting in self.tools_and_metrics_params.items():
-                            if metric.startswith("RF") \
-                                and tool_and_metrics_param.startswith(TSINFER) \
-                                and (int(tool_and_metrics_param.rsplit("_",1)[1]) & METRICS_POLYTOMIES_BREAK == 0):
-                                    # RF metrics are not well behaved for trees with polytomies (i.e. tsinfer trees)
-                                    # so we should omit tsinfer cases where METRICS_POLYTOMIES_BREAK == 0
-                                continue
-                            if all(np.isnan(m['mean'][tool_and_metrics_param + "_" + metric]) for m in mean_sem):
-                                #don't plot if all NAs
-                                continue
-                            ax.errorbar(
-                                [m['mu'] for m in mean_sem],
-                                [m['mean'][tool_and_metrics_param + "_" + metric] for m in mean_sem],
-                                yerr=[m['sem'][tool_and_metrics_param + "_" + metric] for m in mean_sem] \
-                                    if getattr(self, 'error_bars', False) else None,
-                                color=setting["col"],
-                                linestyle=setting["linestyle"],
-                                marker=setting["mark"],
-                                fillstyle=fillstyle,
-                                elinewidth=1)
-                    ax.set_ylim(ymin=0)
-                    ax.get_yaxis().set_label_coords(-0.15,0.5)
-                    ax.axvline(x=df.recombination_rate.unique()[0], 
-                        color = 'gray', zorder=-1, linestyle=":", linewidth=1)
-                    ax.text(df.recombination_rate.unique()[0], ax.get_ylim()[1]/40, r'$\mu=\rho$',
-                        va = "bottom",  ha="right", color = 'gray', rotation=90)
-
-            # Create legends from custom artists
-            artists = [
-                pyplot.Line2D((0,1),(0,0), color= setting["col"], fillstyle=self.fillstyles[0],
-                    marker= setting["mark"], linestyle=setting["linestyle"])
-                for tool,setting in self.tools_and_metrics_params.items()]
-            tool_labels = [(l.replace("_0", "").replace("_2"," breaking polytomies") if l.startswith(TSINFER) else l.replace("_0", "")) 
-                for l in self.tools_and_metrics_params.keys()]
-            first_legend = axes[0][0].legend(
-                artists, tool_labels, numpoints=1, labelspacing=0.1, loc="upper right")
-            if len(sample_sizes)>1:
-                artists = [
-                    pyplot.Line2D(
-                        (0,0),(0,0), color="black", fillstyle=fillstyle, linewidth=2)
-                    for n, fillstyle in zip(sample_sizes, self.fillstyles)]
-                axes[0][-1].legend(
-                    artists, ["Sample size = {}".format(n) for n, fillstyle in zip(sample_sizes, self.fillstyles)],
-                    loc="upper right")
-            figures.append(fig)
-        self.savefig(*figures)
-
 
 
 class MetricAllToolsAccuracySweepSummary(MetricAllToolsSummary):
@@ -2209,11 +2092,15 @@ class MetricAllToolsAccuracySweepSummary(MetricAllToolsSummary):
     param_cols = MetricAllToolsSummary.standard_param_cols + \
         [SELECTED_FREQ_COLNAME, SELECTED_POSTGEN_COLNAME, ERROR_COLNAME]
 
-class KCAllToolsAccuracySweepSummary(MetricAllToolsAccuracySweepSummary):
-    name = "kc_rooted_all_tools_accuracy_sweep"
-    metric = "KC"
-    ylim = (0, 30)
-    error_bars = True
+
+class MetricAllToolsAccuracyDemographySummary(MetricAllToolsSummary):
+    """
+    Simple summary that saves all the metrics at the same time for
+    a genome under a more complex demographic model (the Gutenkunst 
+    Out Of Africa model), as mutation rate increases to high values
+    """
+    datasetClass = AllToolsAccuracyWithDemographyDataset
+    name = "metric_all_tools_accuracy_demography"
 
 
 class MetricSubsamplingSummary(MetricAllToolsSummary):
@@ -2310,20 +2197,6 @@ class MetricARGweaverParametersSummary(TreeMetricsSummary):
             artists, ["Burn in = {} gens".format(n) for n in AW_burnin],
             loc="upper center")
         self.savefig(fig)
-
-class KCARGweaverParametersSummary(MetricARGweaverParametersSummary):
-    name = "kc_argweaver_params"
-    metric = "KC"
-    ylim = (0, 4)
-    error_bars = True
-
-class RFRootedARGweaverParametersSummary(MetricARGweaverParametersSummary):
-    name = "rf_rooted_argweaver_params"
-    metric = "RF"
-    rooting = "rooted"
-    ylim = None
-    #ylim = (0, 4)
-    error_bars = True
 
 
 class TsinferPerformanceLengthSamplesSummary(Summary):
@@ -2430,84 +2303,26 @@ class TsinferPerformanceSizesSamplesSummary(Summary):
         self.savefig(fig)
 
 
-class FastargTsinferComparisonSummary(Summary):
+class FastargTsinferComparisonSummary(CputimeMemoryAllToolsSummary):
     """
     Superclass for the program comparison figures (comparing tsinfer with fastarg)
     Each figure has two panels; one for scaling by sequence length and the other
-    for scaling by sample size.
+    for scaling by sample size. Error is not used
     """
     datasetClass = FastargTsinferComparisonDataset
 
-    def plot(self):
-        df = self.dataset.data
-        tools = self.dataset.tools_and_metrics.keys()
-
-        # Rescale the length to Mb
-        length_scale = 10**6
-        df.length /= length_scale
-        # Scale time to hours
-        time_scale = 3600
-        for tool in tools:
-            df[tool + "_cputime"] /= time_scale
-        # Scale memory to GiB
-        for tool in tools:
-            df[tool + "_memory"] /= 1024 * 1024 * 1024
-
-        fig, (ax1, ax2) = pyplot.subplots(1, 2, sharey=True, figsize=(8, 5.5))
-
-        dfp = df[df.sample_size == self.datasetClass.fixed_sample_size]
-        group = dfp.groupby(["length"])
-        group_mean = group.mean()
-
-        for tool in tools:
-            col = tool + "_" + self.plotted_column
-            ax1.plot(group_mean[col], label=tool, color=self.tools[tool]["col"])
-        ax1.legend(
-            loc="upper left", numpoints=1, fontsize="small")
-
-        ax1.set_xlabel("Length (Mb) for fixed sample of {}".format(self.datasetClass.fixed_sample_size))
-        ax1.set_ylabel(self.y_label)
-
-        dfp = df[df.length == self.datasetClass.fixed_length / length_scale]
-        group = dfp.groupby(["sample_size"])
-        group_mean = group.mean()
-
-        for tool in tools:
-            col = tool + "_" + self.plotted_column
-            ax2.plot(group_mean[col], label=tool, color=self.tools[tool]["col"])
-
-        ax2.set_xlabel("Sample size for fixed length of {} Mb".format(
-            self.datasetClass.fixed_length / length_scale))
-
-        # ax1.set_xlim(-5, 105)
-        # ax1.set_ylim(-5, 250)
-        # ax2.set_xlim(-5, 105)
-        self.tweak(ax1, ax2)
-
-        fig.tight_layout()
-
-        # fig.text(0.19, 0.97, "Sample size = 1000")
-        # fig.text(0.60, 0.97, "Sequence length = 50Mb")
-        # pyplot.savefig("plots/simulators.pdf")
-        self.savefig(fig)
-
-
 class FastargTsinferComparisonTimeSummary(FastargTsinferComparisonSummary):
     name = "fastarg_tsinfer_comparison_time"
-    plotted_column = "cputime"
-    y_label = "CPU time (hours)"
-
-    def tweak(self, ax1, ax2):
-        ax1.set_ylim(0, 2.5)
+    def summarize(self, *args, **vars):
+        summary_df = super().summarize(*args, **vars)
+        return summary_df.filter(regex=r"^(?!memory)")
 
 
 class FastargTsinferComparisonMemorySummary(FastargTsinferComparisonSummary):
     name = "fastarg_tsinfer_comparison_memory"
-    plotted_column = "memory"
-    y_label = "Memory (GiB)"
-
-    def tweak(self, ax1, ax2):
-        pass
+    def summarize(self, *args, **vars):
+        summary_df = super().summarize(*args, **vars)
+        return summary_df.filter(regex=r"^(?!cputime)")
 
 
 def run_setup(cls, args):
