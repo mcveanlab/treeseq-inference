@@ -356,7 +356,6 @@ class TsinferPerformanceLengthSamplesFigure(ToolsFigure):
         # Rescale the length to MB
         df.length /= 10**6
         # Set statistics to the ratio of observed over expected
-        source_colour = "red"
         inferred_colour = self.tools[TSINFER]["col"]
         recombination_linestyles = [':', '-', '--']
         recombination_rates = df.recombination_rate.unique()

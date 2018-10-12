@@ -32,10 +32,6 @@ import math
 import gzip
 
 import numpy as np
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as pyplot
-import matplotlib.backends.backend_pdf
 import pandas as pd
 import tqdm
 
@@ -1882,6 +1878,7 @@ class Summary(object):
             'recombination_rate', 'mutation_rate']
 
     def __init__(self):
+        logging.info("Summarising '{}'".format(self.name))
         self.dataset = self.datasetClass()
         self.dataset.load_data()
         self.data_file = os.path.abspath(
@@ -1938,11 +1935,32 @@ class Summary(object):
         df =pd.concat([g.mean().add_suffix("_mean"), g.sem().add_suffix("_se")], axis=1)
         return df.reset_index()
         
-    def summarize(self):
+    def summarize(self, return_mean_plus_sterr=True):
         """
         Save a summarized csv file of the results, appropriate for a particular plot.
         """
         raise NotImplementedError()
+
+    def summarize_cols_ending(self, colname_ending, return_mean_plus_sterr=True):
+        """
+        Used in simple subclasses to get a simple data summary.
+        """
+        toolnames = self.dataset.tools_and_metrics.keys()
+        summary_df = self.dataset.data
+        param_cols = self.standard_param_cols
+        # check these are without error
+        if ERROR_COLNAME in self.dataset.data.columns:
+            assert len(self.dataset.data[ERROR_COLNAME].unique()) == 1
+            assert int(self.dataset.data[ERROR_COLNAME].unique()[0]) == 0
+        # Remove unused columns (any not in param_cols, or CPU time)
+        response_cols = [cn for cn in summary_df.columns if cn.endswith(colname_ending)]
+        summary_df = summary_df.filter(items=param_cols+response_cols)
+        # Convert metric params to long format
+        summary_df = self.df_wide_to_long(summary_df, toolnames, ["tool"])
+        if return_mean_plus_sterr:
+            summary_df = self.mean_se(summary_df, param_cols+["tool"])
+        return summary_df
+
 
 class CputimeMemoryAllToolsSummary(Summary):
     """
@@ -1952,33 +1970,15 @@ class CputimeMemoryAllToolsSummary(Summary):
     datasetClass = AllToolsPerformanceDataset
     param_cols = Summary.standard_param_cols
 
-    def summarize(self, return_mean_plus_sterr=True):
-        toolnames = self.dataset.tools_and_metrics.keys()
-        summary_df = self.dataset.data
-        param_cols = self.standard_param_cols
-        # check these are without error
-        if ERROR_COLNAME in self.dataset.data.columns:
-            assert len(self.dataset.data[ERROR_COLNAME].unique()) == 1
-            assert int(self.dataset.data[ERROR_COLNAME].unique()[0]) == 0
-        # Remove unused columns (any not in param_cols, or CPU time)
-        response_cols = [cn for cn in summary_df.columns if cn.endswith("_cputime") or cn.endswith("_memory")]
-        summary_df = summary_df.filter(items=param_cols+response_cols)
-        # Convert metric params to long format
-        summary_df = self.df_wide_to_long(summary_df, toolnames, ["tool"])
-        if return_mean_plus_sterr:
-            summary_df = self.mean_se(summary_df, param_cols+["tool"])
-        return summary_df
-
 class CputimeAllToolsBySampleSizeSummary(CputimeMemoryAllToolsSummary):
     """
     Show change in cpu time with sample size (easy to do a similar thing with length)
     """
     name = "cputime_all_tools_by_sample_size"
 
-    def summarize(self, *args, **vars):
+    def summarize(self, return_mean_plus_sterr=True):
         fixed_length = self.dataset.fixed_length
-        summary_df = super().summarize(*args, **vars)
-        summary_df = summary_df.filter(regex=r"^(?!memory)")
+        summary_df = super().summarize_cols_ending("cputime", return_mean_plus_sterr)
         return summary_df.query("length == @fixed_length")
 
 
@@ -2055,7 +2055,7 @@ class TreeMetricsSummary(Summary):
 
 class MetricsAllToolsSummary(TreeMetricsSummary):
     """
-    Data for a plot showing many metrics in different subplots
+    Data for a figure showing many metrics in different subplots
     """
     datasetClass = AllToolsDataset
     name = "metrics_all_tools"
@@ -2072,7 +2072,7 @@ class MetricsAllToolsAccuracySummary(MetricsAllToolsSummary):
 
 class MetricAllToolsSummary(TreeMetricsSummary):
     """
-    Plot data for a single metric.
+    Create data for figures that will display a single metric.
     Note that we save data for *all* metrics into the CSV, which allows us to output
     multiple plots (one for each metric) when plotting, and reduces the number of 
     subclasses defined in this file.
@@ -2212,32 +2212,23 @@ class TsinferEdgesPerformanceSummary(TsinferPerformanceLengthSamplesSummary):
     name = "tsinfer_edges_ln"
     plotted_column = "metric"
     y_axis_label = "inferred_edges / real_edges"
-    def plot(self):
-        self.dataset.data[self.plotted_column] = (
-            self.dataset.data["tsinfer_edges"] / self.dataset.data["edges"])
-        TsinferPerformanceLengthSamplesFigure.plot(self)
-
-
-class TsinferFileSizePerformanceSummary(TsinferPerformanceLengthSamplesSummary):
-    name = "tsinfer_filesize_ln"
-    plotted_column = "metric"
-    y_axis_label = "inferred_filesize / real_filesize"
-    y_axis_label = "File size relative to original"
-    def plot(self):
-        self.dataset.data[self.plotted_column] = (
-            self.dataset.data["tsinfer_ts_filesize"] / self.dataset.data["ts_filesize"])
-        TsinferPerformanceLengthSummaryFigure.plot(self)
-
+    
+    def summarize(self, return_mean_plus_sterr=True):
+        self.dataset.data['tsinfer_plotted_column'] = \
+            self.dataset.data.tsinfer_edges / self.dataset.data.edges
+        return super().summarize_cols_ending("plotted_column", return_mean_plus_sterr)
+            
 
 class CompressionPerformanceFigure(TsinferPerformanceLengthSamplesSummary):
     name = "tsinfer_compression_ln"
     plotted_column = "metric"
     y_axis_label = "inferred_filesize / real_filesize"
     y_axis_label = "Compression factor relative to vcf.gz"
-    def plot(self):
-        self.dataset.data[self.plotted_column] = (
-             self.dataset.data["vcfgz_filesize"] / self.dataset.data["tsinfer_ts_filesize"])
-        TsinferPerformanceLengthSamplesFigure.plot(self)
+
+    def summarize(self, return_mean_plus_sterr=True):
+        self.dataset.data['tsinfer_plotted_column'] = \
+            self.dataset.data.vcfgz_filesize / self.dataset.data.tsinfer_ts_filesize
+        return super().summarize_cols_ending("plotted_column", return_mean_plus_sterr)
 
 
 class TsinferPerformanceSizesSamplesSummary(Summary):
@@ -2246,7 +2237,7 @@ class TsinferPerformanceSizesSamplesSummary(Summary):
     (the first is the same as the LHS TsinferEdgesPerformanceFigure,
     but the second is the same using sites instead)
     """
-    name="tsinfer_edges_sn"
+    #name="tsinfer_edges_sn"
     datasetClass = TsinferPerformanceDataset
     plotted_column = None
     y_axis_label = None
@@ -2313,16 +2304,14 @@ class FastargTsinferComparisonSummary(CputimeMemoryAllToolsSummary):
 
 class FastargTsinferComparisonTimeSummary(FastargTsinferComparisonSummary):
     name = "fastarg_tsinfer_comparison_time"
-    def summarize(self, *args, **vars):
-        summary_df = super().summarize(*args, **vars)
-        return summary_df.filter(regex=r"^(?!memory)")
+    def summarize(self, return_mean_plus_sterr=True):
+        return super().summarize_cols_ending("memory", return_mean_plus_sterr)
 
 
 class FastargTsinferComparisonMemorySummary(FastargTsinferComparisonSummary):
     name = "fastarg_tsinfer_comparison_memory"
-    def summarize(self, *args, **vars):
-        summary_df = super().summarize(*args, **vars)
-        return summary_df.filter(regex=r"^(?!cputime)")
+    def summarize(self, return_mean_plus_sterr=True):
+        return super().summarize_cols_ending("cputime", return_mean_plus_sterr)
 
 
 def run_setup(cls, args):
@@ -2345,7 +2334,7 @@ def run_summarize(cls, args):
     f = cls()
     df = f.summarize()
     df.to_csv(f.data_file)
-    logging.info("CSV file for plot {} written to {}".format(f.name, f.data_file))
+    logging.info("CSV file for figure {} written to {}".format(f.name, f.data_file))
 
 def main():
     def get_subclasses(cls):
@@ -2400,7 +2389,8 @@ def main():
         help="Only run for a specific row")
     subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
-        help='the dataset identifier', choices=sorted([d.name for d in datasets if d.name]))
+        help='the dataset identifier',
+        choices=sorted([d.name for d in datasets if d.name] + ['all']))
     subparser.add_argument(
          '--force',  "-f", action='store_true',
          help="redo all the inferences, even if we have already filled out some", )
@@ -2419,7 +2409,8 @@ def main():
         help="Create data files for later plotting")
     subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
-        help='the figure identifier', choices=sorted([f.name for f in summaries if f.name]))
+        help='the figure identifier',
+        choices=sorted([f.name for f in summaries if f.name] + ['all']))
     subparser.set_defaults(func=run_summarize)
 
     args = parser.parse_args()
