@@ -1294,11 +1294,13 @@ class Dataset(object):
                 demographic_events=demographic_events
                 )
 
-        asian_samples = sample_size//3
+        asian_samples = (sample_size//(3*2))*2
         afro_european_samples = sample_size - asian_samples
-        european_samples = afro_european_samples//2
+        european_samples = (afro_european_samples//(2*2)) * 2
         african_samples = afro_european_samples - european_samples
         assert african_samples + european_samples + asian_samples == sample_size
+        # Required to insert error correctly (which requires diploid individuals in each
+        assert african_samples%2 == european_samples%2 == asian_samples%2 == 0
 
         kwargs.update(out_of_africa(african_samples, european_samples, asian_samples))
         return self.single_neutral_simulation(sample_size, sim_name, length,
@@ -1693,7 +1695,8 @@ class AllToolsAccuracyWithDemographyDataset(Dataset):
     # to column names in the csv file. Values should all be arrays.
     between_sim_params = {
         'mutation_rate': np.geomspace(0.5e-8, 3.5e-6, num=7),
-        'sample_size':   [15], #will be split across the 3 human sub pops
+        'sample_size':   [16], # will be split across the 3 human sub pops as evenly as 
+                               # possible so that each has a multiple of 2 samples
         'length':        [100000],
         'recombination_rate': [1e-8],
         'sim_name': ["Gutenkunst.out.of.africa"]
@@ -1740,7 +1743,7 @@ class AllToolsAccuracyWithSelectiveSweepDataset(Dataset):
 
     between_sim_params = {
         'mutation_rate': np.geomspace(0.5e-8, 3.5e-6, num=5),
-        'sample_size': [15],
+        'sample_size': [16],
         'Ne':     [5000],
         'length': [100000],
         'recombination_rate': [1e-8],
