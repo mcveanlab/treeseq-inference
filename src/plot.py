@@ -171,11 +171,13 @@ class ToolsFigure(Figure):
     Superclass of all figures where different tools (e.g. ARGweaver, fastarg) are compared
     """
 
+    # Colours taken from Matplotlib default color wheel.
+    # https://matplotlib.org/users/dflt_style_changes.html
     tools_format = collections.OrderedDict([
-        ("ARGweaver", {"mark":"o", "col":"green"}),
-        ("RentPlus",  {"mark":"^", "col":"magenta"}),
-        ("fastARG",   {"mark":"s", "col":"red"}),
-        ("tsinfer",   {"mark":"*", "col":"blue"}),
+        ("ARGweaver", {"mark":"o", "col":"#d62728"}),
+        ("RentPlus",  {"mark":"^", "col":"#2ca02c"}),
+        ("fastARG",   {"mark":"s", "col":"#ff7f0e"}),
+        ("tsinfer",   {"mark":"*", "col":"#1f77b4"}),
     ])
 
     error_bars = True
@@ -194,6 +196,7 @@ class ToolsFigure(Figure):
             except:
                 pass
             return "{} error".format(error) if error else label_for_no_error
+
 
 class CputimeAllToolsBySampleSizeFigure(ToolsFigure):
     """
@@ -403,8 +406,8 @@ class PerformanceLengthSamplesFigure(ToolsFigure):
                 for rho_index, rho in enumerate(recombination_rates)],
             loc="lower right", fontsize=10, title="Relative rate of\nrecombination")
 
-        plt.suptitle(r'Tsinfer large dataset performance for $\mu$=${}$'.format(latex_float(mu)))
         self.save()
+
 
 class EdgesPerformanceSummary(PerformanceLengthSamplesFigure):
     name = "tsinfer_edges_ln"
@@ -529,32 +532,6 @@ class MetricsAllToolsFigure(TreeMetricsFigure):
         axes[0][0].legend(
             artists, tool_labels, numpoints=1, labelspacing=0.1)
 
-        maintitle = "Average tree distance for neutral simulations"
-        #if len(sample_sizes)>1:
-        #    artists = [
-        #        tuple([
-        #            plt.Line2D((0,0),(0,0),
-        #                color=self.tools_format[tool]['col'],
-        #                marker=self.tools_format[tool]['mark'],
-        #                fillstyle=fillstyle,
-        #                linestyle='None')
-        #            for tool, poly in self.data.groupby(["tool", "polytomies"]).groups.keys()])
-        #        for fillstyle in self.sample_size_format]
-        #    axes[0][-1].legend(
-        #        artists, ["Sample size = {}".format(n) for n in sample_sizes],
-        #        loc="upper right", numpoints=1,
-        #        handler_map={tuple: matplotlib.legend_handler.HandlerTuple(ndivide=None, pad=2)})
-        #else:
-        maintitle += " of {} samples\n".format(sample_sizes[0])
-        if any([isinstance(Ne, str) for Ne in eff_sizes]):
-            maintitle += "(Model{}=".format('s' if len(eff_sizes) > 1 else "") \
-                + ",".join(["“{}”".format(x.replace("."," ")) for x in eff_sizes])
-        else:
-            maintitle += "($N_e$=" + ",".join(["{}".format(x) for x in eff_sizes])
-        maintitle += r"; $\rho="+ ",".join(["{}".format(latex_float(x)) for x in rhos])
-        maintitle += "$; sequence length = " + " ,".join(["{:g}kb".format(x/1e3) for x in lengths])
-        maintitle += ")"
-        fig.suptitle(maintitle, fontsize=16)
         fig.tight_layout(rect=[0, 0, 1, 0.95])
         self.save()
 
@@ -565,6 +542,7 @@ class MetricsAllToolsAccuracyFigure(MetricsAllToolsFigure):
     """
     name = "metrics_all_tools_accuracy"
 
+
 class MetricAllToolsFigure(TreeMetricsFigure):
     """
     Plot each metric in a different pdf file.
@@ -572,7 +550,7 @@ class MetricAllToolsFigure(TreeMetricsFigure):
     """
     name = "metric_all_tools"
     figsize = (9,4.5)
-    y_axis_label="Average distance from true trees (mean $\pm$ s.e.)"
+    y_axis_label="Average distance from true trees"
     hide_polytomy_breaking = True
     output_metrics = [("KC","rooted")] #can add extras in here if necessary
 
@@ -633,7 +611,8 @@ class MetricAllToolsAccuracyDemographyFigure(MetricAllToolsFigure):
     model (the Gutenkunst Out Of Africa model), as mutation rate increases to high values
     """
     name = "metric_all_tools_accuracy_demography"
-    hide_polytomy_breaking = False
+    hide_polytomy_breaking = True
+
 
 class MetricAllToolsAccuracySweepFigure(TreeMetricsFigure):
     """
@@ -642,6 +621,7 @@ class MetricAllToolsAccuracySweepFigure(TreeMetricsFigure):
     """
     name = "metric_all_tools_accuracy_sweep"
     error_bars = True
+    hide_polytomy_breaking = True
     output_metrics = [("KC","rooted")] #can add extras in here if necessary
 
     def plot(self):
@@ -758,8 +738,6 @@ class MetricSubsamplingFigure(TreeMetricsFigure):
                     for d in display_order[['tool', 'polytomies']].drop_duplicates().itertuples()]
                 first_legend = axes[0][0].legend(
                     artists, tool_labels, numpoints=1, labelspacing=0.1, loc="upper right")
-            fig.suptitle('Accuracy with increased sampling (trees subsampled down to {} tips)'.format(
-                ", ".join(str(t) for t in tree_tips)))
             if len(self.output_metrics)==1:
                 self.save()
             else:
