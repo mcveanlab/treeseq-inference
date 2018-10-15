@@ -177,7 +177,7 @@ class ToolsFigure(Figure):
         ("fastARG",   {"mark":"s", "col":"red"}),
         ("tsinfer",   {"mark":"*", "col":"blue"}),
     ])
-    
+
     error_bars = True
 
     def error_label(self, error, label_for_no_error = "No error"):
@@ -192,7 +192,7 @@ class ToolsFigure(Figure):
                 if error.startswith("Empirical"):
                     error = "Empirical"
             except:
-                pass            
+                pass
             return "{} error".format(error) if error else label_for_no_error
 
 class CputimeAllToolsBySampleSizeFigure(ToolsFigure):
@@ -244,14 +244,14 @@ class CputimeAllToolsBySampleSizeFigure(ToolsFigure):
         ax_lo.set_ylim(bottom = 0-max_non_AW/20, top=max_non_AW+max_non_AW/20)  # most of the data
         #ax_hi.set_ylim(0.01, 3)  # outliers only
         #ax_lo.set_ylim(0, 0.002)  # most of the data
-        
+
         # hide the spines between ax and ax2
         ax_hi.spines['bottom'].set_visible(False)
         ax_lo.spines['top'].set_visible(False)
         ax_hi.xaxis.tick_top()
         ax_hi.tick_params(labeltop=False)  # don't put tick labels at the top
         ax_lo.xaxis.tick_bottom()
-        
+
         kwargs.update(transform=ax_lo.transAxes)  # switch to the bottom axes
         ax_lo.plot((-d, +d), (1 - d, 1 + d), **kwargs)  # bottom-left diagonal
         ax_lo.plot((1 - d, 1 + d), (1 - d, 1 + d), **kwargs)  # bottom-right diagonal
@@ -273,7 +273,7 @@ class FastargTsinferComparisonFigure(ToolsFigure):
         length_sample_size_combos = self.data[["length", "sample_size"]].drop_duplicates()
         self.fixed_length = length_sample_size_combos['length'].value_counts().idxmax()
         self.fixed_sample_size = length_sample_size_combos['sample_size'].value_counts().idxmax()
-        
+
 
     def plot(self):
         fig, (ax1, ax2) = plt.subplots(1, 2, sharey=True, figsize=(8, 5.5))
@@ -395,14 +395,14 @@ class PerformanceLengthSamplesFigure(ToolsFigure):
                 #elinewidth=1
                 )
         params = [
-            plt.Line2D((0,0),(0,0), color=self.tools_format[tool]["col"], 
+            plt.Line2D((0,0),(0,0), color=self.tools_format[tool]["col"],
                 linestyle=linestyle, linewidth=2)
             for linestyle, rho in zip(recombination_linestyles, recombination_rates)]
         ax1.legend(
             params, [r"$\rho$ = {}".format("$\mu$" if rho==mu else r"{:g}$\mu$".format(rho/mu) if rho>mu else r"$\mu$/{:g}".format(mu/rho))
                 for rho_index, rho in enumerate(recombination_rates)],
             loc="lower right", fontsize=10, title="Relative rate of\nrecombination")
-    
+
         plt.suptitle(r'Tsinfer large dataset performance for $\mu$=${}$'.format(latex_float(mu)))
         self.save()
 
@@ -442,7 +442,7 @@ class TreeMetricsFigure(ToolsFigure):
         {'fillstyle':'none'} #assume only max 2 sample sizes per plot
         ]
 
-    def single_metric_plot(self, df, x_variable, ax, av_method, 
+    def single_metric_plot(self, df, x_variable, ax, av_method,
         rho = None, markers = True):
         """
         A single plot on an ax. This requires plotting separate lines, e.g. for each tool
@@ -489,7 +489,7 @@ class MetricsAllToolsFigure(TreeMetricsFigure):
         assert len(averaging_method) == len(eff_sizes) == len(rhos) == 1
         rho = rhos[0]
         method = averaging_method[0]
-        
+
         sample_sizes = self.data.sample_size.unique()
         # x-direction is different error rates
         error_params = self.data.error_param.unique()
@@ -528,7 +528,7 @@ class MetricsAllToolsFigure(TreeMetricsFigure):
             for d in display_order[['tool', 'polytomies']].drop_duplicates().itertuples()]
         axes[0][0].legend(
             artists, tool_labels, numpoints=1, labelspacing=0.1)
-            
+
         maintitle = "Average tree distance for neutral simulations"
         #if len(sample_sizes)>1:
         #    artists = [
@@ -536,13 +536,13 @@ class MetricsAllToolsFigure(TreeMetricsFigure):
         #            plt.Line2D((0,0),(0,0),
         #                color=self.tools_format[tool]['col'],
         #                marker=self.tools_format[tool]['mark'],
-        #                fillstyle=fillstyle, 
+        #                fillstyle=fillstyle,
         #                linestyle='None')
         #            for tool, poly in self.data.groupby(["tool", "polytomies"]).groups.keys()])
         #        for fillstyle in self.sample_size_format]
         #    axes[0][-1].legend(
         #        artists, ["Sample size = {}".format(n) for n in sample_sizes],
-        #        loc="upper right", numpoints=1, 
+        #        loc="upper right", numpoints=1,
         #        handler_map={tuple: matplotlib.legend_handler.HandlerTuple(ndivide=None, pad=2)})
         #else:
         maintitle += " of {} samples\n".format(sample_sizes[0])
@@ -564,7 +564,7 @@ class MetricsAllToolsAccuracyFigure(MetricsAllToolsFigure):
     Show the metrics tending to 0 as mutation rate increases
     """
     name = "metrics_all_tools_accuracy"
-    
+
 class MetricAllToolsFigure(TreeMetricsFigure):
     """
     Plot each metric in a different pdf file.
@@ -587,19 +587,19 @@ class MetricAllToolsFigure(TreeMetricsFigure):
             eff_sizes = df.Ne.unique()
             rhos = df.recombination_rate.unique()
             lengths = df.length.unique()
-            assert len(averaging_method) == len(eff_sizes) == len(rhos) == 1 
+            assert len(averaging_method) == len(eff_sizes) == len(rhos) == 1
             rho = rhos[0]
             method = averaging_method[0]
-            
+
             # x-direction is different error rates
             error_params = df.error_param.unique()
-    
+
             fig, axes = plt.subplots(1, len(error_params),
                 figsize=getattr(self,'figsize',(12, 6)), sharey=True)
             for k, error in enumerate(error_params):
                 ax = axes[k] if len(error_params)>1 else axes
                 display_order = self.single_metric_plot(
-                    df.query("(" + ") and (".join(query + ["error_param == @error"]) + ")"),  
+                    df.query("(" + ") and (".join(query + ["error_param == @error"]) + ")"),
                     "mutation_rate", ax, method, rho)
                 ax.set_title(self.error_label(error))
                 ax.set_xlabel("Mutation rate")
@@ -609,7 +609,7 @@ class MetricAllToolsFigure(TreeMetricsFigure):
                     rooting_suffix = " (unrooted)" if rooting=="unrooted" else ""
                     ylab = getattr(self, 'y_axis_label', self.metric_titles[metric] + rooting_suffix)
                     ax.set_ylabel(ylab)
-    
+
             # Create legends from custom artists
             artists = [
                 plt.Line2D((0,1),(0,0),
@@ -624,7 +624,7 @@ class MetricAllToolsFigure(TreeMetricsFigure):
             if len(self.output_metrics)==1:
                 self.save()
             else:
-                self.save("_".join([self.name, metric, rooting]))                
+                self.save("_".join([self.name, metric, rooting]))
 
 
 class MetricAllToolsAccuracyDemographyFigure(MetricAllToolsFigure):
@@ -637,8 +637,8 @@ class MetricAllToolsAccuracyDemographyFigure(MetricAllToolsFigure):
 
 class MetricAllToolsAccuracySweepFigure(TreeMetricsFigure):
     """
-    Figure for simulations with selection. 
-    Each page should be a single figure for a particular metric, with error on the 
+    Figure for simulations with selection.
+    Each page should be a single figure for a particular metric, with error on the
     """
     name = "metric_all_tools_accuracy_sweep"
     error_bars = True
@@ -656,7 +656,7 @@ class MetricAllToolsAccuracySweepFigure(TreeMetricsFigure):
             eff_sizes = df.Ne.unique()
             rhos = df.recombination_rate.unique()
             lengths = df.length.unique()
-            assert len(averaging_method) == len(eff_sizes) == len(rhos) == 1 
+            assert len(averaging_method) == len(eff_sizes) == len(rhos) == 1
             rho = rhos[0]
             method = averaging_method[0]
             # x-direction is different error rates
@@ -673,7 +673,7 @@ class MetricAllToolsAccuracySweepFigure(TreeMetricsFigure):
                     query.append("output_frequency == @freq")
                     query.append("output_after_generations == @gens")
                     display_order = self.single_metric_plot(
-                        df.query("(" + ") and (".join(query) + ")"),  
+                        df.query("(" + ") and (".join(query) + ")"),
                         "mutation_rate", ax, method, rho)
                     ax.set_xscale('log')
                     if j == 0:
@@ -681,7 +681,7 @@ class MetricAllToolsAccuracySweepFigure(TreeMetricsFigure):
                     if j == len(output_freqs) - 1:
                         ax.set_xlabel("Neutral mutation rate")
                     if k == 0:
-                        ax.set_ylabel(getattr(self, 'y_axis_label', metric + " metric") + 
+                        ax.set_ylabel(getattr(self, 'y_axis_label', metric + " metric") +
                             " @ {}{}".format(
                                 "fixation " if np.isclose(freq, 1.0) else "freq {}".format(freq),
                                 "+{} gens".format(int(gens)) if gens else ""))
@@ -702,7 +702,7 @@ class MetricAllToolsAccuracySweepFigure(TreeMetricsFigure):
             if len(self.output_metrics)==1:
                 self.save()
             else:
-                self.save("_".join([self.name, metric, rooting]))                
+                self.save("_".join([self.name, metric, rooting]))
 
 class MetricSubsamplingFigure(TreeMetricsFigure):
     """
@@ -737,7 +737,7 @@ class MetricSubsamplingFigure(TreeMetricsFigure):
                     ax = axes[j][k]
                     display_order = self.single_metric_plot(
                         df.query("(error_param == @error) and (length == @l)"),
-                        "subsample_size", ax, method, 
+                        "subsample_size", ax, method,
                         rho = None, markers = False)
                     if j == 0:
                         ax.set_title(self.error_label(error))
@@ -763,7 +763,7 @@ class MetricSubsamplingFigure(TreeMetricsFigure):
             if len(self.output_metrics)==1:
                 self.save()
             else:
-                self.save("_".join([self.name, metric, rooting]))                
+                self.save("_".join([self.name, metric, rooting]))
 
 ######################################
 #
@@ -779,7 +779,7 @@ def get_subclasses(cls):
 
 def latex_float(f):
     """
-    Return an exponential number in nice LaTeX form. 
+    Return an exponential number in nice LaTeX form.
     In titles etc for plots this needs to be encased in $ $ signs, and r'' strings used
     """
     float_str = "{0:.2g}".format(f)
@@ -804,7 +804,7 @@ def main():
     parser.add_argument(
         "name", type=str, help="figure name",
         choices=sorted(list(name_map.keys()) + ['all']))
-    
+
     args = parser.parse_args()
     if args.name == 'all':
         for name, fig in name_map.items():
