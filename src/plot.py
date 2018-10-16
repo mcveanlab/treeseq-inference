@@ -190,7 +190,7 @@ class AncestorAccuracy(Figure):
     cd data
     cat anc-qual_n=100_L=2.0_mu=1e-08_rho=1e-08_err=data_EmpiricalErrorPlatinum1000G_error_data.csv > ancestor_accuracy.csv
     tail +2 anc-qual_n=100_L=2.0_mu=1e-08_rho=1e-08_err=0.0_error_data.csv >> ancestor_accuracy.csv
-    
+
     """ # noqa
     name = "ancestor_accuracy"
 
@@ -205,24 +205,23 @@ class AncestorAccuracy(Figure):
     def plot(self):
         max_length = max(np.max(self.data["Real length"]), np.max(self.data["Estim length"]))* 1.1
         min_length = max(np.min(self.data["Real length"]), np.min(self.data["Estim length"])) * 0.9
-        fig, axes = plt.subplots(1, 2, sharey=True, figsize=(12, 5.5))
+        fig, axes = plt.subplots(1, 2, sharex=True, sharey=True, figsize=(12, 5.5))
         for ax, error in zip(axes, self.data.seq_error.unique()):
             df = self.data.query("seq_error == @error")
-            im = ax.scatter(df["Real length"], df["Estim length"], c=df["Inaccuracy"], cmap='Reds', s=20)
-            ax.plot([1, max_length], [1, max_length], '-', color='lightgrey', zorder=-1)
+            im = ax.scatter(df["Real length"], df["Estim length"], c=df["Inaccuracy"], s=20)
+            ax.plot([0, max_length], [0, max_length], '-', color='lightgrey', zorder=-1)
             ax.set_title(self.error_label(error))
             ax.set_xlabel("True ancestor length per variant (kb)")
             if ax == axes[0]:
                 ax.set_ylabel("Inferred ancestor length per variant (kb)")
-        
+            ax.set_xscale('log')
+            ax.set_yscale('log')
         cbar = fig.colorbar(im, ax=axes.ravel().tolist())
         cbar.set_label("Inaccuracy", rotation=270)
-        
-        plt.xscale('log')
-        plt.yscale('log')
         plt.xlim(0.9, max_length)
         plt.ylim(0.9, max_length)
         self.save()
+
 
 class ToolsFigure(Figure):
     """
