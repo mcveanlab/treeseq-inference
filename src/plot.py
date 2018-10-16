@@ -204,7 +204,7 @@ class AncestorAccuracy(Figure):
 
     def plot(self):
         max_length = max(np.max(self.data["Real length"]), np.max(self.data["Estim length"]))* 1.1
-        min_length = max(np.min(self.data["Real length"]), np.min(self.data["Estim length"])) * 0.9
+        min_length = min(np.min(self.data["Real length"]), np.min(self.data["Estim length"])) * 0.9
         fig, axes = plt.subplots(1, 2, sharex=True, sharey=True, figsize=(12, 5.5))
         for ax, error in zip(axes, self.data.seq_error.unique()):
             df = self.data.query("seq_error == @error")
@@ -212,15 +212,15 @@ class AncestorAccuracy(Figure):
             ax.plot([0, max_length], [0, max_length], '-', color='lightgrey', zorder=-1)
             #print(np.mean(df["Inaccuracy"]), error)
             ax.set_title(self.error_label(error))
-            ax.set_xlabel("True ancestor length per variant (kb)")
+            ax.set_xlabel("True ancestor length (kb)")
             if ax == axes[0]:
-                ax.set_ylabel("Inferred ancestor length per variant (kb)")
+                ax.set_ylabel("Inferred ancestor length (kb)")
             ax.set_xscale('log')
             ax.set_yscale('log')
         cbar = fig.colorbar(im, ax=axes.ravel().tolist())
-        cbar.set_label("Inaccuracy", rotation=270)
-        plt.xlim(0.9, max_length)
-        plt.ylim(0.9, max_length)
+        cbar.set_label("Inaccuracy", labelpad=6, rotation=270, va="center")
+        plt.xlim(min_length, max_length)
+        plt.ylim(min_length, max_length)
         self.save()
 
 
