@@ -210,6 +210,7 @@ class AncestorAccuracy(Figure):
             df = self.data.query("seq_error == @error")
             im = ax.scatter(df["Real length"], df["Estim length"], c=df["Inaccuracy"], s=20)
             ax.plot([0, max_length], [0, max_length], '-', color='lightgrey', zorder=-1)
+            #print(np.mean(df["Inaccuracy"]), error)
             ax.set_title(self.error_label(error))
             ax.set_xlabel("True ancestor length per variant (kb)")
             if ax == axes[0]:
@@ -490,10 +491,11 @@ class TreeMetricsFigure(ToolsFigure):
     length_format = {'tsinfer':[{'col':'k'}, {'col':'#1f77b4'}, {'col':'#17becf'}]}
 
     def single_metric_plot(self, df, x_variable, ax, av_method,
-        rho = None, markers = True, x_jitter = False):
+        rho = None, markers = True, x_jitter = None):
         """
         A single plot on an ax. This requires plotting separate lines, e.g. for each tool
-        If rho is give, plot an x=rho vertical line, assuming x is the mutation_rate
+        If rho is give, plot an x=rho vertical line, assuming x is the mutation_rate.
+        x_jitter can be None, 'log' or 'linear'
         """
         v_cols = ['length', 'sample_size', 'tool', 'polytomies']
         v_order = df[v_cols].drop_duplicates() # find unique combinations
@@ -501,7 +503,7 @@ class TreeMetricsFigure(ToolsFigure):
         v_order = v_order.sort_values(v_cols, ascending=[False, True, True, False])
         ss_order = {v:k for k,v in enumerate(v_order.sample_size.unique())}
         l_order = {v:k for k,v in enumerate(v_order.length.unique())}
-        for r in v_order.itertuples():
+        for i, r in enumerate(v_order.itertuples()):
             query = []
             query.append("length == @r.length")
             query.append("sample_size == @r.sample_size")
@@ -517,7 +519,10 @@ class TreeMetricsFigure(ToolsFigure):
                     colour = self.tools_format[r.tool]["col"]
                 x = line_data[x_variable]
                 if x_jitter:
-                    x += (np.random.random(len(x)) * 2 - 1) * (max(x)-min(x))/40
+                    if x_jitter == 'log':
+                        x *= 1 + (2*i/len(v_order)-1) * (max(x)/min(x))/5000
+                    else:
+                        x += (2 * i - 1) * (max(x)-min(x))/400
                 ax.errorbar(
                     x, line_data.treedist_mean,
                     yerr=line_data.treedist_se if self.error_bars else None,
@@ -749,6 +754,7 @@ class MetricSubsamplingFigure(TreeMetricsFigure):
     output_metrics = [("KC","rooted")] #can add extras in here if necessary
 
     def plot(self):
+        self.polytomy_and_averaging_format['retained']['per variant']['linestyle'] = "-"
         for metric, rooting in self.output_metrics:
             query = ["metric == @metric", "rooting == @rooting"]
             if getattr(self,"hide_polytomy_breaking", None):
@@ -771,19 +777,20 @@ class MetricSubsamplingFigure(TreeMetricsFigure):
                 ax = axes[k]
                 display_order = self.single_metric_plot(
                     df.query("error_param == @error"), "subsample_size", 
-                    ax, method, rho = None, markers = False, x_jitter = True)
+                    ax, method, rho = None, markers = False, x_jitter = 'log')
                 ax.set_title(self.error_label(error))
                 if k == 0:
                     ylab = getattr(self, 'y_axis_label', self.metric_titles[metric])
                     ax.set_ylabel(ylab)
                 ax.set_xlabel("Original sample size")
+                ax.set_xscale('log')
             if len(display_order)>1:
                 l_order = {v:k for k,v in enumerate(display_order.length.unique())}
                 artists = [
                     plt.Line2D((0,1),(0,0),
                         color=self.length_format[d.tool][l_order[d.length]]["col"],
                         linestyle=self.polytomy_and_averaging_format[d.polytomies][method]["linestyle"],
-                        marker = self.tools_format[d.tool]['mark'])
+                        marker = False)
                     for d in display_order[['length', 'tool', 'polytomies']].drop_duplicates().itertuples()]
                 labels = ["{} kb".format(d.length//1000)
                     for d in display_order[['length']].drop_duplicates().itertuples()]
