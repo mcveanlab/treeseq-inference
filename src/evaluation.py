@@ -1955,7 +1955,7 @@ class Summary(object):
         if ERROR_COLNAME in self.dataset.data.columns:
             assert len(self.dataset.data[ERROR_COLNAME].unique()) == 1
             assert int(self.dataset.data[ERROR_COLNAME].unique()[0]) == 0
-        # Remove unused columns (any not in param_cols, or CPU time)
+        # Remove unused columns (any not in param_cols, or target reponse columns)
         response_cols = [cn for cn in summary_df.columns if cn.endswith(colname_ending)]
         summary_df = summary_df.filter(items=param_cols+response_cols)
         # Convert metric params to long format
@@ -2151,17 +2151,9 @@ class FastargTsinferComparisonSummary(CputimeMemoryAllToolsSummary):
     for scaling by sample size. Error is not used
     """
     datasetClass = FastargTsinferComparisonDataset
-
-class FastargTsinferComparisonTimeSummary(FastargTsinferComparisonSummary):
-    name = "fastarg_tsinfer_comparison_time"
-    def summarize(self, return_mean_plus_sterr=True):
-        return super().summarize_cols_ending("cputime", return_mean_plus_sterr)
-
-
-class FastargTsinferComparisonMemorySummary(FastargTsinferComparisonSummary):
-    name = "fastarg_tsinfer_comparison_memory"
-    def summarize(self, return_mean_plus_sterr=True):
-        return super().summarize_cols_ending("memory", return_mean_plus_sterr)
+    name = "fastarg_tsinfer_comparison"
+    def summarize(self):
+        return super().summarize_cols_ending(("cputime", "memory"))
 
 
 def run_setup(cls, args):

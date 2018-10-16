@@ -304,13 +304,9 @@ class CputimeAllToolsBySampleSizeFigure(ToolsFigure):
         ax_hi.legend(loc="lower right")
         self.save()
 
-class FastargTsinferComparisonFigure(ToolsFigure):
-    """
-    Superclass for the program comparison figures (comparing tsinfer with fastarg)
-    Each figure has two panels; one for scaling by sequence length and the other
-    for scaling by sample size.
-    """
 
+class FastargTsinferComparisonFigure(ToolsFigure):
+    name = "fastarg_tsinfer_comparison"
     def __init__(self):
         super().__init__()
         # Rescale the length to Mb
@@ -319,70 +315,53 @@ class FastargTsinferComparisonFigure(ToolsFigure):
         length_sample_size_combos = self.data[["length", "sample_size"]].drop_duplicates()
         self.fixed_length = length_sample_size_combos['length'].value_counts().idxmax()
         self.fixed_sample_size = length_sample_size_combos['sample_size'].value_counts().idxmax()
-
-
-    def plot(self):
-        fig, (ax1, ax2) = plt.subplots(1, 2, sharey=True, figsize=(8, 5.5))
-        df = self.data.query("sample_size == @self.fixed_sample_size")
-        for tool in df.tool.unique():
-            line_data = df.query("tool == @tool")
-            ax1.errorbar(
-                line_data.length,
-                line_data[self.plotted_column+"_mean"],
-                yerr=line_data[self.plotted_column+"_se"],
-                color=self.tools_format[tool]["col"],
-                marker=self.tools_format[tool]['mark'],
-                elinewidth=1,
-                label=tool)
-        ax1.legend(
-            loc="upper left", numpoints=1, fontsize="small")
-
-        ax1.set_xlabel("Length (Mb) for fixed sample of {}".format(self.fixed_sample_size))
-        ax1.set_ylabel(self.y_label)
-
-        df = self.data.query("length == @self.fixed_length")
-        for tool in df.tool.unique():
-            line_data = df.query("tool == @tool")
-            ax2.errorbar(
-                line_data.sample_size,
-                line_data[self.plotted_column+"_mean"],
-                yerr=line_data[self.plotted_column+"_se"],
-                color=self.tools_format[tool]["col"],
-                marker=self.tools_format[tool]['mark'],
-                elinewidth=1,
-                label=tool)
-
-        ax2.set_xlabel("Sample size for fixed length of {} Mb".format(
-            self.fixed_length))
-
-        fig.tight_layout()
-
-        self.save()
-
-
-class FastargTsinferComparisonTimeFigure(FastargTsinferComparisonFigure):
-    name = "fastarg_tsinfer_comparison_time"
-    plotted_column = "cputime"
-    y_label = "CPU time (hours)"
-    def __init__(self):
-        super().__init__()
         # Scale time to hours
         time_scale = 3600
         cpu_cols = [c for c in self.data.columns if c.startswith("cputime")]
         self.data[cpu_cols] /= time_scale
-
-
-
-class FastargTsinferComparisonMemoryFigure(FastargTsinferComparisonFigure):
-    name = "fastarg_tsinfer_comparison_memory"
-    plotted_column = "memory"
-    y_label = "Memory (GiB)"
-
-    def __init__(self):
-        super().__init__()
         # Scale memory to GiB
         mem_cols = [c for c in self.data.columns if c.startswith("memory")]
         self.data[mem_cols] /= 1024 * 1024 * 1024
+
+    def plot(self):
+        fig, axes = plt.subplots(2, 2, sharey="row", sharex="col", figsize=(8, 5.5))
+        for i, (plotted_column, y_label) in enumerate(
+                zip(["cputime", "memory"], ["CPU time (hours)", "Memory (GiB)"])):
+            df = self.data.query("sample_size == @self.fixed_sample_size")
+            for tool in df.tool.unique():
+                line_data = df.query("tool == @tool")
+                axes[i][0].errorbar(
+                    line_data.length,
+                    line_data[plotted_column+"_mean"],
+                    yerr=line_data[plotted_column+"_se"],
+                    color=self.tools_format[tool]["col"],
+                    marker=self.tools_format[tool]['mark'],
+                    elinewidth=1,
+                    label=tool)
+            axes[i][0].get_yaxis().set_label_coords(-0.08,0.5)
+            axes[i][0].set_ylabel(y_label)
+    
+            df = self.data.query("length == @self.fixed_length")
+            for tool in df.tool.unique():
+                line_data = df.query("tool == @tool")
+                axes[i][1].errorbar(
+                    line_data.sample_size,
+                    line_data[plotted_column+"_mean"],
+                    yerr=line_data[plotted_column+"_se"],
+                    color=self.tools_format[tool]["col"],
+                    marker=self.tools_format[tool]['mark'],
+                    elinewidth=1,
+                    label=tool)
+    
+        axes[0][0].legend(
+            loc="upper right", numpoints=1, fontsize="small")
+        axes[1][0].set_xlabel("Length (Mb) for fixed sample size of {}".format(
+            self.fixed_sample_size))
+        axes[1][1].set_xlabel("Sample size for fixed length of {:g} Mb".format(
+            self.fixed_length))
+        fig.tight_layout()
+
+        self.save()
 
 class PerformanceLengthSamplesFigure(ToolsFigure):
     """
