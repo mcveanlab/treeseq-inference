@@ -560,7 +560,7 @@ class MetricsAllToolsFigure(TreeMetricsFigure):
         metric_and_rooting = self.data.groupby(["metric", "rooting"]).groups
         # sort this so that metrics come out in a set order (TO DO)
         fig, axes = plt.subplots(len(metric_and_rooting),
-            len(error_params), figsize=(4*len(error_params), 15), sharey='row')
+            len(error_params), figsize=(6*len(error_params), 15), sharey='row')
         for j, ((metric, root), rows) in enumerate(metric_and_rooting.items()):
             for k, error in enumerate(error_params):
                 # we are in the j,k th subplot
@@ -569,8 +569,10 @@ class MetricsAllToolsFigure(TreeMetricsFigure):
                 display_order = self.single_metric_plot(
                     self.data.loc[rows].query("error_param == @error"), "mutation_rate",
                     ax, method, rho, markers = (len(sample_sizes)!=1))
+                # Use integers for labels
+                ax.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
                 # Make the labels on each Y axis line up properly
-                ax.get_yaxis().set_label_coords(-0.15,0.5)
+                ax.get_yaxis().set_label_coords(-0.08,0.5)
                 if j == 0:
                     ax.set_title(self.error_label(error))
                 if j == len(metric_and_rooting) - 1:
@@ -592,7 +594,7 @@ class MetricsAllToolsFigure(TreeMetricsFigure):
         axes[0][0].legend(
             artists, tool_labels, numpoints=1, labelspacing=0.1)
 
-        fig.tight_layout(rect=[0, 0, 1, 0.95])
+        fig.tight_layout()
         self.save()
 
 
@@ -702,7 +704,7 @@ class MetricAllToolsAccuracySweepFigure(TreeMetricsFigure):
             # x-direction is different error rates
             error_params = df.error_param.unique()
             fig, axes = plt.subplots(len(output_freqs), len(error_params),
-                figsize=getattr(self,'figsize',(7*len(error_params), 3*len(output_freqs))),
+                figsize=getattr(self,'figsize',(6*len(error_params), 2.5*len(output_freqs))),
                 sharey=True)
             for j, output_data in enumerate(output_freqs.itertuples()):
                 for k, error in enumerate(error_params):
@@ -739,6 +741,7 @@ class MetricAllToolsAccuracySweepFigure(TreeMetricsFigure):
                 for d in display_order[['tool', 'polytomies']].drop_duplicates().itertuples()]
             first_legend = axes[0][0].legend(
                 artists, tool_labels, numpoints=1, labelspacing=0.1, loc="upper right")
+            fig.tight_layout()
             if len(self.output_metrics)==1:
                 self.save()
             else:
