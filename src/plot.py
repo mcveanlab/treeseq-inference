@@ -286,7 +286,7 @@ class CputimeAllToolsBySampleSizeFigure(ToolsFigure):
         #ax_lo.set_xlim(sample_sizes.min(), sample_sizes.max())
 
         # zoom-in / limit the view to different portions of the data
-        ax_hi.set_ylim(bottom = max_non_AW*20)  # outliers only
+        ax_hi.set_ylim(bottom = max_non_AW*40)  # outliers only
         ax_lo.set_ylim(bottom = 0-max_non_AW/20, top=max_non_AW+max_non_AW/20)  # most of the data
         #ax_hi.set_ylim(0.01, 3)  # outliers only
         #ax_lo.set_ylim(0, 0.002)  # most of the data
