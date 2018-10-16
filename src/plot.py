@@ -487,30 +487,43 @@ class TreeMetricsFigure(ToolsFigure):
         {'fillstyle':'none'} #assume only max 2 sample sizes per plot
         ]
 
+    length_format = {'tsinfer':[{'col':'k'}, {'col':'#1f77b4'}, {'col':'#17becf'}]}
+
     def single_metric_plot(self, df, x_variable, ax, av_method,
-        rho = None, markers = True):
+        rho = None, markers = True, x_jitter = False):
         """
         A single plot on an ax. This requires plotting separate lines, e.g. for each tool
         If rho is give, plot an x=rho vertical line, assuming x is the mutation_rate
         """
-        v_cols = ['sample_size', 'tool', 'polytomies']
-        v_order = df[v_cols].drop_duplicates() #find unique combinations
-        v_order = v_order.sort_values(v_cols, ascending=[True, True, False]) #sort for display
-        ss_order = {v:k for k,v in enumerate(df.sample_size.unique())}
+        v_cols = ['length', 'sample_size', 'tool', 'polytomies']
+        v_order = df[v_cols].drop_duplicates() # find unique combinations
+        # sort for display
+        v_order = v_order.sort_values(v_cols, ascending=[False, True, True, False])
+        ss_order = {v:k for k,v in enumerate(v_order.sample_size.unique())}
+        l_order = {v:k for k,v in enumerate(v_order.length.unique())}
         for r in v_order.itertuples():
             query = []
+            query.append("length == @r.length")
             query.append("sample_size == @r.sample_size")
             query.append("tool == @r.tool")
             query.append("polytomies == @r.polytomies")
             line_data = df.query("(" + ") and (".join(query) + ")")
             if not line_data.empty:
+                if len(v_order.length.unique()) > 1: 
+                    # all tsinfer tools: use colours for length for polytomy format
+                    colour = self.length_format[r.tool][l_order[r.length]]["col"]
+                else:
+                    # no variable lengths: use standard tool colours
+                    colour = self.tools_format[r.tool]["col"]
+                x = line_data[x_variable]
+                if x_jitter:
+                    x += (np.random.random(len(x)) * 2 - 1) * (max(x)-min(x))/40
                 ax.errorbar(
-                    line_data[x_variable],
-                    line_data.treedist_mean,
+                    x, line_data.treedist_mean,
                     yerr=line_data.treedist_se if self.error_bars else None,
                     linestyle=self.polytomy_and_averaging_format[r.polytomies][av_method]["linestyle"],
                     fillstyle=self.sample_size_format[ss_order[r.sample_size]]['fillstyle'],
-                    color=self.tools_format[r.tool]["col"],
+                    color=colour,
                     marker=self.tools_format[r.tool]['mark'] if markers else None,
                     elinewidth=1)
         if rho is not None:
@@ -752,34 +765,30 @@ class MetricSubsamplingFigure(TreeMetricsFigure):
             method = averaging_method[0]
             lengths = df.length.unique()
             error_params = df.error_param.unique()
-            fig, axes = plt.subplots(len(lengths), len(error_params),
-                figsize=(12, 12), sharey=True)
-            for j, l in enumerate(lengths):
-                for k, error in enumerate(error_params):
-                    ax = axes[j][k]
-                    display_order = self.single_metric_plot(
-                        df.query("(error_param == @error) and (length == @l)"),
-                        "subsample_size", ax, method,
-                        rho = None, markers = False)
-                    if j == 0:
-                        ax.set_title(self.error_label(error))
-                    if k == 0:
-                        ylab = getattr(self, 'y_axis_label', "Average " + \
-                            self.metric_titles[metric] + " over {}kb".format(l//1000))
-                        ax.set_ylabel(ylab)
-                    if j == len(lengths) - 1:
-                        ax.set_xlabel("Original sample size")
+            fig, axes = plt.subplots(1, len(error_params),
+                figsize=(12, 6), sharey=True)
+            for k, error in enumerate(error_params):
+                ax = axes[k]
+                display_order = self.single_metric_plot(
+                    df.query("error_param == @error"), "subsample_size", 
+                    ax, method, rho = None, markers = False, x_jitter = True)
+                ax.set_title(self.error_label(error))
+                if k == 0:
+                    ylab = getattr(self, 'y_axis_label', self.metric_titles[metric])
+                    ax.set_ylabel(ylab)
+                ax.set_xlabel("Original sample size")
             if len(display_order)>1:
+                l_order = {v:k for k,v in enumerate(display_order.length.unique())}
                 artists = [
                     plt.Line2D((0,1),(0,0),
-                        color=self.tools_format[d.tool]["col"],
+                        color=self.length_format[d.tool][l_order[d.length]]["col"],
                         linestyle=self.polytomy_and_averaging_format[d.polytomies][method]["linestyle"],
                         marker = self.tools_format[d.tool]['mark'])
-                    for d in display_order[['tool', 'polytomies']].drop_duplicates().itertuples()]
-                tool_labels = [d.tool + ("" if d.polytomies == "retained" else (" (polytomies " + d.polytomies + ")"))
-                    for d in display_order[['tool', 'polytomies']].drop_duplicates().itertuples()]
-                first_legend = axes[0][0].legend(
-                    artists, tool_labels, numpoints=1, labelspacing=0.1, loc="upper right")
+                    for d in display_order[['length', 'tool', 'polytomies']].drop_duplicates().itertuples()]
+                labels = ["{} kb".format(d.length//1000)
+                    for d in display_order[['length']].drop_duplicates().itertuples()]
+                first_legend = axes[0].legend(
+                    artists, labels, numpoints=1, labelspacing=0.1, loc="upper right")
             if len(self.output_metrics)==1:
                 self.save()
             else:
