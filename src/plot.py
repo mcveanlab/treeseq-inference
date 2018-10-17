@@ -32,7 +32,7 @@ class Figure(object):
         plt.savefig("figures/{}.pdf".format(figure_name))
         plt.close()
 
-    def error_label(self, error, label_for_no_error = "No error"):
+    def error_label(self, error, label_for_no_error = "No genotyping error"):
         """
         Make a nice label for an error parameter
         """
@@ -42,7 +42,7 @@ class Figure(object):
         except (ValueError, TypeError):
             try: # make a simplified label
                 if "Empirical" in error:
-                    error = "Empirical"
+                    error = "With genotyping"
             except:
                 pass
             return "{} error".format(error) if error else label_for_no_error
@@ -384,7 +384,6 @@ class PerformanceLengthSamplesFigure(ToolsFigure):
 
     def plot(self):
         df = self.data
-        # Set statistics to the ratio of observed over expected
         recombination_linestyles = [':', '-', '--']
         recombination_rates = df.recombination_rate.unique()
         mutation_rates = df.mutation_rate.unique()
@@ -404,6 +403,7 @@ class PerformanceLengthSamplesFigure(ToolsFigure):
                 yerr=None, # line_data[self.plotted_column + "_se"],
                 linestyle=linestyle,
                 color=self.tools_format[tool]["col"],
+                #marker=self.tools_format[tool]['mark'],
                 #elinewidth=1
                 )
 
@@ -417,6 +417,7 @@ class PerformanceLengthSamplesFigure(ToolsFigure):
                 yerr=None, # line_data[self.plotted_column + "_se"],
                 linestyle=linestyle,
                 color=self.tools_format[tool]["col"],
+                #marker=self.tools_format[tool]['mark'],
                 #elinewidth=1
                 )
         params = [
