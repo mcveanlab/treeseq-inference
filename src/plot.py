@@ -433,7 +433,7 @@ class PerformanceLengthSamplesFigure(ToolsFigure):
 
 class TSCompressionFigure(PerformanceLengthSamplesFigure):
     name = "tsinfer_ts_filesize_ln"
-    plotted_column = "ts_compression_factor"
+    plotted_column = "ts_relative_filesize"
     y_axis_label = "File size relative to simulated tree sequence"
 
 
