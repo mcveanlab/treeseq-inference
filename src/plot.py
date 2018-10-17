@@ -305,8 +305,8 @@ class CputimeAllToolsBySampleSizeFigure(ToolsFigure):
         self.save()
 
 
-class FastargTsinferComparisonFigure(ToolsFigure):
-    name = "fastarg_tsinfer_comparison"
+class MemTimeFastargTsinferFigure(ToolsFigure):
+    name = "mem_time_fastarg_tsinfer"
     def __init__(self):
         super().__init__()
         # Rescale the length to Mb
@@ -426,20 +426,20 @@ class PerformanceLengthSamplesFigure(ToolsFigure):
         ax1.legend(
             params, [r"$\rho$ = {}".format("$\mu$" if rho==mu else r"{:g}$\mu$".format(rho/mu) if rho>mu else r"$\mu$/{:g}".format(mu/rho))
                 for rho_index, rho in enumerate(recombination_rates)],
-            loc="lower right", fontsize=10, title="Relative rate of\nrecombination")
+            loc="upper right", fontsize=10, title="Relative rate of\nrecombination")
 
         self.save()
 
 
-class EdgesPerformanceSummary(PerformanceLengthSamplesFigure):
-    name = "tsinfer_edges_ln"
-    plotted_column = "edge_ratio"
-    y_axis_label = "inferred_edges / real_edges"
+class TSCompressionFigure(PerformanceLengthSamplesFigure):
+    name = "tsinfer_ts_filesize_ln"
+    plotted_column = "ts_compression_factor"
+    y_axis_label = "File size relative to simulated tree sequence"
 
 
-class CompressionPerformanceFigure(PerformanceLengthSamplesFigure):
-    name = "tsinfer_compression_ln"
-    plotted_column = "file_compression_factor"
+class VCFCompressionFigure(PerformanceLengthSamplesFigure):
+    name = "tsinfer_vcf_compression_ln"
+    plotted_column = "vcf_compression_factor"
     y_axis_label = "Compression factor relative to vcf.gz"
 
 

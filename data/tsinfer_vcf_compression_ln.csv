@@ -1,4 +1,4 @@
-,Ne,length,sample_size,recombination_rate,mutation_rate,tool,file_compression_factor_mean,file_compression_factor_se
+,Ne,length,sample_size,recombination_rate,mutation_rate,tool,vcf_compression_factor_mean,vcf_compression_factor_se
 0,5000,5000000,50000,5e-09,1e-08,tsinfer,9.226277890546204,0.1797718424669047
 1,5000,5000000,50000,1e-08,1e-08,tsinfer,7.946418155805918,0.09547719886312891
 2,5000,5000000,50000,2e-08,1e-08,tsinfer,6.364022036372093,0.04638299236573924

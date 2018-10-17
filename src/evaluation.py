@@ -2128,30 +2128,30 @@ class PerformanceLengthSamplesSummary(Summary):
     datasetClass = TsinferPerformanceDataset
 
 class EdgesPerformanceSummary(PerformanceLengthSamplesSummary):
-    name = "tsinfer_edges_ln"
+    name = "tsinfer_ts_filesize_ln"
     
     def summarize(self):
-        self.dataset.data['tsinfer_edge_ratio'] = \
-            self.dataset.data.tsinfer_edges / self.dataset.data.edges
-        return super().summarize_cols_ending("edge_ratio")
+        self.dataset.data['tsinfer_ts_relative_filesize'] = \
+            self.dataset.data.tsinfer_ts_filesize / self.dataset.data.ts_filesize
+        return super().summarize_cols_ending("relative_filesize")
             
 
 class CompressionPerformanceFigure(PerformanceLengthSamplesSummary):
-    name = "tsinfer_compression_ln"
+    name = "tsinfer_vcf_compression_ln"
 
     def summarize(self):
-        self.dataset.data['tsinfer_file_compression_factor'] = \
+        self.dataset.data['tsinfer_vcf_compression_factor'] = \
             self.dataset.data.vcfgz_filesize / self.dataset.data.tsinfer_ts_filesize
-        return super().summarize_cols_ending("file_compression_factor")
+        return super().summarize_cols_ending("vcf_compression_factor")
 
-class FastargTsinferComparisonSummary(CputimeMemoryAllToolsSummary):
+class MemTimeFastargTsinferSummary(CputimeMemoryAllToolsSummary):
     """
     Superclass for the program comparison figures (comparing tsinfer with fastarg)
     Each figure has two panels; one for scaling by sequence length and the other
     for scaling by sample size. Error is not used
     """
     datasetClass = FastargTsinferComparisonDataset
-    name = "fastarg_tsinfer_comparison"
+    name = "mem_time_fastarg_tsinfer"
     def summarize(self):
         return super().summarize_cols_ending(("cputime", "memory"))
 
