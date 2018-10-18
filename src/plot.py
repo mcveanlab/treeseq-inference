@@ -212,9 +212,9 @@ class AncestorAccuracy(Figure):
             ax.plot([0, max_length], [0, max_length], '-', color='lightgrey', zorder=-1)
             #print(np.mean(df["Inaccuracy"]), error)
             ax.set_title(self.error_label(error))
-            ax.set_xlabel("True ancestor length (kb)")
+            ax.set_xlabel("True ancestral haplotype length (kb)")
             if ax == axes[0]:
-                ax.set_ylabel("Inferred ancestor length (kb)")
+                ax.set_ylabel("Inferred ancestral haplotype length (kb)")
             ax.set_xscale('log')
             ax.set_yscale('log')
         cbar = fig.colorbar(im, ax=axes.ravel().tolist())
