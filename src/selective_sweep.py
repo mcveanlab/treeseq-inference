@@ -118,7 +118,7 @@ def add_mutant_to_RC_ARG(simuPOP_population, ind, pos, chrom, val, recomb_collec
     """
     ind_id = simuPOP_population.individual(ind).info('ind_id')
     haploid_id = recomb_collector.i2c(ind_id, chrom)
-    logging.info("Gen: {:4d}. Mutation (re)introduced at locus {} in simupop individual {} chrom {} = ftprime id {}".format(
+    logging.info("Gen: {:4d}. Mutation (re)introduced at locus {} in simupop individual {:g} chrom {} = ftprime id {}".format(
         simuPOP_population.dvars().gen, pos, ind_id, chrom, haploid_id))
     recomb_collector.args.add_mutation(position=pos, node=haploid_id, derived_state=b'1', ancestral_state=b'0')
     return True
