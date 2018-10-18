@@ -32,10 +32,6 @@ import math
 import gzip
 
 import numpy as np
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as pyplot
-import matplotlib.backends.backend_pdf
 import pandas as pd
 import tqdm
 
@@ -68,6 +64,7 @@ TSINFER = "tsinfer"
 #names for optional columns in the dataset
 ERROR_COLNAME = 'error_param'
 SUBSAMPLE_COLNAME = 'subsample_size'
+SUBCOMPARISON_COLNAME = 'restrict_sample_size_comparison'
 SIMTOOL_COLNAME = 'sim_tool' #if column does not exist, default simulation tool = 'msprime'
 MUTATION_SEED_COLNAME = 'mut_seed'
 SELECTION_COEFF_COLNAME = 'selection_coefficient'
@@ -366,7 +363,7 @@ class InferenceRunner(object):
         self.orig_sim_fn = mk_sim_name_from_row(row, simulations_dir, subsample_col=None, error_col=None)
         #the known tree file to compare inference against: is subset but no err
         self.cmp_fn = mk_sim_name_from_row(
-            row, simulations_dir, subsample_col='restrict_sample_size_comparison', error_col=None)
+            row, simulations_dir, subsample_col=SUBCOMPARISON_COLNAME, error_col=None)
         #sample_fn is used for sample data from the simulation, so must include error,
         #and (if used) the subsample size
         self.sample_fn = mk_sim_name_from_row(row, simulations_dir)
@@ -426,7 +423,7 @@ class InferenceRunner(object):
     def __run_tsinfer(self, skip_infer=False):
         #default to no subsampling
         subsample_size = getattr(self.row,'subsample_size', None)
-        restrict_sample_size_comparison = getattr(self.row,'restrict_sample_size_comparison', None)
+        restrict_sample_size_comparison = getattr(self.row,SUBCOMPARISON_COLNAME, None)
         #construct filenames - these can be used even if inference does not occur
         samples_fn = self.sample_fn + ".samples"
         out_fn = construct_tsinfer_name(self.sample_fn,
@@ -947,9 +944,9 @@ class Dataset(object):
         if iterate_over_dict is None:
             iterate_over_dict = self.within_sim_params
         if any(self.tools_and_metrics.values()):
-            if base_params.get('restrict_sample_size_comparison'):
+            if base_params.get(SUBCOMPARISON_COLNAME):
                 #we are not comparing the trees with all samples, but just the first n
-                n = base_params['restrict_sample_size_comparison']
+                n = base_params[SUBCOMPARISON_COLNAME]
                 cmp_fn = add_subsample_param_to_name(base_fn, n)
                 small_ts = ts.simplify(list(range(n)))
                 small_ts.save_nexus_trees(cmp_fn +".nex")
@@ -1297,11 +1294,13 @@ class Dataset(object):
                 demographic_events=demographic_events
                 )
 
-        asian_samples = sample_size//3
+        asian_samples = (sample_size//(3*2))*2
         afro_european_samples = sample_size - asian_samples
-        european_samples = afro_european_samples//2
+        european_samples = (afro_european_samples//(2*2)) * 2
         african_samples = afro_european_samples - european_samples
         assert african_samples + european_samples + asian_samples == sample_size
+        # Required to insert error correctly (which requires diploid individuals in each
+        assert african_samples%2 == european_samples%2 == asian_samples%2 == 0
 
         kwargs.update(out_of_africa(african_samples, european_samples, asian_samples))
         return self.single_neutral_simulation(sample_size, sim_name, length,
@@ -1492,7 +1491,7 @@ class AllToolsPerformanceDataset(AllToolsDataset):
     fixed_length = 2 * 10**5
     num_points = 4
     #Ensure sample sizes are even so we can output diploid VCF.
-    sample_sizes = [10, 20, 40, 65, 100]
+    sample_sizes = [10, 20, 40, 64, 100]
     lengths = np.linspace(fixed_length / 5, 4 * fixed_length, num_points).astype(int)
 
     #params that change BETWEEN simulations. Keys should correspond
@@ -1641,12 +1640,12 @@ class SubsamplingDataset(Dataset):
     # to column names in the csv file. Values should all be arrays.
     between_sim_params = {
         'sample_size':        [1000], #the maximum sample size - we will trim this down
-        'length':             [10000, 100000, 1000000],
+        'length':             [50000, 500000, 5000000],
         'Ne':                 [5000],
         'mutation_rate':      [1e-8],
         'recombination_rate': [1e-8],
          #we always simplify down to the first n samples for comparison purposes
-        'restrict_sample_size_comparison': [6],
+        SUBCOMPARISON_COLNAME: [10],
     }
 
     within_sim_params = {
@@ -1656,7 +1655,7 @@ class SubsamplingDataset(Dataset):
     }
 
 
-    extra_sim_cols = [SUBSAMPLE_COLNAME, 'restrict_sample_size_comparison']
+    extra_sim_cols = [SUBSAMPLE_COLNAME, SUBCOMPARISON_COLNAME]
 
     def single_sim(self, row_id, sim_params, rng):
         assert max(self.within_sim_params[SUBSAMPLE_COLNAME]) <= sim_params['sample_size']
@@ -1666,7 +1665,7 @@ class SubsamplingDataset(Dataset):
             try:
                 # Run the simulation until we get an acceptable one
                 base_ts, fn = self.single_neutral_simulation(
-                    **{k:v for k,v in sim_params.items() if k != 'restrict_sample_size_comparison'})
+                    **{k:v for k,v in sim_params.items() if k != SUBCOMPARISON_COLNAME})
                 break
             except ValueError as e: #No non-singleton variants
                 logging.warning(e)
@@ -1696,7 +1695,8 @@ class AllToolsAccuracyWithDemographyDataset(Dataset):
     # to column names in the csv file. Values should all be arrays.
     between_sim_params = {
         'mutation_rate': np.geomspace(0.5e-8, 3.5e-6, num=7),
-        'sample_size':   [15], #will be split across the 3 human sub pops
+        'sample_size':   [16], # will be split across the 3 human sub pops as evenly as 
+                               # possible so that each has a multiple of 2 samples
         'length':        [100000],
         'recombination_rate': [1e-8],
         'sim_name': ["Gutenkunst.out.of.africa"]
@@ -1743,7 +1743,7 @@ class AllToolsAccuracyWithSelectiveSweepDataset(Dataset):
 
     between_sim_params = {
         'mutation_rate': np.geomspace(0.5e-8, 3.5e-6, num=5),
-        'sample_size': [15],
+        'sample_size': [16],
         'Ne':     [5000],
         'length': [100000],
         'recombination_rate': [1e-8],
@@ -1862,10 +1862,8 @@ class ARGweaverParamChangesDataset(Dataset):
 ######################################
 #
 # Data summaries
-#  Here we take the CSV data files 
-#  produced by setup() and infer() and
-#  condense them into small CSV files
-#  for plotting
+#  Here we take the CSV data files produced by setup() and infer() and condense them into
+#  small CSV files for plotting
 #
 ######################################
 
@@ -1879,7 +1877,11 @@ class Summary(object):
     # Each summary has a unique name. This is used as the identifier for the csv file.
     name = None
 
+    standard_param_cols = ['Ne', 'length', 'sample_size',
+            'recombination_rate', 'mutation_rate']
+
     def __init__(self):
+        logging.info("Summarising '{}'".format(self.name))
         self.dataset = self.datasetClass()
         self.dataset.load_data()
         self.data_file = os.path.abspath(
@@ -1893,11 +1895,11 @@ class Summary(object):
         
         The column names can be of the form
         
-            "tsinfer_per site_breaking polytomies_rooted_RF_treedist"
+            "tsinfer_per site_broken_rooted_RF_treedist"
         
         and values separated by underscores become separate stacking variables, here
 
-        "tsinfer", "per site", "breaking polytomies", "rooted", "RF", "treedist"
+        "tsinfer", "per site", "broken", "rooted", "RF", "treedist"
 
         the names to use for each variable is given by the split_names array
         """
@@ -1936,22 +1938,58 @@ class Summary(object):
         df =pd.concat([g.mean().add_suffix("_mean"), g.sem().add_suffix("_se")], axis=1)
         return df.reset_index()
         
-    def summarize(self):
+    def summarize(self, return_mean_plus_sterr=True):
         """
         Save a summarized csv file of the results, appropriate for a particular plot.
         """
         raise NotImplementedError()
 
-class MetricsSummary(Summary):
+    def summarize_cols_ending(self, colname_ending, return_mean_plus_sterr=True):
+        """
+        Used in simple subclasses to get a simple data summary.
+        """
+        toolnames = self.dataset.tools_and_metrics.keys()
+        summary_df = self.dataset.data
+        param_cols = self.standard_param_cols
+        # check these are without error
+        if ERROR_COLNAME in self.dataset.data.columns:
+            assert len(self.dataset.data[ERROR_COLNAME].unique()) == 1
+            assert int(self.dataset.data[ERROR_COLNAME].unique()[0]) == 0
+        # Remove unused columns (any not in param_cols, or target reponse columns)
+        response_cols = [cn for cn in summary_df.columns if cn.endswith(colname_ending)]
+        summary_df = summary_df.filter(items=param_cols+response_cols)
+        # Convert metric params to long format
+        summary_df = self.df_wide_to_long(summary_df, toolnames, ["tool"])
+        if return_mean_plus_sterr:
+            summary_df = self.mean_se(summary_df, param_cols+["tool"])
+        return summary_df
+
+
+class CputimeMemoryAllToolsSummary(Summary):
+    """
+    Superclass comparing cpu times for tsinfer vs other tools. 
+    We can only really get the CPU times for all four methods for tiny examples.
+    """
+    datasetClass = AllToolsPerformanceDataset
+    param_cols = Summary.standard_param_cols
+
+class CputimeAllToolsBySampleSizeSummary(CputimeMemoryAllToolsSummary):
+    """
+    Show change in cpu time with sample size (easy to do a similar thing with length)
+    """
+    name = "cputime_all_tools_by_sample_size"
+
+    def summarize(self, return_mean_plus_sterr=True):
+        fixed_length = self.dataset.fixed_length
+        summary_df = super().summarize_cols_ending("cputime", return_mean_plus_sterr)
+        return summary_df.query("length == @fixed_length")
+
+
+class TreeMetricsSummary(Summary):
     """
     Superclass for summaries of tree distance metrics.
     """
-    metric_titles = {
-        "RF": "Robinson-Foulds metric",
-        "SPR": "estimated SPR difference",
-        "path": "Path difference",
-        "KC": "Kendall-Colijn metric",
-    }
+    param_cols = Summary.standard_param_cols
 
     def convert_treemetric_colname(self, colname, allowed_prefixes):
         """
@@ -1969,836 +2007,153 @@ class MetricsSummary(Summary):
                 # (first bit is location, second is polytomies)
                 bitnames = [
                     "per variant" if (METRICS_LOCATION_VARIANTS & bitflag) else "per site",
-                    "breaking polytomies" if (METRICS_POLYTOMIES_BREAK & bitflag) else "leaving polytomies"
+                    "broken" if (METRICS_POLYTOMIES_BREAK & bitflag) else "retained"
                 ]
                 colsplit = colsplit[0:1] + bitnames + colsplit[2:]
             if colsplit[-1].endswith("unrooted"):
                 # remove the "unrooted" suffix, and stick it as an earlier param
                 metric = colsplit[-1][:-len("unrooted")]
-                colsplit.append(self.metric_titles.get(metric, metric))
+                colsplit.append(metric)
                 colsplit[-2] = "unrooted"
             elif colname.endswith("rooted"):
                 metric = colsplit[-1][:-len("rooted")]
-                colsplit.append(self.metric_titles.get(metric, metric))
+                colsplit.append(metric)
                 colsplit[-2] = "rooted"
             colsplit.append("treedist")
         return "_".join(colsplit)
 
     def summarize(self, return_mean_plus_sterr=True):
-        param_cols = ['Ne', 'length', 'sample_size',
-            'recombination_rate', 'mutation_rate', ERROR_COLNAME]
         toolnames = self.dataset.tools_and_metrics.keys()
-
         summary_df = self.dataset.data
-        
+        assert summary_df.empty == False
         # Turn the column names containing tree metric distances to names containing
         # rational descriptions of the parameters associated with each metric
         summary_df.columns = [
             self.convert_treemetric_colname(cn, toolnames) for cn in summary_df.columns]
-        metric_param_names = ["tool",'averaging', 'polytomy_treatment', 'rooting', 'metric']
+        metric_param_names = ["tool",'averaging', 'polytomies', 'rooting', 'metric']
+
 
         # Remove unused columns (any not in param_cols, or a tree distance measure)
         response_cols = [cn for cn in summary_df.columns if cn.endswith("treedist")]
-        summary_df = summary_df.loc[:,param_cols+response_cols]
+        for c in self.param_cols+response_cols:
+            assert c in summary_df.columns, "{} missing from columns".format(c)
+        summary_df = summary_df.filter(items=self.param_cols+response_cols)
         # Convert metric params to long format
         summary_df = self.df_wide_to_long(summary_df, toolnames, metric_param_names)
         if return_mean_plus_sterr:
-            summary_df = self.mean_se(summary_df, param_cols+metric_param_names)
+            summary_df = self.mean_se(summary_df, self.param_cols + metric_param_names)
 
         # Post-processing
+        #  Don't use the weighted RF metric (only valid for trees with branch lengths
+        summary_df = summary_df.query("metric != 'wRF'")
         #  The Robinson-Foulds metric is not well behaved for trees with polytomies 
         #  (only tsinfer produces such trees, though)
-        summary_df = summary_df.loc[~(
-            (summary_df.polytomy_treatment == 'leaving polytomies') & \
-            (summary_df.tool == 'tsinfer') & \
-            [m.endswith("Robinson-Foulds metric") for m in summary_df['metric']])]
+        summary_df = summary_df.query(
+            "not ("
+            "(polytomies == 'retained') and "
+            "(tool == 'tsinfer') and "
+            "(metric == 'wRF' or metric == 'RF'))")
         return summary_df
 
 
-class MetricsAllToolsSummary(MetricsSummary):
+class MetricsAllToolsSummary(TreeMetricsSummary):
     """
-    Data for a plot showing many metrics in different subplots
+    Data for a figure showing many metrics in different subplots
     """
     datasetClass = AllToolsDataset
     name = "metrics_all_tools"
+    param_cols = TreeMetricsSummary.standard_param_cols + [ERROR_COLNAME]
     
 
 class MetricsAllToolsAccuracySummary(MetricsAllToolsSummary):
     """
-    Show the metrics tending to 0 as mutation rate increases
+    Show all metrics tending to 0 as mutation rate increases
     """
     datasetClass = AllToolsAccuracyDataset
     name = "metrics_all_tools_accuracy"
-    error_bars = True
 
 
-class MetricsAllToolsAccuracyDemographySummary(MetricsAllToolsSummary):
+class MetricAllToolsSummary(TreeMetricsSummary):
+    """
+    Create data for figures that will display a single metric.
+    Note that we save data for *all* metrics into the CSV, which allows us to output
+    multiple plots (one for each metric) when plotting, and reduces the number of 
+    subclasses defined in this file.
+    """
+    datasetClass = AllToolsDataset
+    name = "metric_all_tools"
+    param_cols = TreeMetricsSummary.standard_param_cols + [ERROR_COLNAME]
+
+
+class MetricAllToolsAccuracySweepSummary(MetricAllToolsSummary):
+    """
+    Superclass of the metric all tools figure for simulations with selection. 
+    Each subclass should be a single figure for a particular metric.
+    """
+    datasetClass = AllToolsAccuracyWithSelectiveSweepDataset
+    name = "metric_all_tools_accuracy_sweep"
+    param_cols = MetricAllToolsSummary.standard_param_cols + \
+        [SELECTED_FREQ_COLNAME, SELECTED_POSTGEN_COLNAME, ERROR_COLNAME]
+
+
+class MetricAllToolsAccuracyDemographySummary(MetricAllToolsSummary):
     """
     Simple summary that saves all the metrics at the same time for
     a genome under a more complex demographic model (the Gutenkunst 
     Out Of Africa model), as mutation rate increases to high values
     """
     datasetClass = AllToolsAccuracyWithDemographyDataset
-    name = "metrics_all_tools_accuracy_demography"
+    name = "metric_all_tools_accuracy_demography"
 
 
-class MetricAllToolsSummary(MetricsSummary):
-    """
-    Base class for plots with single metrics.
-    """
-    datasetClass = AllToolsDataset
-
-    def summarize(self):
-        summary_df = super().summarize()
-        #  Remove all but one specific tree distance measure
-        if self.metric in self.metric_titles:
-            metric = self.metric_titles[self.metric]
-        else:
-            metric = self.metric
-        query = ["metric == @metric"]
-        if hasattr(self, "rooting"):
-            rooting = self.rooting
-            query += ["rooting = @rooting"]
-        summary_df = summary_df.query("(" + ") and (".join(query) + ")")
-        return summary_df
-
-class MetricAllToolsAccuracySummary(MetricAllToolsSummary):
-    """
-    Superclass of the metric all tools figure. Each subclass should be a
-    single figure for a particular metric.
-    """
-    datasetClass = AllToolsAccuracyDataset
-
-
-class RFRootedAllToolsSummary(MetricAllToolsSummary):
-    name = "rf_rooted_all_tools"
-    metric = "RF"
-    rooting = "rooted"
-
-
-class KCAllToolsSummary(MetricAllToolsSummary):
-    """
-    For the publication: remove the line where polytomies are broken,
-    and make symbols small and solid
-    """
-    name = "kc_all_tools"
-    metric = "KC"
-
-    def summarize(self):
-        summary_df = super().summarize()
-        summary_df = summary_df.query("polytomy_treatment != 'breaking polytomies'")
-        return summary_df
-
-class RFRootedAllToolsAccuracySummary(MetricAllToolsAccuracySummary):
-    name = "rf_rooted_all_tools_accuracy"
-    metric = "RF"
-    #rooting = "rooted"
-    #ylim = None
-
-
-class KCAllToolsAccuracySummary(MetricAllToolsAccuracySummary):
-    name = "kc_all_tools_accuracy"
-    metric = "KC"
-    #ylim = (0, 40)
-    #error_bars = True
-
-class MetricAllToolsAccuracyDemographySummary(MetricAllToolsSummary):
-    """
-    Superclass of the metric all tools figure for demographic simulations. 
-    Each subclass should be a single figure for a particular metric.
-    """
-    datasetClass = AllToolsAccuracyWithDemographyDataset
-
-class KCAllToolsAccuracyDemographySummary(MetricAllToolsAccuracyDemographySummary):
-    name = "kc_rooted_all_tools_accuracy_demography"
-    metric = "KC"
-    #ylim = (0, 20)
-    #error_bars = True
-
-class CputimeAllToolsSummary(Summary):
-    """
-    This figure is useful because we can only really get the CPU times
-    for all four methods in the same scale for these tiny examples.
-    We can show that ARGWeaver and RentPlus are much slower than tsinfer
-    and FastARG here and compare tsinfer and FastARG more thoroughly
-    in a dedicated figure.
-    """
-    name = "cputime_all_tools"
-    datasetClass = AllToolsPerformanceDataset
-    error_bars = True
-
-    def plot(self):
-        df = self.dataset.data
-        sample_sizes = df.sample_size.unique()
-
-        fig, (ax_hi, ax_lo) = pyplot.subplots(2, 1, sharex=True)
-        lines = []
-        noerror = [e for e in df[ERROR_COLNAME].unique() if self.error_label(e, None) is None]
-        assert len(noerror) == 1
-        noerror = noerror[0]
-        ax_lo.set_xlabel("Sample Size")
-        ax_hi.set_ylabel("CPU time (hours)")
-        #ax_lo.set_xlim(sample_sizes.min(), sample_sizes.max())
-
-        # zoom-in / limit the view to different portions of the data
-        #ax_hi.set_ylim(0.6, 2.7)  # outliers only
-        ax_lo.set_ylim(0, 0.005)  # most of the data
-        #ax_hi.set_ylim(0.01, 3)  # outliers only
-        #ax_lo.set_ylim(0, 0.002)  # most of the data
-        
-        # hide the spines between ax and ax2
-        ax_hi.spines['bottom'].set_visible(False)
-        ax_lo.spines['top'].set_visible(False)
-        ax_hi.xaxis.tick_top()
-        ax_hi.tick_params(labeltop='off')  # don't put tick labels at the top
-        ax_lo.xaxis.tick_bottom()
-
-        df_s = df[np.logical_and(
-            df[ERROR_COLNAME] == noerror, 
-            df['length'] == self.dataset.fixed_length)]
-        group = df_s.groupby(["sample_size"])
-        mean_sem = [{'sz':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-        for tool, setting in self.tools.items():
-            for ax in (ax_lo, ax_hi):
-                ax.errorbar(
-                    [m['sz'] for m in mean_sem],
-                    [m['mean'][tool + "_" + "cputime"]/60/60 for m in mean_sem],
-                    yerr=[m['sem'][tool + "_" + "cputime"]/60/60 for m in mean_sem] \
-                         if getattr(self, 'error_bars', False) else None,
-                    color=setting["col"],
-                    marker=setting["mark"],
-                    elinewidth=1,
-                    label=tool)
-        d = .015  # how big to make the diagonal lines in axes coordinates
-        # arguments to pass to plot, just so we don't keep repeating them
-        kwargs = dict(transform=ax_hi.transAxes, color='k', clip_on=False)
-        ax_hi.plot((-d, +d), (-d, +d), **kwargs)        # top-left diagonal
-        ax_hi.plot((1 - d, 1 + d), (-d, +d), **kwargs)  # top-right diagonal
-        
-        kwargs.update(transform=ax_lo.transAxes)  # switch to the bottom axes
-        ax_lo.plot((-d, +d), (1 - d, 1 + d), **kwargs)  # bottom-left diagonal
-        ax_lo.plot((1 - d, 1 + d), (1 - d, 1 + d), **kwargs)  # bottom-right diagonal
-
-        ax_hi.legend(loc="upper left")
-        self.savefig(fig)
-
-class MetricsAllToolsAccuracySweepSummary(MetricsSummary):
-    """
-    Simple figure that shows all the metrics at the same time for
-    a genome under a selective sweep
-    """
-    datasetClass = AllToolsAccuracyWithSelectiveSweepDataset
-    name = "metrics_all_tools_accuracy_sweep"
-    error_bars = True
-    fillstyles = ['full', 'none']
-
-    def plot(self):
-        df = self.dataset.data
-        error_params = df[ERROR_COLNAME].unique()
-        output_freqs = df[[SELECTED_FREQ_COLNAME, SELECTED_POSTGEN_COLNAME]].drop_duplicates()
-        sample_sizes = df.sample_size.unique()
-
-        metrics = ARG_metrics.get_metric_names()
-        topology_only_metrics = [m for m in metrics if not m.startswith('w')] #don't use the weighted metrics
-        figures = [] #save figures for putting onto a multi-page pdf
-        for error in error_params:
-            fig, axes = pyplot.subplots(len(topology_only_metrics),
-                len(output_freqs), figsize=(20, 20))
-            fig.suptitle(self.error_label(error))
-            for j, metric in enumerate(topology_only_metrics):
-                for k, output_data in enumerate(output_freqs.itertuples()):
-                    freq = output_data.output_frequency
-                    gens = output_data.output_after_generations
-                    ax = axes[j][k]
-                    ax.set_xscale('log')
-                    if j == 0:
-                        ax.set_title("Swept variant @ freq {}{}".format(
-                            freq, "+{} gens".format(int(gens)) if gens else ""))
-                    if k == 0:
-                        ax.set_ylabel(getattr(self, 'y_axis_label', self.metric_titles[metric]))
-                    if j == len(topology_only_metrics) - 1:
-                        ax.set_xlabel("Mutation rate")
-                    if np.isclose(freq, 1.0) and not gens:
-                        # This is *at* fixation - set the plot background colour
-                        ax.set_facecolor('0.9')
-                    for n, fillstyle in zip(sample_sizes, self.fillstyles):
-                        df_s = df[np.logical_and.reduce((
-                            df.sample_size == n,
-                            df[ERROR_COLNAME] == error,
-                            df[SELECTED_FREQ_COLNAME] == freq,
-                            df[SELECTED_POSTGEN_COLNAME] == gens))]
-                        group = df_s.groupby(["mutation_rate"])
-                        #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
-                        mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-                        for tool_and_metrics_param, setting in self.tools_and_metrics_params.items():
-                            if metric.startswith("RF") \
-                                and tool_and_metrics_param.startswith(TSINFER) \
-                                and (int(tool_and_metrics_param.rsplit("_",1)[1]) & METRICS_POLYTOMIES_BREAK == 0):
-                                    # RF metrics are not well behaved for trees with polytomies (i.e. tsinfer trees)
-                                    # so we should omit tsinfer cases where METRICS_POLYTOMIES_BREAK == 0
-                                continue
-                            if all(np.isnan(m['mean'][tool_and_metrics_param + "_" + metric]) for m in mean_sem):
-                                #don't plot if all NAs
-                                continue
-                            ax.errorbar(
-                                [m['mu'] for m in mean_sem],
-                                [m['mean'][tool_and_metrics_param + "_" + metric] for m in mean_sem],
-                                yerr=[m['sem'][tool_and_metrics_param + "_" + metric] for m in mean_sem] \
-                                    if getattr(self, 'error_bars', False) else None,
-                                color=setting["col"],
-                                linestyle=setting["linestyle"],
-                                marker=setting["mark"],
-                                fillstyle=fillstyle,
-                                elinewidth=1)
-                    ax.set_ylim(ymin=0)
-                    ax.get_yaxis().set_label_coords(-0.15,0.5)
-                    ax.axvline(x=df.recombination_rate.unique()[0], 
-                        color = 'gray', zorder=-1, linestyle=":", linewidth=1)
-                    ax.text(df.recombination_rate.unique()[0], ax.get_ylim()[1]/40, r'$\mu=\rho$',
-                        va = "bottom",  ha="right", color = 'gray', rotation=90)
-
-            # Create legends from custom artists
-            artists = [
-                pyplot.Line2D((0,1),(0,0), color= setting["col"], fillstyle=self.fillstyles[0],
-                    marker= setting["mark"], linestyle=setting["linestyle"])
-                for tool,setting in self.tools_and_metrics_params.items()]
-            tool_labels = [(l.replace("_0", "").replace("_2"," breaking polytomies") if l.startswith(TSINFER) else l.replace("_0", "")) 
-                for l in self.tools_and_metrics_params.keys()]
-            first_legend = axes[0][0].legend(
-                artists, tool_labels, numpoints=1, labelspacing=0.1, loc="upper right")
-            if len(sample_sizes)>1:
-                artists = [
-                    pyplot.Line2D(
-                        (0,0),(0,0), color="black", fillstyle=fillstyle, linewidth=2)
-                    for n, fillstyle in zip(sample_sizes, self.fillstyles)]
-                axes[0][-1].legend(
-                    artists, ["Sample size = {}".format(n) for n, fillstyle in zip(sample_sizes, self.fillstyles)],
-                    loc="upper right")
-            figures.append(fig)
-        self.savefig(*figures)
-
-
-
-class MetricAllToolsAccuracySweepSummary(MetricsSummary):
-    """
-    Superclass of the metric all tools figure for simulations with selection. 
-    Each subclass should be a single figure for a particular metric.
-    """
-    datasetClass = AllToolsAccuracyWithSelectiveSweepDataset
-    datasetClass = AllToolsAccuracyWithSelectiveSweepDataset
-    name = "metric_all_tools_accuracy_sweep"
-    error_bars = True
-    fillstyles = ['full', 'none']
-
-    def plot(self):
-        df = self.dataset.data
-        metric = self.metric
-        error_params = df[ERROR_COLNAME].unique()
-        output_freqs = df[[SELECTED_FREQ_COLNAME, SELECTED_POSTGEN_COLNAME]].drop_duplicates()
-        sample_sizes = df.sample_size.unique()
-
-        fig, axes = pyplot.subplots(len(output_freqs), len(error_params),
-            figsize=(7*len(error_params), 3*len(output_freqs)))
-        for j, output_data in enumerate(output_freqs.itertuples()):
-            for k, error in enumerate(error_params):
-                freq = output_data.output_frequency
-                gens = output_data.output_after_generations
-                ax = axes[j][k]
-                ax.set_xscale('log')
-                if j == 0:
-                    ax.set_title(self.error_label(error))
-                if j == len(output_freqs) - 1:
-                    ax.set_xlabel("Neutral mutation rate")
-                if k == 0:
-                    ax.set_ylabel(getattr(self, 'y_axis_label', self.metric_titles[metric].replace("Kendall-Colijn", "KC")) + 
-                        " @ {}{}".format(
-                            "fixation " if np.isclose(freq, 1.0) else "freq {}".format(freq),
-                            "+{} gens".format(int(gens)) if gens else ""))
-                if np.isclose(freq, 1.0) and not gens:
-                    # This is *at* fixation - set the plot background colour
-                    ax.set_facecolor('0.9')
-                for n, fillstyle in zip(sample_sizes, self.fillstyles):
-                    df_s = df[np.logical_and.reduce((
-                        df.sample_size == n,
-                        df[ERROR_COLNAME] == error,
-                        df[SELECTED_FREQ_COLNAME] == freq,
-                        df[SELECTED_POSTGEN_COLNAME] == gens))]
-                    group = df_s.groupby(["mutation_rate"])
-                    #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
-                    mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-                    for tool_and_metrics_param, setting in self.tools_and_metrics_params.items():
-                        if metric.startswith("RF") \
-                            and tool_and_metrics_param.startswith(TSINFER) \
-                            and (int(tool_and_metrics_param.rsplit("_",1)[1]) & METRICS_POLYTOMIES_BREAK == 0):
-                                # RF metrics are not well behaved for trees with polytomies (i.e. tsinfer trees)
-                                # so we should omit tsinfer cases where METRICS_POLYTOMIES_BREAK == 0
-                            continue
-                        if all(np.isnan(m['mean'][tool_and_metrics_param + "_" + metric]) for m in mean_sem):
-                            #don't plot if all NAs
-                            continue
-                        ax.errorbar(
-                            [m['mu'] for m in mean_sem],
-                            [m['mean'][tool_and_metrics_param + "_" + metric] for m in mean_sem],
-                            yerr=[m['sem'][tool_and_metrics_param + "_" + metric] for m in mean_sem] \
-                                if getattr(self, 'error_bars', False) else None,
-                            color=setting["col"],
-                            linestyle=setting["linestyle"],
-                            marker=setting["mark"],
-                            fillstyle=fillstyle,
-                            elinewidth=1)
-                ax.set_ylim(getattr(self,'ylim',0))
-                ax.axvline(x=df.recombination_rate.unique()[0], 
-                    color = 'gray', zorder=-1, linestyle=":", linewidth=1)
-                ax.text(df.recombination_rate.unique()[0], ax.get_ylim()[1]/40, r'$\mu=\rho$',
-                    va = "bottom",  ha="right", color = 'gray', rotation=90)
-
-        # Create legends from custom artists
-        artists = [
-            pyplot.Line2D((0,1),(0,0), color= setting["col"], fillstyle=self.fillstyles[0],
-                marker= setting["mark"], linestyle=setting["linestyle"])
-            for tool,setting in self.tools_and_metrics_params.items()]
-        tool_labels = [(l.replace("_0", "").replace("_2"," breaking polytomies") if l.startswith(TSINFER) else l.replace("_0", "")) 
-            for l in self.tools_and_metrics_params.keys()]
-        first_legend = axes[0][0].legend(
-            artists, tool_labels, numpoints=1, labelspacing=0.1, loc="upper right")
-        if len(sample_sizes)>1:
-            artists = [
-                pyplot.Line2D(
-                    (0,0),(0,0), color="black", fillstyle=fillstyle, linewidth=2)
-                for n, fillstyle in zip(sample_sizes, self.fillstyles)]
-            axes[0][-1].legend(
-                artists, ["Sample size = {}".format(n) for n, fillstyle in zip(sample_sizes, self.fillstyles)],
-                loc="upper right")
-        self.savefig(fig)
-
-class KCAllToolsAccuracySweepSummary(MetricAllToolsAccuracySweepSummary):
-    name = "kc_rooted_all_tools_accuracy_sweep"
-    metric = "KC"
-    ylim = (0, 30)
-    error_bars = True
-
-
-class MetricsSubsamplingSummary(MetricsSummary):
+class MetricSubsamplingSummary(MetricAllToolsSummary):
     """
     Figure that shows whether increasing sample size helps with the accuracy of
     reconstructing the ARG for a fixed subsample. We only use tsinfer for this.
     """
     datasetClass = SubsamplingDataset
-    name = "metrics_subsampling"
-    error_bars=True
-
-    def plot(self):
-        figures = [] #save figures for putting onto a multi-page pdf
-        df = self.dataset.data
-        lengths = df.length.unique()
-        restrict_sample_size_comparison = df.restrict_sample_size_comparison.unique()
-        assert len(restrict_sample_size_comparison) == 1
-        col="black"
-        metrics = ARG_metrics.get_metric_names()
-        topology_only_metrics = [m for m in metrics if not m.startswith('w')]
-        for error in df[ERROR_COLNAME].unique():
-            fig, axes = pyplot.subplots(len(topology_only_metrics),
-                len(lengths), figsize=(12, 16))
-            for j, metric in enumerate(topology_only_metrics):
-                for k, length in enumerate(lengths):
-                    ax = axes[j][k]
-                    if j == 0:
-                        ax.set_title("Sequence length = {} Kb".format(int(length/1000)))
-                    if k == 0:
-                        ax.set_ylabel(getattr(self, 'y_axis_label', metric + " metric"))
-                    if j == len(topology_only_metrics) - 1:
-                        ax.set_xlabel("Original sample size")
-                    for tool_and_metrics_param, setting in self.tools_and_metrics_params.items():
-                        colname = tool_and_metrics_param + "_" + metric
-                        if colname in df.columns \
-                            and metric.startswith("RF") \
-                            and tool_and_metrics_param.startswith(TSINFER) \
-                            and (int(tool_and_metrics_param.rsplit("_",1)[1]) & METRICS_POLYTOMIES_BREAK == 0):
-                                # RF metrics are not well behaved for trees with polytomies (i.e. tsinfer trees)
-                                # so we should omit tsinfer cases where METRICS_POLYTOMIES_BREAK == 0
-                                continue
-                        dfp = df[np.logical_and(df.length == length, df[ERROR_COLNAME] == error)]
-                        group = dfp.groupby(["subsample_size"])
-                        mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-                        #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
-                        #print(mean_sem)
-                        if getattr(self, 'error_bars', None):
-                            yerr=[m['sem'][colname] for m in mean_sem]
-                        else:
-                            yerr = None
-                        ax.errorbar(
-                            [m['mu'] for m in mean_sem],
-                            [m['mean'][colname] for m in mean_sem],
-                            yerr=yerr,
-                            color= setting['col'],
-                            linestyle=setting['linestyle'],
-                            marker=setting['mark'],
-                            #elinewidth=1
-                            )
-            artists = [
-                pyplot.Line2D((0,1),(0,0), color= setting["col"],
-                    marker= setting["mark"], linestyle=setting["linestyle"])
-                for tool,setting in self.tools_and_metrics_params.items()]
-            tool_labels = [(l.replace("_1", "").replace("_3"," breaking polytomies") if l.startswith(TSINFER) else l.replace("_0", "")) 
-                for l in self.tools_and_metrics_params.keys()]
-            first_legend = axes[0][-1].legend(
-                artists, tool_labels, numpoints=1, labelspacing=0.1, loc="lower right")
-            fig.suptitle('ARG metric for trees subsampled down to {} tips'.format(
-                restrict_sample_size_comparison[0], self.error_label(error)))
-            figures.append(fig)
-        self.savefig(*figures)
+    name = "metric_subsampling"
+    param_cols = MetricAllToolsSummary.standard_param_cols + \
+        [ERROR_COLNAME, SUBSAMPLE_COLNAME, SUBCOMPARISON_COLNAME]
 
 
-class MetricARGweaverParametersSummary(MetricsSummary):
+class PerformanceLengthSamplesSummary(Summary):
     """
-    See the effect of burnin time and number of timeslices on the accuracy of ARGweaver
-    as compared to TSinfer, when looking at tree metrics.
-    """
-    datasetClass = ARGweaverParamChangesDataset
-
-    def plot(self):
-        df = self.dataset.data
-        metric = self.metric
-        tools = self.dataset.tools
-        AW_burnin = df.ARGweaver_burnin.unique()
-        AW_discrete_timeslices = df.ARGweaver_ntimes.unique()
-
-        # TODO move this into the superclass so that we have consistent styling.
-        linestyles = [":","-.", "-"]
-        fig, axes = pyplot.subplots(1, 3,
-            figsize=getattr(self,'figsize',(12, 6)), sharey=True)
-        lines = []
-        for k, ntimes in enumerate(AW_discrete_timeslices):
-            ax = axes[k]
-            ax.set_title("ARGweaver timeslices = {}".format(ntimes))
-            ax.set_xlabel("Mutation rate")
-            ax.set_xscale('log')
-            if k == 0:
-                ax.set_ylabel(getattr(self, 'y_axis_label', metric + " metric"))
-
-            #get the only tsinfer data for this selection (regardless of ntimes)
-            tool = TSINFER
-            df_s = df[np.logical_not(df[tool + "_" + metric].isnull())]
-            group = df_s.groupby(["mutation_rate"])
-            mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-            if getattr(self, 'error_bars', None):
-                yerr=[m['sem'][tool + "_" + metric] for m in mean_sem]
-            else:
-                yerr = None
-            ax.errorbar(
-                [m['mu'] for m in mean_sem],
-                [m['mean'][tool + "_" + metric] for m in mean_sem],
-                yerr=yerr,
-                linestyle=linestyles[0],
-                color=self.tools[tool]["col"],
-                marker=self.tools[tool]["mark"],
-                elinewidth=1)
-
-
-            for n, linestyle in zip(AW_burnin, linestyles):
-                tool = ARGWEAVER
-                df_s = df[np.logical_and(df.ARGweaver_burnin == n, df.ARGweaver_ntimes == ntimes)]
-                group = df_s.groupby(["mutation_rate"])
-                mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-                if getattr(self, 'error_bars', None):
-                    yerr=[m['sem'][tool + "_" + metric] for m in mean_sem]
-                else:
-                    yerr = None
-                ax.errorbar(
-                    [m['mu'] for m in mean_sem],
-                    [m['mean'][tool + "_" + metric] for m in mean_sem],
-                    yerr=yerr,
-                    linestyle=linestyle,
-                    color=self.tools[tool]["col"],
-                    marker=self.tools[tool]["mark"],
-                    elinewidth=1)
-
-        axes[0].set_ylim(self.ylim)
-
-        # Create legends from custom artists
-        artists = [
-            pyplot.Line2D((0,1),(0,0), color=self.tools[tool]["col"],
-                marker=self.tools[tool]["mark"], linestyle='')
-            for tool in tools]
-        first_legend = axes[0].legend(
-            artists, tools, numpoints=3, loc="upper center")
-            # bbox_to_anchor=(0.0, 0.1))
-        # ax = pyplot.gca().add_artist(first_legend)
-        artists = [
-            pyplot.Line2D(
-                (0,0),(0,0), color="black", linestyle=linestyle, linewidth=2)
-            for linestyle in linestyles]
-        axes[-1].legend(
-            artists, ["Burn in = {} gens".format(n) for n in AW_burnin],
-            loc="upper center")
-        self.savefig(fig)
-
-class KCARGweaverParametersSummary(MetricARGweaverParametersSummary):
-    name = "kc_argweaver_params"
-    metric = "KC"
-    ylim = (0, 4)
-    error_bars = True
-
-class RFRootedARGweaverParametersSummary(MetricARGweaverParametersSummary):
-    name = "rf_rooted_argweaver_params"
-    metric = "RF"
-    rooting = "rooted"
-    ylim = None
-    #ylim = (0, 4)
-    error_bars = True
-
-
-class TsinferPerformanceLengthSamplesSummary(Summary):
-    """
+    Only for tsinfer.
     Superclass for the performance metrics figures. Each of these figures
     has two panels; one for scaling by sequence length and the other
     for scaling by sample size. Different lines are given for each
     of the different combinations of tsinfer parameters
     """
     datasetClass = TsinferPerformanceDataset
-    plotted_column = None
-    y_axis_label = None
 
-    def plot(self):
-        df = self.dataset.data
-        # Rescale the length to MB
-        df.length /= 10**6
-        # Set statistics to the ratio of observed over expected
-        source_colour = "red"
-        inferred_colour = self.tools[TSINFER]["col"]
-        recombination_linestyles = [':', '-', '--']
-        recombination_rates = df.recombination_rate.unique()
-        mutation_rates = self.datasetClass.between_sim_params['mutation_rate']
-        assert len(recombination_linestyles) >= len(recombination_rates)
-        assert len(mutation_rates) ==1
-        mu = mutation_rates[0]
-        #inferred_markers =    {False:'s',True:'b'}
-        fig, (ax1, ax2) = pyplot.subplots(1, 2, figsize=(12, 6), sharey=True)
-        ax1.set_title("Fixed number of chromosomes ({})".format(self.datasetClass.fixed_sample_size))
-        ax1.set_xlabel("Sequence length (MB)")
-        ax1.set_ylabel(self.y_axis_label)
-        for rho_index, rho in enumerate(recombination_rates):
-            dfp = df[np.logical_and.reduce((
-                df.sample_size == self.datasetClass.fixed_sample_size,
-                df.recombination_rate == rho))]
-            group = dfp.groupby(["length"])
-            #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
-            mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-            ax1.errorbar(
-                [m['mu'] for m in mean_sem],
-                [m['mean'][self.plotted_column] for m in mean_sem],
-                yerr=[m['sem'][self.plotted_column] for m in mean_sem] if getattr(self, 'error_bars', False) else None,
-                linestyle= recombination_linestyles[rho_index],
-                color=inferred_colour,
-                #elinewidth=1
-                )
-
-
-        ax2.set_title("Fixed sequence length ({:g} Mb)".format(self.datasetClass.fixed_length / 10**6))
-        ax2.set_xlabel("Sample size")
-        ax2.set_ylabel(self.y_axis_label)
-        for rho_index, rho in enumerate(recombination_rates):
-            dfp = df[np.logical_and.reduce((
-                df.length == self.datasetClass.fixed_length / 10**6,
-                df.recombination_rate == rho))]
-            group = dfp.groupby(["sample_size"])
-            #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
-            mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-            ax2.errorbar(
-                [m['mu'] for m in mean_sem],
-                [m['mean'][self.plotted_column] for m in mean_sem],
-                yerr=[m['sem'][self.plotted_column] for m in mean_sem] if getattr(self, 'error_bars', False) else None,
-                linestyle= recombination_linestyles[rho_index],
-                color=inferred_colour,
-                #elinewidth=1
-                )
-        params = [
-            pyplot.Line2D(
-                (0,0),(0,0), color= inferred_colour,
-                linestyle=recombination_linestyles[rho_index], linewidth=2)
-            for rho_index, rho in enumerate(recombination_rates)]
-        ax1.legend(
-            params, [r"$\rho$ = {}".format("$\mu$" if rho==mu else r"{:g}$\mu$".format(rho/mu) if rho>mu else r"$\mu$/{:g}".format(mu/rho))
-                for rho_index, rho in enumerate(recombination_rates)],
-            loc="lower right", fontsize=10, title="Relative rate of\nrecombination")
+class EdgesPerformanceSummary(PerformanceLengthSamplesSummary):
+    name = "tsinfer_ts_filesize_ln"
     
-        pyplot.suptitle(r'Tsinfer large dataset performance for $\mu$=${}$'.format(latex_float(mu)))
-        self.savefig(fig)
+    def summarize(self):
+        self.dataset.data['tsinfer_ts_relative_filesize'] = \
+            self.dataset.data.tsinfer_ts_filesize / self.dataset.data.ts_filesize
+        return super().summarize_cols_ending("relative_filesize")
+            
 
+class CompressionPerformanceFigure(PerformanceLengthSamplesSummary):
+    name = "tsinfer_vcf_compression_ln"
 
-class TsinferEdgesPerformanceSummary(TsinferPerformanceLengthSamplesSummary):
-    name = "tsinfer_edges_ln"
-    plotted_column = "metric"
-    y_axis_label = "inferred_edges / real_edges"
-    def plot(self):
-        self.dataset.data[self.plotted_column] = (
-            self.dataset.data["tsinfer_edges"] / self.dataset.data["edges"])
-        TsinferPerformanceLengthSamplesFigure.plot(self)
+    def summarize(self):
+        self.dataset.data['tsinfer_vcf_compression_factor'] = \
+            self.dataset.data.vcfgz_filesize / self.dataset.data.tsinfer_ts_filesize
+        return super().summarize_cols_ending("vcf_compression_factor")
 
-
-class TsinferFileSizePerformanceSummary(TsinferPerformanceLengthSamplesSummary):
-    name = "tsinfer_filesize_ln"
-    plotted_column = "metric"
-    y_axis_label = "inferred_filesize / real_filesize"
-    y_axis_label = "File size relative to original"
-    def plot(self):
-        self.dataset.data[self.plotted_column] = (
-            self.dataset.data["tsinfer_ts_filesize"] / self.dataset.data["ts_filesize"])
-        TsinferPerformanceLengthSummaryFigure.plot(self)
-
-
-class CompressionPerformanceFigure(TsinferPerformanceLengthSamplesSummary):
-    name = "tsinfer_compression_ln"
-    plotted_column = "metric"
-    y_axis_label = "inferred_filesize / real_filesize"
-    y_axis_label = "Compression factor relative to vcf.gz"
-    def plot(self):
-        self.dataset.data[self.plotted_column] = (
-             self.dataset.data["vcfgz_filesize"] / self.dataset.data["tsinfer_ts_filesize"])
-        TsinferPerformanceLengthSamplesFigure.plot(self)
-
-
-class TsinferPerformanceSizesSamplesSummary(Summary):
-    """
-    Class for the performance metrics against sites as well as length
-    (the first is the same as the LHS TsinferEdgesPerformanceFigure,
-    but the second is the same using sites instead)
-    """
-    name="tsinfer_edges_sn"
-    datasetClass = TsinferPerformanceDataset
-    plotted_column = None
-    y_axis_label = None
-    error_bars = True
-
-    def plot(self):
-        df = self.dataset.data
-        self.dataset.data[self.plotted_column] = self.dataset.data["tsinfer_edges"] / self.dataset.data["edges"]
-        # Rescale the length to MB
-        df.length /= 10**6
-        # Set statistics to the ratio of observed over expected
-        source_colour = "red"
-        inferred_colour = self.tools[TSINFER]["col"]
-        recombination_linestyles = [':', '-', '--']
-        recombination_rates = df.recombination_rate.unique()
-        mutation_rates = self.datasetClass.between_sim_params['mutation_rate']
-        assert len(recombination_linestyles) >= len(recombination_rates)
-        assert len(mutation_rates) ==1
-        mu = mutation_rates[0]
-        inferred_linestyles = {False:':',True:'-'}
-        fig, (ax1, ax2) = pyplot.subplots(1, 2, figsize=(12, 6), sharey=True)
-        ax1.set_title("Fixed number of chromosomes ({})".format(self.datasetClass.fixed_sample_size))
-        ax1.set_xlabel("Sequence length (MB)")
-        ax1.set_ylabel(self.y_axis_label)
-        for shared_breakpoint in df.tsinfer_srb.unique():
-            dfp = df[np.logical_and.reduce((
-                df.sample_size == self.datasetClass.fixed_sample_size,
-                df.tsinfer_srb == shared_breakpoint))]
-            group = dfp.groupby(["length"])
-            #NB pandas.DataFrame.mean and pandas.DataFrame.sem have skipna=True by default
-            mean_sem = [{'mu':g, 'mean':data.mean(), 'sem':data.sem()} for g, data in group]
-            ax1.errorbar(
-                [m['mu'] for m in mean_sem],
-                [m['mean'][self.plotted_column] for m in mean_sem],
-                yerr=[m['sem'][self.plotted_column] for m in mean_sem] if getattr(self, 'error_bars') else None,
-                linestyle=inferred_linestyles[shared_breakpoint],
-                color=inferred_colour,
-                )
-
-        ax2.set_title("Fixed number of chromosomes ({})".format(self.datasetClass.fixed_sample_size))
-        ax2.set_xlabel("Number of variable sites")
-        ax2.set_ylabel(self.y_axis_label)
-        for shared_breakpoint in df.tsinfer_srb.unique():
-            dfp = df[np.logical_and.reduce((
-                df.length == self.datasetClass.fixed_length / 10**6,
-                df.tsinfer_srb == shared_breakpoint))]
-            ax2.plot(
-                dfp['n_sites'],
-                dfp[self.plotted_column],
-                color=inferred_colour,
-                linestyle="",marker="o")
-
-        pyplot.suptitle('Tsinfer large dataset performance for mu={}'.format(mu))
-        self.savefig(fig)
-
-
-class FastargTsinferComparisonSummary(Summary):
+class MemTimeFastargTsinferSummary(CputimeMemoryAllToolsSummary):
     """
     Superclass for the program comparison figures (comparing tsinfer with fastarg)
     Each figure has two panels; one for scaling by sequence length and the other
-    for scaling by sample size.
+    for scaling by sample size. Error is not used
     """
     datasetClass = FastargTsinferComparisonDataset
-
-    def plot(self):
-        df = self.dataset.data
-        tools = self.dataset.tools_and_metrics.keys()
-
-        # Rescale the length to Mb
-        length_scale = 10**6
-        df.length /= length_scale
-        # Scale time to hours
-        time_scale = 3600
-        for tool in tools:
-            df[tool + "_cputime"] /= time_scale
-        # Scale memory to GiB
-        for tool in tools:
-            df[tool + "_memory"] /= 1024 * 1024 * 1024
-
-        fig, (ax1, ax2) = pyplot.subplots(1, 2, sharey=True, figsize=(8, 5.5))
-
-        dfp = df[df.sample_size == self.datasetClass.fixed_sample_size]
-        group = dfp.groupby(["length"])
-        group_mean = group.mean()
-
-        for tool in tools:
-            col = tool + "_" + self.plotted_column
-            ax1.plot(group_mean[col], label=tool, color=self.tools[tool]["col"])
-        ax1.legend(
-            loc="upper left", numpoints=1, fontsize="small")
-
-        ax1.set_xlabel("Length (Mb) for fixed sample of {}".format(self.datasetClass.fixed_sample_size))
-        ax1.set_ylabel(self.y_label)
-
-        dfp = df[df.length == self.datasetClass.fixed_length / length_scale]
-        group = dfp.groupby(["sample_size"])
-        group_mean = group.mean()
-
-        for tool in tools:
-            col = tool + "_" + self.plotted_column
-            ax2.plot(group_mean[col], label=tool, color=self.tools[tool]["col"])
-
-        ax2.set_xlabel("Sample size for fixed length of {} Mb".format(
-            self.datasetClass.fixed_length / length_scale))
-
-        # ax1.set_xlim(-5, 105)
-        # ax1.set_ylim(-5, 250)
-        # ax2.set_xlim(-5, 105)
-        self.tweak(ax1, ax2)
-
-        fig.tight_layout()
-
-        # fig.text(0.19, 0.97, "Sample size = 1000")
-        # fig.text(0.60, 0.97, "Sequence length = 50Mb")
-        # pyplot.savefig("plots/simulators.pdf")
-        self.savefig(fig)
-
-
-class FastargTsinferComparisonTimeSummary(FastargTsinferComparisonSummary):
-    name = "fastarg_tsinfer_comparison_time"
-    plotted_column = "cputime"
-    y_label = "CPU time (hours)"
-
-    def tweak(self, ax1, ax2):
-        ax1.set_ylim(0, 2.5)
-
-
-class FastargTsinferComparisonMemorySummary(FastargTsinferComparisonSummary):
-    name = "fastarg_tsinfer_comparison_memory"
-    plotted_column = "memory"
-    y_label = "Memory (GiB)"
-
-    def tweak(self, ax1, ax2):
-        pass
+    name = "mem_time_fastarg_tsinfer"
+    def summarize(self):
+        return super().summarize_cols_ending(("cputime", "memory"))
 
 
 def run_setup(cls, args):
@@ -2821,6 +2176,7 @@ def run_summarize(cls, args):
     f = cls()
     df = f.summarize()
     df.to_csv(f.data_file)
+    logging.info("CSV file for figure {} written to {}".format(f.name, f.data_file))
 
 def main():
     def get_subclasses(cls):
@@ -2842,7 +2198,8 @@ def main():
             "(created files will overwrite previous runs of the same name)")
     subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
-        help='the dataset identifier', choices=sorted([d.name for d in datasets if d.name]))
+        help='the dataset identifier',
+        choices=sorted([d.name for d in datasets] + ['all']))
     subparser.add_argument(
         "--processes", '-p', type=int, default=1,
         help="number of worker processes, e.g. 40")
@@ -2875,7 +2232,8 @@ def main():
         help="Only run for a specific row")
     subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
-        help='the dataset identifier', choices=sorted([d.name for d in datasets if d.name]))
+        help='the dataset identifier',
+        choices=sorted([d.name for d in datasets] + ['all']))
     subparser.add_argument(
          '--force',  "-f", action='store_true',
          help="redo all the inferences, even if we have already filled out some", )
@@ -2894,7 +2252,8 @@ def main():
         help="Create data files for later plotting")
     subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
-        help='the figure identifier', choices=sorted([f.name for f in summaries if f.name]))
+        help='the figure identifier',
+        choices=sorted([f.name for f in summaries] + ['all']))
     subparser.set_defaults(func=run_summarize)
 
     args = parser.parse_args()
