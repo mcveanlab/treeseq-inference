@@ -195,10 +195,11 @@ class FrequencyDistanceAccuracy(Figure):
 
     def plot(self):
         df = self.data
-        plt.plot(df["Agree"]/df["Total"],label="No Error")
+        plt.plot(df["Agree"]/df["Total"],label=self.error_label(None),
+            color="k", linestyle="-")
 
-        plt.plot(df["ErrorAgree"]/df["Total"],label="Error")
-        # plt.xlabel("Distance Separating Alleles (bp)")
+        plt.plot(df["ErrorAgree"]/df["Total"],label=self.error_label("EmpiricalError"), 
+            color="k", linestyle="-.")
 
         plt.xlabel("Kb separating Alleles")
         plt.ylabel("Proportion of Mutation Pairs Correctly Ordered")
