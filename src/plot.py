@@ -784,6 +784,26 @@ class MetricSubsamplingFigure(TreeMetricsFigure):
             else:
                 self.save("_".join([self.name, metric, rooting]))
 
+class FrequencyDistanceAccuracy(Figure):
+    """
+    Plot accuracy of frequency ordering pairs of mutations vs distance between mutations
+    """
+    name = "frequency_distance_accuracy_singletons"
+
+    def plot(self):
+        df = self.data
+        plt.plot(df["Agree"]/df["Total"],label="No Error")
+
+        plt.plot(df["Error Agree"]/df["Error Total"],label="Error")
+        # plt.xlabel("Distance Separating Alleles (bp)")
+
+        plt.xlabel("Kb separating Alleles")
+        plt.ylabel("Proportion of Mutation Pairs Correctly Ordered")
+        plt.legend()
+        
+        self.save()
+
+
 ######################################
 #
 # Helper functions
