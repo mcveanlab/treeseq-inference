@@ -822,59 +822,45 @@ class UkbbStructureFigure(Figure):
         ]
         # print(self.data)
 
+        vmax = max([df.values.max() for df in dfs])
+        vmin = min([df.values.min() for df in dfs])
+
+        # Make a dummy figure so we can run a clustermap to give us the ordering
+        # for the rows.
+        fig, ax = plt.subplots(1, 1)
+        cg = sns.clustermap(dfs[0], row_cluster=True, col_cluster=False)
+        row_index = cg.dendrogram_row.reordered_ind
+        plt.clf()
+
         fig, axes = plt.subplots(1, 3, figsize=(18, 8))
         axes[0].set_title("(A)")
         axes[1].set_title("(B)")
         axes[2].set_title("(C)")
-        cbar_ax = fig.add_axes([.92, .3, .03, .4])
-        # fig.tight_layout(rect=[0, 0, .9, 1])
+        cbar_ax = fig.add_axes([.94, .3, .03, .4])
+        plt.subplots_adjust(wspace=0.35, left=0.12, bottom=0.2, right=0.92, top=0.95)
 
-        vmax = max([df.values.max() for df in dfs])
-        vmin = min([df.values.min() for df in dfs])
-
-        # FIXME this should use hierarchical clustering or something to
-        # show the correct order.
         df = dfs[0]
-        row_order = [
-            'Chinese',
-            'British',
-            'Irish',
-            'White',
-            'Any other white background',
-            'Prefer not to answer',
-            'Do not know',
-            'African',
-            'Caribbean',
-            'Any other Black background',
-            'Black or Black British',
-            'White and Black African',
-            'White and Black Caribbean',
-            'Mixed',
-            'Any other mixed background',
-            'Other ethnic group',
-            'White and Asian',
-            'Pakistani',
-            'Indian',
-            'Bangladeshi',
-            'Asian or Asian British',
-            'Any other Asian background',
-        ]
         row_labels = df.index.unique()
-        index = np.searchsorted(row_labels, row_order)
-        assert len(row_labels) == len(row_order)
         V = df.values
         sns.heatmap(
-            V[index], xticklabels=list(df), yticklabels=row_order,
+            V[row_index], xticklabels=list(df), yticklabels=df.index[row_index],
             ax=axes[0], vmax=vmax, vmin=vmin, cbar=True,
             cbar_ax=cbar_ax)
 
         df = dfs[1]
-        V = df.values
-        sns.heatmap(df, ax=axes[1], vmax=vmax, vmin=vmin, cbar=False)
+        sns.heatmap(
+            df, ax=axes[1], vmax=vmax, vmin=vmin, cbar=False)
+        axes[1].set_ylabel("")
 
         df = dfs[2]
-        sns.heatmap(df[df.index], ax=axes[2], vmax=vmax, vmin=vmin, cbar=False)
+        V = df[df.index].values
+        index = np.argsort(np.sum(V, axis=0))[::-1]
+        names = df.index.values
 
+        sns.heatmap(
+            V[index[::-1]][:,index], xticklabels=names[index],
+            yticklabels=names[index][::-1],
+            ax=axes[2], vmax=vmax, vmin=vmin, cbar=False)
         self.save()
 
 
