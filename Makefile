@@ -11,7 +11,8 @@ FIGURES=\
 	figures/fastarg_tsinfer_comparison_memory.pdf\
 	figures/fastarg_tsinfer_comparison_time.pdf\
 	figures/tsinfer_compression_ln.pdf\
-	figures/tsinfer_edges_ln.pdf
+	figures/tsinfer_edges_ln.pdf \
+	figures/ukbb_structure.pdf
 
 help:
 	echo WRITE SOME HELP
