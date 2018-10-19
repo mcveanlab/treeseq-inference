@@ -189,7 +189,7 @@ class FrequencyDistanceAccuracy(Figure):
         python3 ./src/freq_dist_simulations.py
     or, if you have, say 40 processors available, you can run it in parallel like
         python3 -p 40 ./src/freq_dist_simulations.py
-    
+
     """
     name = "frequency_distance_accuracy_singletons"
 
@@ -198,13 +198,13 @@ class FrequencyDistanceAccuracy(Figure):
         plt.plot(df["Agree"]/df["Total"],label=self.error_label(None),
             color="k", linestyle="-")
 
-        plt.plot(df["ErrorAgree"]/df["Total"],label=self.error_label("EmpiricalError"), 
+        plt.plot(df["ErrorAgree"]/df["Total"],label=self.error_label("EmpiricalError"),
             color="k", linestyle="-.")
 
         plt.xlabel("Kb separating Alleles")
         plt.ylabel("Proportion of Mutation Pairs Correctly Ordered")
         plt.legend()
-        
+
         self.save()
 
 
@@ -844,17 +844,18 @@ class UkbbStructureFigure(Figure):
         cbar_ax = fig.add_axes([.94, .3, .03, .4])
         plt.subplots_adjust(wspace=0.35, left=0.12, bottom=0.2, right=0.92, top=0.95)
 
+        # Need rasterized=True to get rid of fine lines on the PDF output.
         df = dfs[0]
         row_labels = df.index.unique()
         V = df.values
         sns.heatmap(
             V[row_index], xticklabels=list(df), yticklabels=df.index[row_index],
             ax=axes[0], vmax=vmax, vmin=vmin, cbar=True,
-            cbar_ax=cbar_ax)
+            cbar_ax=cbar_ax, rasterized=True)
 
         df = dfs[1]
         sns.heatmap(
-            df, ax=axes[1], vmax=vmax, vmin=vmin, cbar=False)
+            df, ax=axes[1], vmax=vmax, vmin=vmin, cbar=False, rasterized=True)
         axes[1].set_ylabel("")
 
         df = dfs[2]
@@ -865,7 +866,7 @@ class UkbbStructureFigure(Figure):
         sns.heatmap(
             V[index[::-1]][:,index], xticklabels=names[index],
             yticklabels=names[index][::-1],
-            ax=axes[2], vmax=vmax, vmin=vmin, cbar=False)
+            ax=axes[2], vmax=vmax, vmin=vmin, cbar=False, rasterized=True)
         self.save()
 
 
