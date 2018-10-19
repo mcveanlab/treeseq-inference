@@ -110,8 +110,7 @@ def generate_samples(ts):
 
 
 def run_comparisons(params):
-    sample_size, Ne, length, rec_rate, mut_rate, seed = params
-    n_bins = 20
+    sample_size, Ne, length, rec_rate, mut_rate, n_bins, seed = params
     bin_size = length//n_bins
     assert bin_size == length/n_bins
     total = np.zeros(n_bins, dtype=np.int)
@@ -169,15 +168,21 @@ def run_comparisons(params):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-         '--replicates', '-r', type=int, default=4000, help="number of replicates")
+         '--replicates', '-r', type=int, default=50000, help="number of replicates")
+    parser.add_argument(
+        "--length", '-l', type=int, default=100000,
+        help="Length of the sequence")
     parser.add_argument(
          '--seed', '-s', type=int, default=123, help="use a non-default RNG seed")
     parser.add_argument(
         "--processes", '-p', type=int, default=1,
         help="number of worker processes, e.g. 40")
     parser.add_argument(
+        "--bins", '-b', type=int, default=20,
+        help="Divide the space between variants into this many bins")
+    parser.add_argument(
          '--progress',  "-P", action='store_true',
-         help="Show a progress bar.", )
+         help="Show a progress bar.")
 
     args = parser.parse_args()
     
@@ -186,13 +191,19 @@ if __name__ == "__main__":
     run_params = zip(
         itertools.repeat(50),     # sample_size
         itertools.repeat(5000),   # Ne 
-        itertools.repeat(100000), # length
+        itertools.repeat(args.length), # length
         itertools.repeat(1e-8), # recomb_rate
         itertools.repeat(1e-8), # mut_rate
+        itertools.repeat(args.bins), # number of bins        
         random_seeds # seed
         )
     
-    df = pd.DataFrame.from_dict({"Agree":np.zeros(20), "Total":np.zeros(20), "ErrorAgree":np.zeros(20)})
+    df = pd.DataFrame.from_dict({
+        "SeparationDistanceStart":np.arange(0, args.bins)*(args.length//args.bins),
+        "SeparationDistanceEnd":(np.arange(0, args.bins)+1)*(args.length//args.bins)-1,
+        "Agree":np.zeros(args.bins),
+        "Total":np.zeros(args.bins),
+        "ErrorAgree":np.zeros(args.bins)})
     
     if args.processes > 1:
         logging.info("Setting up using multiprocessing ({} processes)".format(args.processes))
