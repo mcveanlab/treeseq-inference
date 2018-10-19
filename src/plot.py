@@ -186,7 +186,10 @@ class FrequencyDistanceAccuracy(Figure):
     """
     Plot accuracy of frequency ordering pairs of mutations vs distance between mutations
     The csv file is created by running
-    python3 ./src/freq_dist_simulations.py
+        python3 ./src/freq_dist_simulations.py
+    or, if you have, say 40 processors available, you can run it in parallel like
+        python3 -p 40 ./src/freq_dist_simulations.py
+    
     """
     name = "frequency_distance_accuracy_singletons"
 
