@@ -194,7 +194,7 @@ class FrequencyDistanceAccuracy(Figure):
         df = self.data
         plt.plot(df["Agree"]/df["Total"],label="No Error")
 
-        plt.plot(df["Error Agree"]/df["Error Total"],label="Error")
+        plt.plot(df["ErrorAgree"]/df["Total"],label="Error")
         # plt.xlabel("Distance Separating Alleles (bp)")
 
         plt.xlabel("Kb separating Alleles")
