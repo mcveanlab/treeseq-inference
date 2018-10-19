@@ -31,6 +31,7 @@ class Figure(object):
             figure_name = self.name
         print("Saving figure '{}'".format(figure_name))
         plt.savefig("figures/{}.pdf".format(figure_name))
+        plt.savefig("figures/{}.png".format(figure_name))
         plt.close()
 
     def error_label(self, error, label_for_no_error = "No genotyping error"):
@@ -817,11 +818,14 @@ class UkbbStructureFigure(Figure):
         dfs = [
             pd.read_csv("data/ukbb_1kg_ethnicity.csv").set_index("Ethnicity"),
             pd.read_csv("data/ukbb_1kg_british_centre.csv").set_index("CentreName"),
-            self.data.set_index("Ethnicity")
+            self.data.set_index("CentreName")
         ]
         # print(self.data)
 
-        fig, axes = plt.subplots(1, 3, figsize=(20, 7))
+        fig, axes = plt.subplots(1, 3, figsize=(18, 8))
+        axes[0].set_title("(A)")
+        axes[1].set_title("(B)")
+        axes[2].set_title("(C)")
         cbar_ax = fig.add_axes([.92, .3, .03, .4])
         # fig.tight_layout(rect=[0, 0, .9, 1])
 
@@ -869,11 +873,9 @@ class UkbbStructureFigure(Figure):
         sns.heatmap(df, ax=axes[1], vmax=vmax, vmin=vmin, cbar=False)
 
         df = dfs[2]
-        V = df.values
-        sns.heatmap(df, ax=axes[2], vmax=vmax, vmin=vmin, cbar=False)
+        sns.heatmap(df[df.index], ax=axes[2], vmax=vmax, vmin=vmin, cbar=False)
 
         self.save()
-
 
 
 ######################################
