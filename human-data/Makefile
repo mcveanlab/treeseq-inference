@@ -150,16 +150,17 @@ ukbb_chr20_genotypes.bgen:
 
 # Also requires the simplebgen module above. Don't want to require it here as 
 # any changes will cascade a full rebuild on UKBB.
-ukbb_chr20.samples: ukbb_chr20_genotypes.bgen chr20_ancestral_states.fa
+ukbb_chr20.samples: ukbb_chr20_genotypes.bgen chr20_ancestral_states.fa ukbb_metadata.csv
 	python3 convert.py ukbb -p \
 		ukbb_chr20_genotypes.bgen  \
 		chr20_ancestral_states.fa \
+		-m ukbb_metadata.csv \
 		--ancestral-states-url=${ANCESTRAL_STATES_URL}\
 		--reference-name=${REFERENCE_NAME}\
 		$@  > $@.report
 
 # TODO change to ukbb_chr20
-ukbb-chr20.augmented_131072.nosimplify.trees: ukbb_chr20.samples ukbb_chr20.ancestors.trees
+ukbb_chr20.augmented_131072.nosimplify.trees: ukbb_chr20.samples ukbb_chr20.ancestors.trees
 	python3 tsutil.py sequential-augment ukbb_chr20.samples --num-threads=${NUM_THREADS}
 
 

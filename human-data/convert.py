@@ -12,6 +12,7 @@ import attr
 import cyvcf2
 import pysam
 import tqdm
+import pandas as pd
 try:
     import bgen_reader
     # Local module used to work around slow genotype access in bgen_reader
@@ -453,12 +454,30 @@ class SgdpConverter(VcfConverter):
 class UkbbConverter(Converter):
 
     def process_metadata(self, metadata_file, show_progress=False):
+        # TODO Should make this an explicit requirement rather than hardcoding.
+        withdrawn_ids = set() 
+        with open("ukbb_withdrawn.csv") as f:
+            for line in f:
+                withdrawn_ids.add(int(line))
+            
+        # The sample IDs aren't in the BGEN file so we have to match by the Order
+        # field, which gives the order that each sample is at in the BGEN (0 based).
+        metadata_df = pd.read_csv(metadata_file)
+        metadata_df.sort_values(by="Order", inplace=True)
+        metadata_df = metadata_df.set_index("Order")
+
         bgen = bgen_reader.read_bgen(self.data_file, verbose=False)
         sample_df = bgen['samples']
         num_individuals = len(sample_df)
         self.num_samples = 2 * num_individuals
-        for _ in tqdm.tqdm(range(num_individuals), disable=not show_progress):
-            self.samples.add_individual(ploidy=2)
+        for j in tqdm.tqdm(range(num_individuals), disable=not show_progress):
+            row = metadata_df.loc[j]
+            if int(row.SampleID) not in withdrawn_ids:
+                metadata = {}
+                for k, v in row.items():
+                    v = str(v)
+                    metadata[k] = None if v == "nan" else v
+                self.samples.add_individual(ploidy=2, metadata=metadata)
 
     def process_sites(self, show_progress=False, max_sites=None):
 
