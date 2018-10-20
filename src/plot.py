@@ -922,26 +922,40 @@ class TgpGnnFigure(Figure):
         self.save(self.name + "_clustermap")
 
     def plot(self):
-        df = self.data[self.data.population == "PEL"]
+        df = self.data[self.data.population == "PEL"].reset_index()
+
         A = np.zeros((len(tgp_region_pop), len(df)))
         regions = ['EUR', 'EAS', 'SAS', 'AFR', 'AMR']
         for j, region in enumerate(regions):
             A[j, :] = np.sum([df[pop].values for pop in tgp_region_pop[region]], axis=0)
 
+        focal_ind = "HG01933"
         index = np.argsort(A[0])[::-1]
+        inds = df.individual.values
+
+        inds = list(inds[index])
+        x1 = inds.index(focal_ind)
+        x2 = inds.index(focal_ind, x1 + 1)
+
         A = A[:, index]
-
         colours = get_tgp_region_colours()
-
         fig, ax = plt.subplots(figsize=(15,5))
         x = np.arange(len(df))
         for j, region in enumerate(regions):
             ax.bar(
                 x, A[j], bottom=np.sum(A[:j, :], axis=0), label=region, width=1,
-                color=colours[region])
+                color=colours[region], align="edge")
         ax.set_xlim(0, len(df) - 1)
         ax.set_ylim(0, 1)
         ax.set_xticks([])
+        arrowprops = dict(facecolor='black', shrink=0.05, width=2, headwidth=10)
+        for x in [x1, x2]:
+            p = matplotlib.patches.Rectangle(
+                (x, 0), width=1, height=1, fill=False, linestyle="--", color="grey")
+            ax.add_patch(p)
+            ax.annotate(
+                focal_ind, xy=(x + 0.5, 1), xytext=(x + 0.5, 1.1), arrowprops=arrowprops,
+                horizontalalignment="center")
         plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
         self.save()
 
