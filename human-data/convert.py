@@ -468,16 +468,20 @@ class UkbbConverter(Converter):
 
         bgen = bgen_reader.read_bgen(self.data_file, verbose=False)
         sample_df = bgen['samples']
-        num_individuals = len(sample_df)
-        self.num_samples = 2 * num_individuals
-        for j in tqdm.tqdm(range(num_individuals), disable=not show_progress):
-            row = metadata_df.loc[j]
-            if int(row.SampleID) not in withdrawn_ids:
-                metadata = {}
-                for k, v in row.items():
-                    v = str(v)
-                    metadata[k] = None if v == "nan" else v
-                self.samples.add_individual(ploidy=2, metadata=metadata)
+        keep_samples = []
+        row_iter = tqdm.tqdm(
+            metadata_df.iterrows(), total=len(metadata_df), disable=not show_progress)
+        for index, row in row_iter:
+            if not pd.isnull(index):
+                order = int(index)
+                if int(row.SampleID) not in withdrawn_ids:
+                    keep_samples.extend([2 * order, 2 * order + 1])
+                    metadata = {}
+                    for k, v in row.items():
+                        metadata[k] = None if pd.isnull(v) else str(v)
+                    self.samples.add_individual(ploidy=2, metadata=metadata)
+        self.num_samples = len(keep_samples)
+        self.keep_index = np.array(keep_samples, dtype=int)
 
     def process_sites(self, show_progress=False, max_sites=None):
 
@@ -523,7 +527,7 @@ class UkbbConverter(Converter):
                     else:
                         metadata = {"ID": rsid[j], "REF": ref}
                         self.samples.add_site(
-                            position=float(position[j]), genotypes=genotypes,
+                            position=float(position[j]), genotypes=genotypes[self.keep_index],
                             alleles=alleles, metadata=metadata)
             if j == max_sites:
                 break
