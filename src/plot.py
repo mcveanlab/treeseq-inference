@@ -15,6 +15,49 @@ matplotlib.use('Agg')  # NOQA
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+tgp_region_pop = {
+    'AMR': ['CLM', 'MXL', 'PUR', 'PEL'],
+    'AFR': ['LWK', 'ASW', 'GWD', 'MSL', 'YRI', 'ACB', 'ESN'],
+    'EAS': ['CHS', 'KHV', 'JPT', 'CHB', 'CDX'],
+    'SAS': ['BEB', 'STU', 'GIH', 'PJL', 'ITU'],
+    'EUR': ['FIN', 'GBR', 'IBS', 'CEU', 'TSI']
+}
+
+# Standard order.
+tgp_populations = [
+    'CHB', 'JPT', 'CHS', 'CDX', 'KHV',
+    'CEU', 'TSI', 'FIN', 'GBR', 'IBS',
+    'YRI', 'LWK', 'GWD', 'MSL', 'ESN', 'ASW', 'ACB',
+    'MXL', 'PUR', 'CLM', 'PEL',
+    'GIH', 'PJL', 'BEB', 'STU', 'ITU']
+
+tgp_region_palettes =  {
+    "EAS": "Greens",
+    "EUR": "Blues",
+    "AFR": "Reds",
+    "AMR": "Oranges",
+    "SAS": "Purples",
+}
+
+def get_tgp_region_colours():
+    return {
+        region: sns.color_palette(palette, 1)[0]
+        for region, palette in tgp_region_palettes.items()
+    }
+
+
+def get_tgp_colours():
+    # TODO add option to give shades for the different pops.
+    region_colours = {
+        region: sns.color_palette(palette, 1)[0]
+        for region, palette in tgp_region_palettes.items()
+    }
+    pop_colour_map = {}
+    for region, pops in tgp_region_pop.items():
+        for pop in pops:
+            pop_colour_map[pop] = region_colours[region]
+    return pop_colour_map
+
 
 class Figure(object):
     """
@@ -819,7 +862,6 @@ class UkbbStructureFigure(Figure):
     name = "ukbb_structure"
 
     def plot(self):
-        # Current document width is 4.7747 inches
         dfs = [
             pd.read_csv("data/ukbb_1kg_ethnicity.csv").set_index("Ethnicity"),
             pd.read_csv("data/ukbb_1kg_british_centre.csv").set_index("CentreName"),
@@ -868,6 +910,43 @@ class UkbbStructureFigure(Figure):
             yticklabels=names[index][::-1],
             ax=axes[2], vmax=vmax, vmin=vmin, cbar=False, rasterized=True)
         self.save()
+
+class TgpGnnFigure(Figure):
+    name = "1kg_gnn"
+
+    def plot_clustermap(self):
+        dfg = self.data.groupby("population").mean()
+        colours = pd.Series(get_tgp_colours())
+        sns.clustermap(
+            dfg[tgp_populations], row_colors=colours, col_colors=colours)
+        self.save(self.name + "_clustermap")
+
+    def plot(self):
+        df = self.data[self.data.population == "PEL"]
+        A = np.zeros((len(tgp_region_pop), len(df)))
+        regions = ['EUR', 'EAS', 'SAS', 'AFR', 'AMR']
+        for j, region in enumerate(regions):
+            A[j, :] = np.sum([df[pop].values for pop in tgp_region_pop[region]], axis=0)
+
+        index = np.argsort(A[0])[::-1]
+        A = A[:, index]
+
+        colours = get_tgp_region_colours()
+
+        fig, ax = plt.subplots(figsize=(15,5))
+        x = np.arange(len(df))
+        for j, region in enumerate(regions):
+            ax.bar(
+                x, A[j], bottom=np.sum(A[:j, :], axis=0), label=region, width=1,
+                color=colours[region])
+        ax.set_xlim(0, len(df) - 1)
+        ax.set_ylim(0, 1)
+        ax.set_xticks([])
+        plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
+        self.save()
+
+        # Plot other figures based on this data.
+        self.plot_clustermap()
 
 
 ######################################
