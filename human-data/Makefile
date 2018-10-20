@@ -157,12 +157,11 @@ ukbb_chr20.samples: ukbb_chr20_genotypes.bgen chr20_ancestral_states.fa ukbb_met
 		-m ukbb_metadata.csv \
 		--ancestral-states-url=${ANCESTRAL_STATES_URL}\
 		--reference-name=${REFERENCE_NAME}\
-		$@ # > $@.report
+		$@ > $@.report
 
 # TODO change to ukbb_chr20
 ukbb_chr20.augmented_131072.nosimplify.trees: ukbb_chr20.samples ukbb_chr20.ancestors.trees
 	python3 tsutil.py sequential-augment ukbb_chr20.samples --num-threads=${NUM_THREADS}
-
 
 
 1kg_ukbb_chr20.samples 1kg_ukbb_chr20.ancestors.trees: ukbb_chr20.samples 1kg_chr20.trees

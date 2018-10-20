@@ -46,18 +46,30 @@ def run_sequential_augment(args):
     num_samples = sample_data.num_samples
     ancestors_ts = msprime.load(base + ".ancestors.trees")
 
+    # Compute the total samples required.
     n = 2
-    offset = -1
+    total = 0
+    while n < num_samples // 4:
+        total += n
+        n *= 2
+
+    np.random.seed(args.seed)
+    samples = np.random.choice(np.arange(num_samples), size=total, replace=False)
+    np.save(base + ".augmented_samples.npy", samples)
+
+    n = 2
+    j = 0
     while n < num_samples // 4:
         augmented_file = base + ".augmented_{}.ancestors.trees".format(n)
         final_file = base + ".augmented_{}.nosimplify.trees".format(n)
-        print("RUNNING", augmented_file)
-        subset = np.linspace(offset, num_samples - offset, n + 2, dtype=int)[1: -1]
-        ancestors_ts = run_augment(sample_data, ancestors_ts, subset, args.num_threads)
+        subset = samples[j: j + n]
+        subset.sort()
+        ancestors_ts = run_augment(
+            sample_data, ancestors_ts, subset, args.num_threads)
         ancestors_ts.dump(augmented_file)
+        j += n
         n *= 2
-        offset += 1
-
+        
     final_ts = run_match_samples(sample_data, ancestors_ts, args.num_threads)
     final_ts.dump(final_file)
 
@@ -275,6 +287,7 @@ def main():
     subparser.add_argument(
         "input", type=str, help="Input tree sequence")
     subparser.add_argument("--num-threads", type=int, default=0)
+    subparser.add_argument("--seed", type=int, default=1)
     subparser.set_defaults(func=run_sequential_augment)
 
     subparser = subparsers.add_parser("combine-ukbb-1kg")
