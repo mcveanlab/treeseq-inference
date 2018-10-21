@@ -73,8 +73,8 @@ class Figure(object):
         if figure_name is None:
             figure_name = self.name
         print("Saving figure '{}'".format(figure_name))
-        plt.savefig("figures/{}.pdf".format(figure_name))
-        plt.savefig("figures/{}.png".format(figure_name))
+        plt.savefig("figures/{}.pdf".format(figure_name), bbox_inches='tight')
+        plt.savefig("figures/{}.png".format(figure_name), bbox_inches='tight')
         plt.close()
 
     def error_label(self, error, label_for_no_error = "No genotyping error"):
@@ -160,21 +160,25 @@ class SampleEdges(Figure):
         ax = fig.add_subplot(111)
         ax.plot(df.sample_edges.values, "o")
         breakpoints = np.where(df.population.values[1:] != df.population.values[:-1])[0]
-        breakpoints = list(breakpoints) + [len(df)]
-        last = 0
-        y = df.sample_edges.min()
-        for bp in breakpoints:
-            label = df.population[bp - 1]
-            x = last + (bp - last) / 2
-            ax.annotate(
-                label, xy=(x, y), horizontalalignment='centre', verticalalignment='top',
-                rotation=90)
+        breakpoints = np.array([-1] + list(breakpoints) + [len(df)-1])+0.5
+        x_labels = []
+        x_pos = []
+        last = -0.5
+        for bp in breakpoints[1:]:
+            x_labels.append(df.population[int(bp - 1.5)])
+            x_pos.append(last + (bp - last) / 2)
             last = bp
-        ax.set_xticks(np.array(breakpoints) + 0.5)
-        ax.set_xticklabels([])
+        # use major ticks for labels, so they are not cut off
+        ax.tick_params(axis="x", which="major", length=0)
+        ax.set_xticks(x_pos)
+        ax.set_xticklabels(x_labels, rotation=90)
+        ax.tick_params(axis="x", which="minor", length=12)
+        ax.set_xticks(breakpoints, minor=True)
+        ax.set_xticklabels([], minor=True)
         ax.set_xlim(-0.5, len(df) - 0.5)
         ax.set_title("{}:{}".format(dataset.upper(), region))
-        ax.grid(axis="x")
+        ax.grid(which="minor", axis="x")
+        fig.tight_layout()
         self.save("{}_{}_{}".format(self.name, dataset, region))
 
     def plot(self):
@@ -273,24 +277,48 @@ class AncestorAccuracy(Figure):
         self.data = self.data.sort_values("Inaccuracy")
 
     def plot(self):
+        fig, axes = plt.subplots(1, 2, sharex=True, sharey=True, figsize=(15, 5.5))
+        for ax in axes:
+            im = ax.imshow(np.random.random((10,10)), vmin=0, vmax=1)
+        
+        fig.subplots_adjust(right=0.8, left=0.1)
+        cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
+        fig.colorbar(im, cax=cbar_ax)
+        self.save()
+
+
+
+    def plot1(self):
         max_length = max(np.max(self.data["Real length"]), np.max(self.data["Estim length"]))* 1.1
         min_length = min(np.min(self.data["Real length"]), np.min(self.data["Estim length"])) * 0.9
-        fig, axes = plt.subplots(1, 2, sharex=True, sharey=True, figsize=(12, 5.5))
+        fig, axes = plt.subplots(1, 2, sharex=True, sharey=True, figsize=(15, 5.5))
         for ax, error in zip(axes, self.data.seq_error.unique()):
             df = self.data.query("seq_error == @error")
-            im = ax.scatter(df["Real length"], df["Estim length"], c=df["Inaccuracy"], s=20)
-            ax.plot([0, max_length], [0, max_length], '-', color='lightgrey', zorder=-1)
+            im = ax.scatter(df["Real length"], df["Estim length"], c=1-df["Inaccuracy"], s=20)
+            #ax.plot([0, max_length], [0, max_length], '-', color='lightgrey', zorder=-1)
             #print(np.mean(df["Inaccuracy"]), error)
-            ax.set_title(self.error_label(error))
-            ax.set_xlabel("True ancestral haplotype length (kb)")
-            if ax == axes[0]:
-                ax.set_ylabel("Inferred ancestral haplotype length (kb)")
-            ax.set_xscale('log')
-            ax.set_yscale('log')
-        cbar = fig.colorbar(im, ax=axes.ravel().tolist())
-        cbar.set_label("Inaccuracy", labelpad=6, rotation=270, va="center")
-        plt.xlim(min_length, max_length)
-        plt.ylim(min_length, max_length)
+            #ax.set_title(self.error_label(error))
+            #ax.set_xlabel("True ancestral haplotype length (kb)")
+            #if ax == axes[0]:
+            #    ax.set_ylabel("Inferred ancestral haplotype length (kb)")
+            #ax.set_xscale('log')
+            #ax.set_yscale('log')
+            #n_greater_eq = sum(df["Estim length"]/df["Real length"] >= 1)
+            #n_less = sum(df["Estim length"]/df["Real length"] < 1)
+            #ax.text(min_length*1.1, min_length*2, 
+            #    "{} haplotypes $\geq$ true length".format(n_greater_eq), 
+            #    rotation=45, va='bottom', ha='left', color="#2ca02c")
+            #ax.text(min_length*2, min_length*1.1, 
+            #    "{} haplotypes $<$ true length".format(n_less),
+            #    rotation=45, va='bottom', ha='left', color="#d62728")
+            #ax.set_aspect(1)
+            #ax.set_xlim(min_length, max_length)
+            #ax.set_ylim(min_length, max_length)
+        fig.subplots_adjust(right=0.8)
+        cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
+        cbar = fig.colorbar(im, ax=cbar_ax)
+        #cbar.set_label("Accuracy", rotation=270, va="center")
+        #plt.subplots_adjust(left=0.1, right=0.9, top=0.9, bottom=0.1)
         self.save()
 
 
@@ -733,7 +761,7 @@ class MetricAllToolsAccuracySweepFigure(TreeMetricsFigure):
     """
     name = "metric_all_tools_accuracy_sweep"
     error_bars = True
-    hide_polytomy_breaking = True
+    hide_polytomy_breaking = False
     output_metrics = [("KC","rooted")] #can add extras in here if necessary
 
     def plot(self):
