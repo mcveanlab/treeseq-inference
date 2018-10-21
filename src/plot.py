@@ -13,6 +13,7 @@ import humanize
 import matplotlib
 matplotlib.use('Agg')  # NOQA
 import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1.inset_locator import InsetPosition
 import seaborn as sns
 
 tgp_region_pop = {
@@ -279,48 +280,54 @@ class AncestorAccuracy(Figure):
         self.data = self.data.sort_values("Inaccuracy")
 
     def plot(self):
-        fig, axes = plt.subplots(1, 2, sharex=True, sharey=True, figsize=(15, 5.5))
-        for ax in axes:
-            im = ax.imshow(np.random.random((10,10)), vmin=0, vmax=1)
-        
-        fig.subplots_adjust(right=0.8, left=0.1)
-        cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
-        fig.colorbar(im, cax=cbar_ax)
-        self.save()
-
-
-
-    def plot1(self):
+        n_bins=50
         max_length = max(np.max(self.data["Real length"]), np.max(self.data["Estim length"]))* 1.1
         min_length = min(np.min(self.data["Real length"]), np.min(self.data["Estim length"])) * 0.9
-        fig, axes = plt.subplots(1, 2, sharex=True, sharey=True, figsize=(15, 5.5))
-        for ax, error in zip(axes, self.data.seq_error.unique()):
+        fig = plt.figure(figsize=(20, 8))
+        gs = matplotlib.gridspec.GridSpec(1, 4, width_ratios=[5,5,0.5,2.5]) 
+        ax0 = fig.add_subplot(gs[0])
+        axes = [ax0, fig.add_subplot(gs[1], sharex=ax0, sharey=ax0, yticklabels=[])]
+        c_ax = fig.add_subplot(gs[2])
+        h_ax = fig.add_subplot(gs[3], sharey=c_ax)
+        for ax, error in zip(axes, sorted(self.data.seq_error.unique())):
             df = self.data.query("seq_error == @error")
-            im = ax.scatter(df["Real length"], df["Estim length"], c=1-df["Inaccuracy"], s=20)
-            #ax.plot([0, max_length], [0, max_length], '-', color='lightgrey', zorder=-1)
-            #print(np.mean(df["Inaccuracy"]), error)
-            #ax.set_title(self.error_label(error))
-            #ax.set_xlabel("True ancestral haplotype length (kb)")
-            #if ax == axes[0]:
-            #    ax.set_ylabel("Inferred ancestral haplotype length (kb)")
-            #ax.set_xscale('log')
-            #ax.set_yscale('log')
-            #n_greater_eq = sum(df["Estim length"]/df["Real length"] >= 1)
-            #n_less = sum(df["Estim length"]/df["Real length"] < 1)
-            #ax.text(min_length*1.1, min_length*2, 
-            #    "{} haplotypes $\geq$ true length".format(n_greater_eq), 
-            #    rotation=45, va='bottom', ha='left', color="#2ca02c")
-            #ax.text(min_length*2, min_length*1.1, 
-            #    "{} haplotypes $<$ true length".format(n_less),
-            #    rotation=45, va='bottom', ha='left', color="#d62728")
-            #ax.set_aspect(1)
-            #ax.set_xlim(min_length, max_length)
-            #ax.set_ylim(min_length, max_length)
-        fig.subplots_adjust(right=0.8)
-        cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
-        cbar = fig.colorbar(im, ax=cbar_ax)
-        #cbar.set_label("Accuracy", rotation=270, va="center")
-        #plt.subplots_adjust(left=0.1, right=0.9, top=0.9, bottom=0.1)
+            ls = "-" if ax == axes[0] else "-."
+            im = ax.scatter(df["Real length"], df["Estim length"], c=1-df["Inaccuracy"],
+                s=20, cmap=matplotlib.cm.viridis)
+            ax.plot([0, max_length], [0, max_length], '-', 
+                color='grey', zorder=-1, linestyle=ls)
+            ax.set_title(self.error_label(error))
+            ax.set_xscale('log')
+            ax.set_yscale('log')
+            n_greater_eq = sum(df["Estim length"]/df["Real length"] >= 1)
+            n_less = sum(df["Estim length"]/df["Real length"] < 1)
+            ax.text(min_length*1.1, min_length*2, 
+                "{} haplotypes $\geq$ true length".format(n_greater_eq), 
+                rotation=45, va='bottom', ha='left', color="#2ca02c")
+            ax.text(min_length*2, min_length*1.1, 
+                "{} haplotypes $<$ true length".format(n_less),
+                rotation=45, va='bottom', ha='left', color="#d62728")
+            ax.set_aspect(1)
+            ax.set_xlim(min_length, max_length)
+            ax.set_ylim(min_length, max_length)
+            ax.set_xlabel("True ancestral haplotype length (kb)")
+            if ax == axes[0]:
+                ax.set_ylabel("Inferred ancestral haplotype length (kb)")
+            n, bins, patches = h_ax.hist(1-df["Inaccuracy"], 
+                bins=n_bins, orientation="horizontal", alpha=0.5,
+                edgecolor='black', linewidth=1, linestyle=ls);
+            norm = matplotlib.colors.Normalize(bins.min(), bins.max())
+            # set a color for every bar (patch) according 
+            # to bin value from normalized min-max interval
+            for bin, patch in zip(bins, patches):
+                color = matplotlib.cm.viridis(norm(bin))
+                patch.set_facecolor(color)
+        c_ax.set_axes_locator(InsetPosition(axes[1], [1.05,0,0.05,1]))
+        cbar = fig.colorbar(im, cax=c_ax)
+        cbar.set_label("Accuracy", rotation=270, va="center")
+        h_ax.set_axes_locator(InsetPosition(c_ax, [3.5,0,7,1]))
+        h_ax.set_title("Accuracy distribution")
+        h_ax.axis('off')
         self.save()
 
 
