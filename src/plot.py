@@ -74,7 +74,7 @@ class Figure(object):
             figure_name = self.name
         print("Saving figure '{}'".format(figure_name))
         plt.savefig("figures/{}.pdf".format(figure_name), bbox_inches='tight')
-        plt.savefig("figures/{}.png".format(figure_name), bbox_inches='tight')
+        #plt.savefig("figures/{}.png".format(figure_name), bbox_inches='tight')
         plt.close()
 
     def error_label(self, error, label_for_no_error = "No genotyping error"):
@@ -242,14 +242,16 @@ class FrequencyDistanceAccuracy(Figure):
 
     def plot(self):
         df = self.data
-        plt.plot(df["Agree"]/df["Total"],label=self.error_label(None),
+        plt.plot((df.SeparationDistanceStart + df.SeparationDistanceEnd)/2/1e3,
+            df.Agree/df.Total,label=self.error_label(None),
             color="k", linestyle="-")
 
-        plt.plot(df["ErrorAgree"]/df["Total"],label=self.error_label("EmpiricalError"),
+        plt.plot((df.SeparationDistanceStart + df.SeparationDistanceEnd)/2/1e3,
+            df.ErrorAgree/df.Total,label=self.error_label("EmpiricalError"),
             color="k", linestyle="-.")
 
-        plt.xlabel("Kb separating Alleles")
-        plt.ylabel("Proportion of Mutation Pairs Correctly Ordered")
+        plt.xlabel("Distance between variants (kb)")
+        plt.ylabel("Proportion of mutation pairs correctly ordered")
         plt.legend()
 
         self.save()
