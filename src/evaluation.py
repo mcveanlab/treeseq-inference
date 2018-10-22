@@ -1950,7 +1950,7 @@ class Summary(object):
         """
         toolnames = self.dataset.tools_and_metrics.keys()
         summary_df = self.dataset.data
-        param_cols = self.standard_param_cols
+        param_cols = getattr(self, 'param_cols', self.standard_param_cols)
         # check these are without error
         if ERROR_COLNAME in self.dataset.data.columns:
             assert len(self.dataset.data[ERROR_COLNAME].unique()) == 1
@@ -2144,15 +2144,27 @@ class CompressionPerformanceFigure(PerformanceLengthSamplesSummary):
             self.dataset.data.vcfgz_filesize / self.dataset.data.tsinfer_ts_filesize
         return super().summarize_cols_ending("vcf_compression_factor")
 
+
 class MemTimeFastargTsinferSummary(CputimeMemoryAllToolsSummary):
     """
-    Superclass for the program comparison figures (comparing tsinfer with fastarg)
-    Each figure has two panels; one for scaling by sequence length and the other
-    for scaling by sample size. Error is not used
+    Compare tsinfer with fastarg, scaling by sequence length in one plot and 
+    sample size in another. Each is shown for both memory and CPU time.
+    Error is not used
     """
     datasetClass = FastargTsinferComparisonDataset
+    inset_datasetClass = TsinferPerformanceDataset
+    param_cols = MetricAllToolsSummary.standard_param_cols + ["inset"]
+
     name = "mem_time_fastarg_tsinfer"
     def summarize(self):
+        self.inset_dataset = self.inset_datasetClass()
+        self.inset_dataset.load_data()
+        self.inset_dataset.data = self.inset_dataset.data.query(
+            "recombination_rate == mutation_rate")
+        self.inset_dataset.data['inset'] = True
+        self.dataset.data['inset'] = False
+        self.dataset.data[ERROR_COLNAME] = 0
+        self.dataset.data = self.dataset.data.append(self.inset_dataset.data, sort=False)
         return super().summarize_cols_ending(("cputime", "memory"))
 
 
