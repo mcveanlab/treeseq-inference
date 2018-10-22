@@ -698,7 +698,6 @@ class MetricAllToolsFigure(TreeMetricsFigure):
     For the publication: make symbols small and solid
     """
     name = "metric_all_tools"
-    figsize = (9,4.5)
     y_axis_label="Average distance from true trees"
     hide_polytomy_breaking = True
     output_metrics = [("KC","rooted")] #can add extras in here if necessary
@@ -722,7 +721,7 @@ class MetricAllToolsFigure(TreeMetricsFigure):
             error_params = df.error_param.unique()
 
             fig, axes = plt.subplots(1, len(error_params),
-                figsize=getattr(self,'figsize',(12, 6)), sharey=True)
+                figsize=getattr(self,'figsize',(6*len(error_params), 3.5)), sharey=True)
             for k, error in enumerate(error_params):
                 ax = axes[k] if len(error_params)>1 else axes
                 display_order = self.single_metric_plot(
@@ -748,6 +747,7 @@ class MetricAllToolsFigure(TreeMetricsFigure):
                 for d in display_order[['tool', 'polytomies']].drop_duplicates().itertuples()]
             first_legend = axes[0].legend(
                 artists, tool_labels, numpoints=1, labelspacing=0.1, loc="upper right")
+            fig.tight_layout()
             if len(self.output_metrics)==1:
                 self.save()
             else:
@@ -886,6 +886,7 @@ class MetricSubsamplingFigure(TreeMetricsFigure):
                     for d in display_order[['length']].drop_duplicates().itertuples()]
                 first_legend = axes[0].legend(
                     artists, labels, numpoints=1, labelspacing=0.1, loc="upper right")
+            fig.tight_layout()
             if len(self.output_metrics)==1:
                 self.save()
             else:
