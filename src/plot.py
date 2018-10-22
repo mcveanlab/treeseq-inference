@@ -960,7 +960,68 @@ class TgpGnnFigure(Figure):
         self.save(self.name + "_clustermap")
 
 
+    def plot_sample_edges(self, axes):
+        full_df = pd.read_csv("data/sample_edges.csv")
+
+        for ax, dataset in zip(axes, ["1kg", "sgdp"]):
+            df = full_df[full_df.dataset == dataset]
+            df = df.sort_values(by=["region", "population", "sample", "strand"])
+            df = df.reset_index()
+
+            ax.plot(df.sample_edges.values)
+
+            breakpoints = np.where(df.region.values[1:] != df.region.values[:-1])[0]
+            for bp in breakpoints:
+                ax.axvline(x=bp, ls="--", color="black")
+
+            last = 0
+            for j, bp in enumerate(list(breakpoints) + [len(df)]):
+                x = last + (bp - last) / 2
+                y = -400
+                if dataset == "1kg":
+                    y = -200
+                ax.annotate(
+                    df.region[bp - 1], xy=(x, y), horizontalalignment='center',
+                    annotation_clip=False)
+                last = bp
+
+            breakpoints = np.where(
+                df.population.values[1:] != df.population.values[:-1])[0]
+            breakpoints = list(breakpoints) + [len(df)]
+            ax.set_xticks(breakpoints)
+            ax.set_xticklabels([])
+            ax.set_ylabel("Sample Edges")
+            ax.grid(axis="x")
+            ax.set_xlim(0, len(df))
+            ax.xaxis.set_ticks_position('none')
+
+            title = "SGDP"
+            if dataset == "1kg":
+                title = "TGP"
+                last = 0
+                for bp in breakpoints:
+                    x = last + (bp - last) / 2
+                    last = bp
+                    ax.annotate(
+                        df.population[int(x)], xy=(x, 100), horizontalalignment='centre',
+                        annotation_clip=False)
+            ax.set_title(title)
+        axes[0].set_ylim(0, 1500)
+        axes[1].set_ylim(0, 3500)
+
+
     def plot(self):
+
+        colours = get_tgp_region_colours()
+        gs = matplotlib.gridspec.GridSpec(4, 2, height_ratios=[4, 4, 4, 1], hspace=0.6)
+        fig = plt.figure(figsize=(15, 10))
+
+        axes = [plt.subplot(gs[0,:]), plt.subplot(gs[1, :])]
+        for ax, label in zip(axes, ["A", "B"]):
+            ax.annotate(
+                "({})".format(label), xy=(-0.1, 0.5), xycoords="axes fraction", fontsize=15)
+        self.plot_sample_edges(axes)
+
         df = self.data[self.data.population == "PEL"].reset_index()
         A = np.zeros((len(tgp_region_pop), len(df)))
 
@@ -977,10 +1038,8 @@ class TgpGnnFigure(Figure):
         x2 = inds.index(focal_ind, x1 + 1)
 
         A = A[:, index]
-        colours = get_tgp_region_colours()
-        gs = matplotlib.gridspec.GridSpec(2, 2, height_ratios=[8, 1])
-        fig = plt.figure(figsize=(15, 10))
-        ax = plt.subplot(gs[0,:])
+
+        ax = plt.subplot(gs[2,:])
         x = np.arange(len(df))
         for j, region in enumerate(regions):
             ax.bar(
@@ -989,18 +1048,19 @@ class TgpGnnFigure(Figure):
         ax.set_xlim(0, len(df) - 1)
         ax.set_ylim(0, 1)
         ax.set_xticks([])
-        arrowprops = dict(facecolor='black', shrink=0.05, width=2, headwidth=10)
+        ax.set_ylabel("GNN Fraction")
+        ax.set_title("TGP PEL population")
         for x in [x1, x2]:
             p = matplotlib.patches.Rectangle(
                 (x, 0), width=1, height=1, fill=False, linestyle="--", color="grey")
             ax.add_patch(p)
-            ax.annotate(
-                focal_ind, xy=(x + 0.5, 1), xytext=(x + 0.5, 1.1), arrowprops=arrowprops,
-                horizontalalignment="center")
 
+        ax.legend(bbox_to_anchor=(1.02, 0.76))
+        ax.annotate(
+            "(C)".format(label), xy=(-0.1, 0.5), xycoords="axes fraction", fontsize=15)
         ax_pop = ax
-        ax_left = plt.subplot(gs[1, 0])
-        ax_right = plt.subplot(gs[1, 1])
+        ax_left = plt.subplot(gs[3, 0])
+        ax_right = plt.subplot(gs[3, 1])
         for j, ax in enumerate([ax_left, ax_right]):
             df = pd.read_csv("data/HG01933_parent_ancestry_{}.csv".format((j + 1) % 2))
             left = df.left
@@ -1011,11 +1071,15 @@ class TgpGnnFigure(Figure):
                     left, df[region].values, bottom=total, width=width, align="edge",
                     label=region, color=colours[region])
                 total += df[region].values
+            ax.set_title("HG01933")
             ax.set_xticks([])
             ax.set_yticks([])
             ax.set_xlim(0, df.right.max())
             ax.set_ylim(0, 1)
             ax.axis('off')
+        # Note: we have to manually tweak the label on this axis left a bit
+        ax_left.annotate(
+            "(D)".format(label), xy=(-0.225, 0.5), xycoords="axes fraction", fontsize=15)
 
         L = df.right.max()
         transFigure = fig.transFigure.inverted()
@@ -1033,7 +1097,6 @@ class TgpGnnFigure(Figure):
                 linestyle="--", color="grey")
             fig.lines.append(line)
 
-        plt.legend(bbox_to_anchor=(1.05, 1), borderaxespad=0.)
         self.save()
 
         # Plot other figures based on this data.
