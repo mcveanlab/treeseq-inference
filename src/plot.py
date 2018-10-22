@@ -75,7 +75,7 @@ class Figure(object):
             figure_name = self.name
         print("Saving figure '{}'".format(figure_name))
         plt.savefig("figures/{}.pdf".format(figure_name), bbox_inches='tight')
-        #plt.savefig("figures/{}.png".format(figure_name), bbox_inches='tight')
+        plt.savefig("figures/{}.png".format(figure_name), bbox_inches='tight')
         plt.close()
 
     def error_label(self, error, label_for_no_error = "No genotyping error"):
@@ -284,7 +284,7 @@ class AncestorAccuracy(Figure):
         max_length = max(np.max(self.data["Real length"]), np.max(self.data["Estim length"]))* 1.1
         min_length = min(np.min(self.data["Real length"]), np.min(self.data["Estim length"])) * 0.9
         fig = plt.figure(figsize=(20, 8))
-        gs = matplotlib.gridspec.GridSpec(1, 4, width_ratios=[5,5,0.5,2.5]) 
+        gs = matplotlib.gridspec.GridSpec(1, 4, width_ratios=[5,5,0.5,2.5])
         ax0 = fig.add_subplot(gs[0])
         axes = [ax0, fig.add_subplot(gs[1], sharex=ax0, sharey=ax0, yticklabels=[])]
         c_ax = fig.add_subplot(gs[2])
@@ -294,17 +294,17 @@ class AncestorAccuracy(Figure):
             ls = "-" if ax == axes[0] else "-."
             im = ax.scatter(df["Real length"], df["Estim length"], c=1-df["Inaccuracy"],
                 s=20, cmap=matplotlib.cm.viridis)
-            ax.plot([0, max_length], [0, max_length], '-', 
+            ax.plot([0, max_length], [0, max_length], '-',
                 color='grey', zorder=-1, linestyle=ls)
             ax.set_title(self.error_label(error))
             ax.set_xscale('log')
             ax.set_yscale('log')
             n_greater_eq = sum(df["Estim length"]/df["Real length"] >= 1)
             n_less = sum(df["Estim length"]/df["Real length"] < 1)
-            ax.text(min_length*1.1, min_length*2, 
-                "{} haplotypes $\geq$ true length".format(n_greater_eq), 
+            ax.text(min_length*1.1, min_length*2,
+                "{} haplotypes $\geq$ true length".format(n_greater_eq),
                 rotation=45, va='bottom', ha='left', color="#2ca02c")
-            ax.text(min_length*2, min_length*1.1, 
+            ax.text(min_length*2, min_length*1.1,
                 "{} haplotypes $<$ true length".format(n_less),
                 rotation=45, va='bottom', ha='left', color="#d62728")
             ax.set_aspect(1)
@@ -313,11 +313,11 @@ class AncestorAccuracy(Figure):
             ax.set_xlabel("True ancestral haplotype length (kb)")
             if ax == axes[0]:
                 ax.set_ylabel("Inferred ancestral haplotype length (kb)")
-            n, bins, patches = h_ax.hist(1-df["Inaccuracy"], 
+            n, bins, patches = h_ax.hist(1-df["Inaccuracy"],
                 bins=n_bins, orientation="horizontal", alpha=0.5,
                 edgecolor='black', linewidth=1, linestyle=ls);
             norm = matplotlib.colors.Normalize(bins.min(), bins.max())
-            # set a color for every bar (patch) according 
+            # set a color for every bar (patch) according
             # to bin value from normalized min-max interval
             for bin, patch in zip(bins, patches):
                 color = matplotlib.cm.viridis(norm(bin))
@@ -959,10 +959,11 @@ class TgpGnnFigure(Figure):
             dfg[tgp_populations], row_colors=colours, col_colors=colours)
         self.save(self.name + "_clustermap")
 
+
     def plot(self):
         df = self.data[self.data.population == "PEL"].reset_index()
-
         A = np.zeros((len(tgp_region_pop), len(df)))
+
         regions = ['EUR', 'EAS', 'SAS', 'AFR', 'AMR']
         for j, region in enumerate(regions):
             A[j, :] = np.sum([df[pop].values for pop in tgp_region_pop[region]], axis=0)
@@ -977,7 +978,9 @@ class TgpGnnFigure(Figure):
 
         A = A[:, index]
         colours = get_tgp_region_colours()
-        fig, ax = plt.subplots(figsize=(15,5))
+        gs = matplotlib.gridspec.GridSpec(2, 2, height_ratios=[8, 1])
+        fig = plt.figure(figsize=(15, 10))
+        ax = plt.subplot(gs[0,:])
         x = np.arange(len(df))
         for j, region in enumerate(regions):
             ax.bar(
@@ -994,7 +997,43 @@ class TgpGnnFigure(Figure):
             ax.annotate(
                 focal_ind, xy=(x + 0.5, 1), xytext=(x + 0.5, 1.1), arrowprops=arrowprops,
                 horizontalalignment="center")
-        plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
+
+        ax_pop = ax
+        ax_left = plt.subplot(gs[1, 0])
+        ax_right = plt.subplot(gs[1, 1])
+        for j, ax in enumerate([ax_left, ax_right]):
+            df = pd.read_csv("data/HG01933_parent_ancestry_{}.csv".format((j + 1) % 2))
+            left = df.left
+            width = df.right - left
+            total = np.zeros_like(width)
+            for region in regions:
+                ax.bar(
+                    left, df[region].values, bottom=total, width=width, align="edge",
+                    label=region, color=colours[region])
+                total += df[region].values
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_xlim(0, df.right.max())
+            ax.set_ylim(0, 1)
+            ax.axis('off')
+
+        L = df.right.max()
+        transFigure = fig.transFigure.inverted()
+        endpoints = [
+            (ax_pop.transData.transform([x1, 0]), ax_left.transData.transform([0, 1])),
+            (ax_pop.transData.transform([x1 + 1, 0]), ax_left.transData.transform([L, 1])),
+            (ax_pop.transData.transform([x2, 0]), ax_right.transData.transform([0, 1])),
+            (ax_pop.transData.transform([x2 + 1, 0]), ax_right.transData.transform([L, 1])),
+        ]
+        for (a, b) in endpoints:
+            coord1 = transFigure.transform(a)
+            coord2 = transFigure.transform(b)
+            line = matplotlib.lines.Line2D(
+                (coord1[0], coord2[0]),(coord1[1], coord2[1]), transform=fig.transFigure,
+                linestyle="--", color="grey")
+            fig.lines.append(line)
+
+        plt.legend(bbox_to_anchor=(1.05, 1), borderaxespad=0.)
         self.save()
 
         # Plot other figures based on this data.
