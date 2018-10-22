@@ -1594,7 +1594,7 @@ class FastargTsinferComparisonDataset(AllToolsPerformanceDataset):
     The performance of the various programs in terms of running time and memory usage
     """
     name = "fastarg_tsinfer_comparison"
-    default_replicates = 20
+    default_replicates = 50
     default_seed = 1000
     tools_and_metrics = {FASTARG:[], TSINFER:[]} # Everything else is too slow
     fixed_sample_size = 10000
