@@ -1,4 +1,4 @@
-Unnamed: 0,replicate,sample_size,Ne,length,recombination_rate,mutation_rate,error_rate,edges,n_trees,n_sites,seed,ts_filesize,vcf_filesize,vcfgz_filesize,tsinfer_completed,tsinfer_var_polytomy,tsinfer_ts_filesize,tsinfer_mean_polytomy,tsinfer_memory,tsinfer_cputime,tsinfer_max_polytomy,tsinfer_edges
+Unnamed: 0,replicate,sample_size,Ne,length,recombination_rate,mutation_rate,error_param,edges,n_trees,n_sites,seed,ts_filesize,vcf_filesize,vcfgz_filesize,tsinfer_completed,tsinfer_var_polytomy,tsinfer_ts_filesize,tsinfer_mean_polytomy,tsinfer_memory,tsinfer_cputime,tsinfer_max_polytomy,tsinfer_edges
 0,0,5000,5000,50000000,5e-09,1e-08,0,166607,41816,89983,808716224,5973441,902441106,31892310,True,8160.231018623042,7237010.0,4.8828024550593145,918032384.0,1182.04,18328.0,201274.0
 1,0,10000,5000,50000000,5e-09,1e-08,0,193821,46148,97885,1137898847,6909653,1960561214,62550168,True,8277.034655456218,8382720.0,5.033572733840465,1546801152.0,2282.57,19721.0,236890.0
 2,0,15000,5000,50000000,5e-09,1e-08,0,208693,47337,101195,716355064,7423545,3038829208,94545811,True,8373.542486213652,8962871.0,5.080713102154079,2096472064.0,3486.21,20463.0,254498.0
