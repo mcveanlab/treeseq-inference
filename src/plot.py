@@ -426,22 +426,18 @@ class MemTimeFastargTsinferFigure(ToolsFigure):
         # Scale memory to GiB
         mem_cols = [c for c in self.data.columns if c.startswith("memory")]
         self.data[mem_cols] /= 1024 * 1024 * 1024
-        self.inset_data = self.data.query("inset == True")
-        self.data = self.data.query("inset == False")
         length_sample_size_combos = self.data[["length", "sample_size"]].drop_duplicates()
         self.fixed_length = length_sample_size_combos['length'].value_counts().idxmax()
         self.fixed_sample_size = length_sample_size_combos['sample_size'].value_counts().idxmax()
-        length_sample_size_combos = self.inset_data[["length", "sample_size"]].drop_duplicates()
-        self.fixed_inset_length = length_sample_size_combos['length'].value_counts().idxmax()
-        self.fixed_inset_sample_size = length_sample_size_combos['sample_size'].value_counts().idxmax()
 
     def plot(self):
         fig, axes = plt.subplots(2, 2, sharey="row", sharex="col", figsize=(8, 5.5), constrained_layout=True)
-        yticks = [[0,2,4,6,8], [0,2,4,6,8,10,12]] #hardcode a hack here
+        xticks = [[0,2,4,6,8,10], [0,5000,10000,15000,20000]] #hardcode a hack here
+        ylim_inset = [0.32, 0.35] #hardcode a hack here
         for i, (plotted_column, y_label) in enumerate(
                 zip(["cputime", "memory"], ["CPU time (hours)", "Memory (GiB)"])):
             df = self.data.query("sample_size == @self.fixed_sample_size")
-            df_inset = self.inset_data.query("sample_size == @self.fixed_inset_sample_size")
+            df_inset = df.query("tool == 'tsinfer'")
         
             for tool in df.tool.unique():
                 line_data = df.query("tool == @tool")
@@ -456,10 +452,9 @@ class MemTimeFastargTsinferFigure(ToolsFigure):
             axes[i][0].set_xlim(0)
             axes[i][0].get_yaxis().set_label_coords(-0.08,0.5)
             axes[i][0].set_ylabel(y_label)
-            axes[i][0].set_yticks(yticks[i])
         
             tool = "tsinfer"
-            axins1 = inset_axes(axes[i][0], width="40%", height="40%", loc=2, borderpad=1)
+            axins1 = inset_axes(axes[i][0], width="50%", height="40%", loc=2, borderpad=1)
             axins1.errorbar(
                 df_inset.length, df_inset[plotted_column+"_mean"],
                 yerr=df_inset[plotted_column + "_se"], label=tool,
@@ -468,7 +463,7 @@ class MemTimeFastargTsinferFigure(ToolsFigure):
         
             
             df = self.data.query("length == @self.fixed_length")
-            df_inset = self.inset_data.query("length == @self.fixed_inset_length")
+            df_inset = df.query("tool == 'tsinfer'")
         
             for tool in df.tool.unique():
                 line_data = df.query("tool == @tool")
@@ -482,28 +477,27 @@ class MemTimeFastargTsinferFigure(ToolsFigure):
                     elinewidth=1)
         
             tool = "tsinfer"
-            axins2 = inset_axes(axes[i][1], width="40%", height="40%", loc=2, borderpad=1)
+            axins2 = inset_axes(axes[i][1], width="50%", height="40%", loc=2, borderpad=1)
             axins2.errorbar(
                 df_inset.sample_size, df_inset[plotted_column+"_mean"],
                 yerr=df_inset[plotted_column+"_se"], label=tool,
                 color=self.tools_format[tool]["col"], marker=self.tools_format[tool]['mark'],
                 linewidth=1, elinewidth=1, markersize=3)
         
-            ylim = axes[i][0].get_ylim()
             axins1.tick_params(axis='both', which='major', labelsize=7)
-            axins1.set_ylim(ylim[0], ylim[1])
-            axins1.set_yticks(yticks[i])
+            axins1.set_ylim(-0.01, ylim_inset[i])
+            axins1.set_xticks(xticks[0])
             axins1.yaxis.tick_right()
-            axins1.set_yticklabels(["{:.0f}".format(s) for s in yticks[i]])
-        
             axins2.tick_params(axis='both', which='major', labelsize=7)
-            axins2.set_ylim(ylim[0], ylim[1])
-            axins2.set_yticks(yticks[i])
+            axins2.set_ylim(-0.01, ylim_inset[i])
+            axins2.set_xticks(xticks[1])
             axins2.yaxis.tick_right()
-            axins2.set_yticklabels(["{:.0f}".format(s) for s in yticks[i]])
+            #axins2.set_yticklabels(["{:.0f}".format(s) for s in yticks[i]])
         axes[0][0].legend(loc="upper right", numpoints=1, fontsize="small")
         axes[1][0].set_xlabel("Length (Mb) for fixed sample size")
         axes[1][1].set_xlabel("Sample size for fixed length")
+        axes[1][0].set_xticks(xticks[0])
+        axes[1][1].set_xticks(xticks[1])
         self.save()
 
 
