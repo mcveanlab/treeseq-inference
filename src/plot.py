@@ -494,8 +494,10 @@ class MemTimeFastargTsinferFigure(ToolsFigure):
             axins2.yaxis.tick_right()
             #axins2.set_yticklabels(["{:.0f}".format(s) for s in yticks[i]])
         axes[0][0].legend(loc="upper right", numpoints=1, fontsize="small")
-        axes[1][0].set_xlabel("Length (Mb) for fixed sample size")
-        axes[1][1].set_xlabel("Sample size for fixed length")
+        axes[1][0].set_xlabel("Length (Mb) for fixed sample size of {}".format(
+            self.fixed_sample_size))
+        axes[1][1].set_xlabel("Sample size for fixed length of {:g} Mb".format(
+            self.fixed_length))
         axes[1][0].set_xticks(xticks[0])
         axes[1][1].set_xticks(xticks[1])
         self.save()
@@ -523,7 +525,7 @@ class PerformanceLengthSamplesFigure(ToolsFigure):
     def plot(self):
         df = self.data
         recombination_linestyles = [':', '-', '--']
-        recombination_rates = df.recombination_rate.unique()
+        recombination_rates = np.sort(df.recombination_rate.unique())
         mutation_rates = df.mutation_rate.unique()
         tools = df.tool.unique()
         assert len(recombination_linestyles) >= len(recombination_rates)
