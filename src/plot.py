@@ -284,7 +284,7 @@ class AncestorAccuracy(Figure):
         max_length = max(np.max(self.data["Real length"]), np.max(self.data["Estim length"]))* 1.1
         min_length = min(np.min(self.data["Real length"]), np.min(self.data["Estim length"])) * 0.9
         fig = plt.figure(figsize=(20, 8))
-        gs = matplotlib.gridspec.GridSpec(1, 4, width_ratios=[5,5,0.5,2.5]) 
+        gs = matplotlib.gridspec.GridSpec(1, 4, width_ratios=[5,5,0.5,2.5])
         ax0 = fig.add_subplot(gs[0])
         axes = [ax0, fig.add_subplot(gs[1], sharex=ax0, sharey=ax0, yticklabels=[])]
         c_ax = fig.add_subplot(gs[2])
@@ -294,17 +294,17 @@ class AncestorAccuracy(Figure):
             ls = "-" if ax == axes[0] else "-."
             im = ax.scatter(df["Real length"], df["Estim length"], c=1-df["Inaccuracy"],
                 s=20, cmap=matplotlib.cm.viridis)
-            ax.plot([0, max_length], [0, max_length], '-', 
+            ax.plot([0, max_length], [0, max_length], '-',
                 color='grey', zorder=-1, linestyle=ls)
             ax.set_title(self.error_label(error))
             ax.set_xscale('log')
             ax.set_yscale('log')
             n_greater_eq = sum(df["Estim length"]/df["Real length"] >= 1)
             n_less = sum(df["Estim length"]/df["Real length"] < 1)
-            ax.text(min_length*1.1, min_length*2, 
-                "{} haplotypes $\geq$ true length".format(n_greater_eq), 
+            ax.text(min_length*1.1, min_length*2,
+                "{} haplotypes $\geq$ true length".format(n_greater_eq),
                 rotation=45, va='bottom', ha='left', color="#2ca02c")
-            ax.text(min_length*2, min_length*1.1, 
+            ax.text(min_length*2, min_length*1.1,
                 "{} haplotypes $<$ true length".format(n_less),
                 rotation=45, va='bottom', ha='left', color="#d62728")
             ax.set_aspect(1)
@@ -313,11 +313,11 @@ class AncestorAccuracy(Figure):
             ax.set_xlabel("True ancestral haplotype length (kb)")
             if ax == axes[0]:
                 ax.set_ylabel("Inferred ancestral haplotype length (kb)")
-            n, bins, patches = h_ax.hist(1-df["Inaccuracy"], 
+            n, bins, patches = h_ax.hist(1-df["Inaccuracy"],
                 bins=n_bins, orientation="horizontal", alpha=0.5,
                 edgecolor='black', linewidth=1, linestyle=ls);
             norm = matplotlib.colors.Normalize(bins.min(), bins.max())
-            # set a color for every bar (patch) according 
+            # set a color for every bar (patch) according
             # to bin value from normalized min-max interval
             for bin, patch in zip(bins, patches):
                 color = matplotlib.cm.viridis(norm(bin))
@@ -438,7 +438,7 @@ class MemTimeFastargTsinferFigure(ToolsFigure):
                 zip(["cputime", "memory"], ["CPU time (hours)", "Memory (GiB)"])):
             df = self.data.query("sample_size == @self.fixed_sample_size")
             df_inset = df.query("tool == 'tsinfer'")
-        
+
             for tool in df.tool.unique():
                 line_data = df.query("tool == @tool")
                 axes[i][0].errorbar(
@@ -452,7 +452,7 @@ class MemTimeFastargTsinferFigure(ToolsFigure):
             axes[i][0].set_xlim(0)
             axes[i][0].get_yaxis().set_label_coords(-0.08,0.5)
             axes[i][0].set_ylabel(y_label)
-        
+
             tool = "tsinfer"
             axins1 = inset_axes(axes[i][0], width="50%", height="40%", loc=2, borderpad=1)
             axins1.errorbar(
@@ -460,11 +460,11 @@ class MemTimeFastargTsinferFigure(ToolsFigure):
                 yerr=df_inset[plotted_column + "_se"], label=tool,
                 color=self.tools_format[tool]["col"], marker=self.tools_format[tool]['mark'],
                 linewidth=1, elinewidth=1, markersize=3)
-        
-            
+
+
             df = self.data.query("length == @self.fixed_length")
             df_inset = df.query("tool == 'tsinfer'")
-        
+
             for tool in df.tool.unique():
                 line_data = df.query("tool == @tool")
                 axes[i][1].errorbar(
@@ -475,7 +475,7 @@ class MemTimeFastargTsinferFigure(ToolsFigure):
                     color=self.tools_format[tool]["col"],
                     marker=self.tools_format[tool]['mark'],
                     elinewidth=1)
-        
+
             tool = "tsinfer"
             axins2 = inset_axes(axes[i][1], width="50%", height="40%", loc=2, borderpad=1)
             axins2.errorbar(
@@ -483,7 +483,7 @@ class MemTimeFastargTsinferFigure(ToolsFigure):
                 yerr=df_inset[plotted_column+"_se"], label=tool,
                 color=self.tools_format[tool]["col"], marker=self.tools_format[tool]['mark'],
                 linewidth=1, elinewidth=1, markersize=3)
-        
+
             axins1.tick_params(axis='both', which='major', labelsize=7)
             axins1.set_ylim(-0.01, ylim_inset[i])
             axins1.set_xticks(xticks[0])
@@ -803,7 +803,7 @@ class MetricAllToolsAccuracySweepFigure(TreeMetricsFigure):
     """
     name = "metric_all_tools_accuracy_sweep"
     error_bars = True
-    hide_polytomy_breaking = False
+    hide_polytomy_breaking = True
     output_metrics = [("KC","rooted")] #can add extras in here if necessary
 
     def plot(self):
