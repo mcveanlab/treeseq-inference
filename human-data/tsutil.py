@@ -9,6 +9,7 @@ import json
 import sys
 import io
 import csv
+import itertools
 
 import msprime
 import tsinfer
@@ -193,8 +194,12 @@ def run_combine_ukbb_1kg(args):
             path=samples_file, num_flush_threads=4,
             sequence_length=ukbb_samples.sequence_length) as samples:
 
-        for _ in tqdm.tqdm(range(n)):
-            samples.add_individual(ploidy=2)
+        iterator = tqdm.tqdm(itertools.islice(
+                tqdm.tqdm(ukbb_samples.individuals()), n), total=n)
+        for ind in iterator:
+            samples.add_individual(
+                ploidy=2, location=ind.location, metadata=ind.metadata)
+
         for variant in tqdm.tqdm(ukbb_samples.variants(), total=ukbb_samples.num_sites):
             if variant.site.position in intersecting_sites:
                 samples.add_site(
