@@ -13,7 +13,7 @@ import humanize
 import matplotlib
 matplotlib.use('Agg')  # NOQA
 import matplotlib.pyplot as plt
-from mpl_toolkits.axes_grid1.inset_locator import InsetPosition
+from mpl_toolkits.axes_grid1.inset_locator import InsetPosition, inset_axes
 import seaborn as sns
 
 tgp_region_pop = {
@@ -419,9 +419,6 @@ class MemTimeFastargTsinferFigure(ToolsFigure):
         # Rescale the length to Mb
         length_scale = 10**6
         self.data.length /= length_scale
-        length_sample_size_combos = self.data[["length", "sample_size"]].drop_duplicates()
-        self.fixed_length = length_sample_size_combos['length'].value_counts().idxmax()
-        self.fixed_sample_size = length_sample_size_combos['sample_size'].value_counts().idxmax()
         # Scale time to hours
         time_scale = 3600
         cpu_cols = [c for c in self.data.columns if c.startswith("cputime")]
@@ -429,50 +426,86 @@ class MemTimeFastargTsinferFigure(ToolsFigure):
         # Scale memory to GiB
         mem_cols = [c for c in self.data.columns if c.startswith("memory")]
         self.data[mem_cols] /= 1024 * 1024 * 1024
+        length_sample_size_combos = self.data[["length", "sample_size"]].drop_duplicates()
+        self.fixed_length = length_sample_size_combos['length'].value_counts().idxmax()
+        self.fixed_sample_size = length_sample_size_combos['sample_size'].value_counts().idxmax()
 
     def plot(self):
-        fig, axes = plt.subplots(2, 2, sharey="row", sharex="col", figsize=(8, 5.5))
+        fig, axes = plt.subplots(2, 2, sharey="row", sharex="col", figsize=(8, 5.5), constrained_layout=True)
+        xticks = [[0,2,4,6,8,10], [0,5000,10000,15000,20000]] #hardcode a hack here
+        ylim_inset = [0.32, 0.35] #hardcode a hack here
         for i, (plotted_column, y_label) in enumerate(
                 zip(["cputime", "memory"], ["CPU time (hours)", "Memory (GiB)"])):
             df = self.data.query("sample_size == @self.fixed_sample_size")
+            df_inset = df.query("tool == 'tsinfer'")
+
             for tool in df.tool.unique():
                 line_data = df.query("tool == @tool")
                 axes[i][0].errorbar(
                     line_data.length,
                     line_data[plotted_column+"_mean"],
                     yerr=line_data[plotted_column+"_se"],
+                    label=tool,
                     color=self.tools_format[tool]["col"],
                     marker=self.tools_format[tool]['mark'],
-                    elinewidth=1,
-                    label=tool)
+                    elinewidth=1)
+            axes[i][0].set_xlim(0)
             axes[i][0].get_yaxis().set_label_coords(-0.08,0.5)
             axes[i][0].set_ylabel(y_label)
 
+            tool = "tsinfer"
+            axins1 = inset_axes(axes[i][0], width="50%", height="40%", loc=2, borderpad=1)
+            axins1.errorbar(
+                df_inset.length, df_inset[plotted_column+"_mean"],
+                yerr=df_inset[plotted_column + "_se"], label=tool,
+                color=self.tools_format[tool]["col"], marker=self.tools_format[tool]['mark'],
+                linewidth=1, elinewidth=1, markersize=3)
+
+
             df = self.data.query("length == @self.fixed_length")
+            df_inset = df.query("tool == 'tsinfer'")
+
             for tool in df.tool.unique():
                 line_data = df.query("tool == @tool")
                 axes[i][1].errorbar(
                     line_data.sample_size,
                     line_data[plotted_column+"_mean"],
                     yerr=line_data[plotted_column+"_se"],
+                    label=tool,
                     color=self.tools_format[tool]["col"],
                     marker=self.tools_format[tool]['mark'],
-                    elinewidth=1,
-                    label=tool)
+                    elinewidth=1)
 
-        axes[0][0].legend(
-            loc="upper right", numpoints=1, fontsize="small")
+            tool = "tsinfer"
+            axins2 = inset_axes(axes[i][1], width="50%", height="40%", loc=2, borderpad=1)
+            axins2.errorbar(
+                df_inset.sample_size, df_inset[plotted_column+"_mean"],
+                yerr=df_inset[plotted_column+"_se"], label=tool,
+                color=self.tools_format[tool]["col"], marker=self.tools_format[tool]['mark'],
+                linewidth=1, elinewidth=1, markersize=3)
+
+            axins1.tick_params(axis='both', which='major', labelsize=7)
+            axins1.set_ylim(-0.01, ylim_inset[i])
+            axins1.set_xticks(xticks[0])
+            axins1.yaxis.tick_right()
+            axins2.tick_params(axis='both', which='major', labelsize=7)
+            axins2.set_ylim(-0.01, ylim_inset[i])
+            axins2.set_xticks(xticks[1])
+            axins2.yaxis.tick_right()
+            #axins2.set_yticklabels(["{:.0f}".format(s) for s in yticks[i]])
+        axes[0][0].legend(loc="upper right", numpoints=1, fontsize="small")
         axes[1][0].set_xlabel("Length (Mb) for fixed sample size of {}".format(
             self.fixed_sample_size))
         axes[1][1].set_xlabel("Sample size for fixed length of {:g} Mb".format(
             self.fixed_length))
-        fig.tight_layout()
-
+        axes[1][0].set_xticks(xticks[0])
+        axes[1][1].set_xticks(xticks[1])
         self.save()
+
 
 class PerformanceLengthSamplesFigure(ToolsFigure):
     """
-    Superclass for the performance metrics figures. Each of these figures
+    The performance metrics figures. Each of these figures
     has two panels; one for scaling by sequence length and the other
     for scaling by sample size. Different lines are given for each
     of the different combinations of tsinfer parameters
@@ -492,7 +525,7 @@ class PerformanceLengthSamplesFigure(ToolsFigure):
     def plot(self):
         df = self.data
         recombination_linestyles = [':', '-', '--']
-        recombination_rates = df.recombination_rate.unique()
+        recombination_rates = np.sort(df.recombination_rate.unique())
         mutation_rates = df.mutation_rate.unique()
         tools = df.tool.unique()
         assert len(recombination_linestyles) >= len(recombination_rates)
@@ -770,7 +803,7 @@ class MetricAllToolsAccuracySweepFigure(TreeMetricsFigure):
     """
     name = "metric_all_tools_accuracy_sweep"
     error_bars = True
-    hide_polytomy_breaking = False
+    hide_polytomy_breaking = True
     output_metrics = [("KC","rooted")] #can add extras in here if necessary
 
     def plot(self):
@@ -855,9 +888,10 @@ class MetricSubsamplingFigure(TreeMetricsFigure):
             # different subsample sizes, and tree comparisons on a fixed small tip #.
             averaging_method = self.data.averaging.unique()
             sample_sizes = df.sample_size.unique()
-            tree_tips = df.restrict_sample_size_comparison.unique()
+            all_tree_tips = df.restrict_sample_size_comparison.unique()
             mutation_rates = df.mutation_rate.unique()
-            assert len(tree_tips) == len(mutation_rates) == len(sample_sizes) == len(averaging_method) == 1
+            assert len(all_tree_tips) == len(mutation_rates) == len(sample_sizes) == len(averaging_method) == 1
+            tree_tips = all_tree_tips[0]
             method = averaging_method[0]
             lengths = df.length.unique()
             error_params = df.error_param.unique()
@@ -871,8 +905,8 @@ class MetricSubsamplingFigure(TreeMetricsFigure):
                 ax.set_title(self.error_label(error))
                 if k == 0:
                     ylab = getattr(self, 'y_axis_label', self.metric_titles[metric])
-                    ax.set_ylabel(ylab)
-                ax.set_xlabel("Original sample size")
+                    ax.set_ylabel("Average " + ylab + " for trees reduced to first {} samples".format(tree_tips))
+                ax.set_xlabel("Sample size used for inference")
                 ax.set_xscale('log')
             if len(display_order)>1:
                 l_order = {v:k for k,v in enumerate(display_order.length.unique())}

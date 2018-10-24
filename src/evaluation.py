@@ -1950,7 +1950,7 @@ class Summary(object):
         """
         toolnames = self.dataset.tools_and_metrics.keys()
         summary_df = self.dataset.data
-        param_cols = self.standard_param_cols
+        param_cols = getattr(self, 'param_cols', self.standard_param_cols)
         # check these are without error
         if ERROR_COLNAME in self.dataset.data.columns:
             assert len(self.dataset.data[ERROR_COLNAME].unique()) == 1
@@ -2144,11 +2144,12 @@ class CompressionPerformanceFigure(PerformanceLengthSamplesSummary):
             self.dataset.data.vcfgz_filesize / self.dataset.data.tsinfer_ts_filesize
         return super().summarize_cols_ending("vcf_compression_factor")
 
+
 class MemTimeFastargTsinferSummary(CputimeMemoryAllToolsSummary):
     """
-    Superclass for the program comparison figures (comparing tsinfer with fastarg)
-    Each figure has two panels; one for scaling by sequence length and the other
-    for scaling by sample size. Error is not used
+    Compare tsinfer with fastarg, scaling by sequence length in one plot and 
+    sample size in another. Each is shown for both memory and CPU time.
+    Error is not used
     """
     datasetClass = FastargTsinferComparisonDataset
     name = "mem_time_fastarg_tsinfer"
