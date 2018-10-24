@@ -1037,8 +1037,16 @@ class TgpGnnFigure(Figure):
                     x = last + (bp - last) / 2
                     last = bp
                     ax.annotate(
-                        df.population[int(x)], xy=(x, 100), horizontalalignment='centre',
+                        df.population[int(x)], xy=(x, 100), horizontalalignment='center',
                         annotation_clip=False)
+
+                outliers = ["NA20289", "HG02789"]
+                for outlier in outliers:
+                    tmp_df = df[df["sample"] == outlier]
+                    x = tmp_df.index.values[0]
+                    ax.annotate(
+                        outlier, xy=(x, 1550), horizontalalignment='center',
+                        annotation_clip=False, style='italic')
             ax.set_title(title + " individuals")
         axes[0].set_ylim(0, 1500)
         axes[1].set_ylim(0, 3500)
@@ -1055,6 +1063,7 @@ class TgpGnnFigure(Figure):
             ax.annotate(
                 "({})".format(label), xy=(-0.1, 0.5), xycoords="axes fraction", fontsize=15)
         self.plot_sample_edges(axes)
+
 
         df = self.data[self.data.population == "PEL"].reset_index()
         A = np.zeros((len(tgp_region_pop), len(df)))
