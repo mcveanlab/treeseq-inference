@@ -75,7 +75,7 @@ class Figure(object):
             figure_name = self.name
         print("Saving figure '{}'".format(figure_name))
         plt.savefig("figures/{}.pdf".format(figure_name), bbox_inches='tight')
-        #plt.savefig("figures/{}.png".format(figure_name), bbox_inches='tight')
+        plt.savefig("figures/{}.png".format(figure_name), bbox_inches='tight')
         plt.close()
 
     def error_label(self, error, label_for_no_error = "No genotyping error"):
@@ -284,7 +284,7 @@ class AncestorAccuracy(Figure):
         max_length = max(np.max(self.data["Real length"]), np.max(self.data["Estim length"]))* 1.1
         min_length = min(np.min(self.data["Real length"]), np.min(self.data["Estim length"])) * 0.9
         fig = plt.figure(figsize=(20, 8))
-        gs = matplotlib.gridspec.GridSpec(1, 4, width_ratios=[5,5,0.5,2.5]) 
+        gs = matplotlib.gridspec.GridSpec(1, 4, width_ratios=[5,5,0.5,2.5])
         ax0 = fig.add_subplot(gs[0])
         axes = [ax0, fig.add_subplot(gs[1], sharex=ax0, sharey=ax0, yticklabels=[])]
         c_ax = fig.add_subplot(gs[2])
@@ -294,17 +294,17 @@ class AncestorAccuracy(Figure):
             ls = "-" if ax == axes[0] else "-."
             im = ax.scatter(df["Real length"], df["Estim length"], c=1-df["Inaccuracy"],
                 s=20, cmap=matplotlib.cm.viridis)
-            ax.plot([0, max_length], [0, max_length], '-', 
+            ax.plot([0, max_length], [0, max_length], '-',
                 color='grey', zorder=-1, linestyle=ls)
             ax.set_title(self.error_label(error))
             ax.set_xscale('log')
             ax.set_yscale('log')
             n_greater_eq = sum(df["Estim length"]/df["Real length"] >= 1)
             n_less = sum(df["Estim length"]/df["Real length"] < 1)
-            ax.text(min_length*1.1, min_length*2, 
-                "{} haplotypes $\geq$ true length".format(n_greater_eq), 
+            ax.text(min_length*1.1, min_length*2,
+                "{} haplotypes $\geq$ true length".format(n_greater_eq),
                 rotation=45, va='bottom', ha='left', color="#2ca02c")
-            ax.text(min_length*2, min_length*1.1, 
+            ax.text(min_length*2, min_length*1.1,
                 "{} haplotypes $<$ true length".format(n_less),
                 rotation=45, va='bottom', ha='left', color="#d62728")
             ax.set_aspect(1)
@@ -313,11 +313,11 @@ class AncestorAccuracy(Figure):
             ax.set_xlabel("True ancestral haplotype length (kb)")
             if ax == axes[0]:
                 ax.set_ylabel("Inferred ancestral haplotype length (kb)")
-            n, bins, patches = h_ax.hist(1-df["Inaccuracy"], 
+            n, bins, patches = h_ax.hist(1-df["Inaccuracy"],
                 bins=n_bins, orientation="horizontal", alpha=0.5,
                 edgecolor='black', linewidth=1, linestyle=ls);
             norm = matplotlib.colors.Normalize(bins.min(), bins.max())
-            # set a color for every bar (patch) according 
+            # set a color for every bar (patch) according
             # to bin value from normalized min-max interval
             for bin, patch in zip(bins, patches):
                 color = matplotlib.cm.viridis(norm(bin))
@@ -426,23 +426,19 @@ class MemTimeFastargTsinferFigure(ToolsFigure):
         # Scale memory to GiB
         mem_cols = [c for c in self.data.columns if c.startswith("memory")]
         self.data[mem_cols] /= 1024 * 1024 * 1024
-        self.inset_data = self.data.query("inset == True")
-        self.data = self.data.query("inset == False")
         length_sample_size_combos = self.data[["length", "sample_size"]].drop_duplicates()
         self.fixed_length = length_sample_size_combos['length'].value_counts().idxmax()
         self.fixed_sample_size = length_sample_size_combos['sample_size'].value_counts().idxmax()
-        length_sample_size_combos = self.inset_data[["length", "sample_size"]].drop_duplicates()
-        self.fixed_inset_length = length_sample_size_combos['length'].value_counts().idxmax()
-        self.fixed_inset_sample_size = length_sample_size_combos['sample_size'].value_counts().idxmax()
 
     def plot(self):
         fig, axes = plt.subplots(2, 2, sharey="row", sharex="col", figsize=(8, 5.5), constrained_layout=True)
-        yticks = [[0,2,4,6,8], [0,2,4,6,8,10,12]] #hardcode a hack here
+        xticks = [[0,2,4,6,8,10], [0,5000,10000,15000,20000]] #hardcode a hack here
+        ylim_inset = [0.32, 0.35] #hardcode a hack here
         for i, (plotted_column, y_label) in enumerate(
                 zip(["cputime", "memory"], ["CPU time (hours)", "Memory (GiB)"])):
             df = self.data.query("sample_size == @self.fixed_sample_size")
-            df_inset = self.inset_data.query("sample_size == @self.fixed_inset_sample_size")
-        
+            df_inset = df.query("tool == 'tsinfer'")
+
             for tool in df.tool.unique():
                 line_data = df.query("tool == @tool")
                 axes[i][0].errorbar(
@@ -456,20 +452,19 @@ class MemTimeFastargTsinferFigure(ToolsFigure):
             axes[i][0].set_xlim(0)
             axes[i][0].get_yaxis().set_label_coords(-0.08,0.5)
             axes[i][0].set_ylabel(y_label)
-            axes[i][0].set_yticks(yticks[i])
-        
+
             tool = "tsinfer"
-            axins1 = inset_axes(axes[i][0], width="40%", height="40%", loc=2, borderpad=1)
+            axins1 = inset_axes(axes[i][0], width="50%", height="40%", loc=2, borderpad=1)
             axins1.errorbar(
                 df_inset.length, df_inset[plotted_column+"_mean"],
                 yerr=df_inset[plotted_column + "_se"], label=tool,
                 color=self.tools_format[tool]["col"], marker=self.tools_format[tool]['mark'],
                 linewidth=1, elinewidth=1, markersize=3)
-        
-            
+
+
             df = self.data.query("length == @self.fixed_length")
-            df_inset = self.inset_data.query("length == @self.fixed_inset_length")
-        
+            df_inset = df.query("tool == 'tsinfer'")
+
             for tool in df.tool.unique():
                 line_data = df.query("tool == @tool")
                 axes[i][1].errorbar(
@@ -480,30 +475,31 @@ class MemTimeFastargTsinferFigure(ToolsFigure):
                     color=self.tools_format[tool]["col"],
                     marker=self.tools_format[tool]['mark'],
                     elinewidth=1)
-        
+
             tool = "tsinfer"
-            axins2 = inset_axes(axes[i][1], width="40%", height="40%", loc=2, borderpad=1)
+            axins2 = inset_axes(axes[i][1], width="50%", height="40%", loc=2, borderpad=1)
             axins2.errorbar(
                 df_inset.sample_size, df_inset[plotted_column+"_mean"],
                 yerr=df_inset[plotted_column+"_se"], label=tool,
                 color=self.tools_format[tool]["col"], marker=self.tools_format[tool]['mark'],
                 linewidth=1, elinewidth=1, markersize=3)
-        
-            ylim = axes[i][0].get_ylim()
+
             axins1.tick_params(axis='both', which='major', labelsize=7)
-            axins1.set_ylim(ylim[0], ylim[1])
-            axins1.set_yticks(yticks[i])
+            axins1.set_ylim(-0.01, ylim_inset[i])
+            axins1.set_xticks(xticks[0])
             axins1.yaxis.tick_right()
-            axins1.set_yticklabels(["{:.0f}".format(s) for s in yticks[i]])
-        
             axins2.tick_params(axis='both', which='major', labelsize=7)
-            axins2.set_ylim(ylim[0], ylim[1])
-            axins2.set_yticks(yticks[i])
+            axins2.set_ylim(-0.01, ylim_inset[i])
+            axins2.set_xticks(xticks[1])
             axins2.yaxis.tick_right()
-            axins2.set_yticklabels(["{:.0f}".format(s) for s in yticks[i]])
+            #axins2.set_yticklabels(["{:.0f}".format(s) for s in yticks[i]])
         axes[0][0].legend(loc="upper right", numpoints=1, fontsize="small")
-        axes[1][0].set_xlabel("Length (Mb) for fixed sample size")
-        axes[1][1].set_xlabel("Sample size for fixed length")
+        axes[1][0].set_xlabel("Length (Mb) for fixed sample size of {}".format(
+            self.fixed_sample_size))
+        axes[1][1].set_xlabel("Sample size for fixed length of {:g} Mb".format(
+            self.fixed_length))
+        axes[1][0].set_xticks(xticks[0])
+        axes[1][1].set_xticks(xticks[1])
         self.save()
 
 
@@ -529,7 +525,7 @@ class PerformanceLengthSamplesFigure(ToolsFigure):
     def plot(self):
         df = self.data
         recombination_linestyles = [':', '-', '--']
-        recombination_rates = df.recombination_rate.unique()
+        recombination_rates = np.sort(df.recombination_rate.unique())
         mutation_rates = df.mutation_rate.unique()
         tools = df.tool.unique()
         assert len(recombination_linestyles) >= len(recombination_rates)
@@ -807,7 +803,7 @@ class MetricAllToolsAccuracySweepFigure(TreeMetricsFigure):
     """
     name = "metric_all_tools_accuracy_sweep"
     error_bars = True
-    hide_polytomy_breaking = False
+    hide_polytomy_breaking = True
     output_metrics = [("KC","rooted")] #can add extras in here if necessary
 
     def plot(self):
@@ -997,10 +993,81 @@ class TgpGnnFigure(Figure):
             dfg[tgp_populations], row_colors=colours, col_colors=colours)
         self.save(self.name + "_clustermap")
 
-    def plot(self):
-        df = self.data[self.data.population == "PEL"].reset_index()
 
+    def plot_sample_edges(self, axes):
+        full_df = pd.read_csv("data/sample_edges.csv")
+
+        for ax, dataset in zip(axes, ["1kg", "sgdp"]):
+            df = full_df[full_df.dataset == dataset]
+            df = df.sort_values(by=["region", "population", "sample", "strand"])
+            df = df.reset_index()
+
+            ax.plot(df.sample_edges.values)
+
+            breakpoints = np.where(df.region.values[1:] != df.region.values[:-1])[0]
+            for bp in breakpoints:
+                ax.axvline(x=bp, ls="--", color="black")
+
+            last = 0
+            for j, bp in enumerate(list(breakpoints) + [len(df)]):
+                x = last + (bp - last) / 2
+                y = -400
+                if dataset == "1kg":
+                    y = -200
+                ax.annotate(
+                    df.region[bp - 1], xy=(x, y), horizontalalignment='center',
+                    annotation_clip=False)
+                last = bp
+
+            breakpoints = np.where(
+                df.population.values[1:] != df.population.values[:-1])[0]
+            breakpoints = list(breakpoints) + [len(df)]
+            ax.set_xticks(breakpoints)
+            ax.set_xticklabels([])
+            ax.set_ylabel("Sample Edges")
+            ax.grid(axis="x")
+            ax.set_xlim(0, len(df))
+            ax.xaxis.set_ticks_position('none')
+
+            title = "SGDP"
+            if dataset == "1kg":
+                title = "TGP"
+                last = 0
+                for bp in breakpoints:
+                    x = last + (bp - last) / 2
+                    last = bp
+                    ax.annotate(
+                        df.population[int(x)], xy=(x, 100), horizontalalignment='center',
+                        annotation_clip=False)
+
+                outliers = ["NA20289", "HG02789"]
+                for outlier in outliers:
+                    tmp_df = df[df["sample"] == outlier]
+                    x = tmp_df.index.values[0]
+                    ax.annotate(
+                        outlier, xy=(x, 1550), horizontalalignment='center',
+                        annotation_clip=False, style='italic')
+            ax.set_title(title + " individuals")
+        axes[0].set_ylim(0, 1500)
+        axes[1].set_ylim(0, 3500)
+
+
+    def plot(self):
+
+        colours = get_tgp_region_colours()
+        gs = matplotlib.gridspec.GridSpec(4, 2, height_ratios=[4, 4, 4, 1], hspace=0.6)
+        fig = plt.figure(figsize=(15, 10))
+
+        axes = [plt.subplot(gs[0,:]), plt.subplot(gs[1, :])]
+        for ax, label in zip(axes, ["A", "B"]):
+            ax.annotate(
+                "({})".format(label), xy=(-0.1, 0.5), xycoords="axes fraction", fontsize=15)
+        self.plot_sample_edges(axes)
+
+
+        df = self.data[self.data.population == "PEL"].reset_index()
         A = np.zeros((len(tgp_region_pop), len(df)))
+
         regions = ['EUR', 'EAS', 'SAS', 'AFR', 'AMR']
         for j, region in enumerate(regions):
             A[j, :] = np.sum([df[pop].values for pop in tgp_region_pop[region]], axis=0)
@@ -1014,8 +1081,8 @@ class TgpGnnFigure(Figure):
         x2 = inds.index(focal_ind, x1 + 1)
 
         A = A[:, index]
-        colours = get_tgp_region_colours()
-        fig, ax = plt.subplots(figsize=(15,5))
+
+        ax = plt.subplot(gs[2,:])
         x = np.arange(len(df))
         for j, region in enumerate(regions):
             ax.bar(
@@ -1024,15 +1091,55 @@ class TgpGnnFigure(Figure):
         ax.set_xlim(0, len(df) - 1)
         ax.set_ylim(0, 1)
         ax.set_xticks([])
-        arrowprops = dict(facecolor='black', shrink=0.05, width=2, headwidth=10)
+        ax.set_ylabel("GNN Fraction")
+        ax.set_title("TGP PEL population haplotypes sorted by GNN")
         for x in [x1, x2]:
             p = matplotlib.patches.Rectangle(
                 (x, 0), width=1, height=1, fill=False, linestyle="--", color="grey")
             ax.add_patch(p)
-            ax.annotate(
-                focal_ind, xy=(x + 0.5, 1), xytext=(x + 0.5, 1.1), arrowprops=arrowprops,
-                horizontalalignment="center")
-        plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
+
+        ax.legend(bbox_to_anchor=(1.02, 0.76))
+        ax.annotate(
+            "(C)".format(label), xy=(-0.1, 0.5), xycoords="axes fraction", fontsize=15)
+        ax_pop = ax
+        ax_left = plt.subplot(gs[3, 0])
+        ax_right = plt.subplot(gs[3, 1])
+        for j, ax in enumerate([ax_left, ax_right]):
+            df = pd.read_csv("data/HG01933_parent_ancestry_{}.csv".format((j + 1) % 2))
+            left = df.left
+            width = df.right - left
+            total = np.zeros_like(width)
+            for region in regions:
+                ax.bar(
+                    left, df[region].values, bottom=total, width=width, align="edge",
+                    label=region, color=colours[region])
+                total += df[region].values
+            ax.set_title("HG01933 haplotype ({})".format(j + 1))
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_xlim(0, df.right.max())
+            ax.set_ylim(0, 1)
+            ax.axis('off')
+        # Note: we have to manually tweak the label on this axis left a bit
+        ax_left.annotate(
+            "(D)".format(label), xy=(-0.225, 0.5), xycoords="axes fraction", fontsize=15)
+
+        L = df.right.max()
+        transFigure = fig.transFigure.inverted()
+        endpoints = [
+            (ax_pop.transData.transform([x1, 0]), ax_left.transData.transform([0, 1])),
+            (ax_pop.transData.transform([x1 + 1, 0]), ax_left.transData.transform([L, 1])),
+            (ax_pop.transData.transform([x2, 0]), ax_right.transData.transform([0, 1])),
+            (ax_pop.transData.transform([x2 + 1, 0]), ax_right.transData.transform([L, 1])),
+        ]
+        for (a, b) in endpoints:
+            coord1 = transFigure.transform(a)
+            coord2 = transFigure.transform(b)
+            line = matplotlib.lines.Line2D(
+                (coord1[0], coord2[0]),(coord1[1], coord2[1]), transform=fig.transFigure,
+                linestyle="--", color="grey")
+            fig.lines.append(line)
+
         self.save()
 
         # Plot other figures based on this data.

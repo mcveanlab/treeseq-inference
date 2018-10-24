@@ -2152,19 +2152,8 @@ class MemTimeFastargTsinferSummary(CputimeMemoryAllToolsSummary):
     Error is not used
     """
     datasetClass = FastargTsinferComparisonDataset
-    inset_datasetClass = TsinferPerformanceDataset
-    param_cols = MetricAllToolsSummary.standard_param_cols + ["inset"]
-
     name = "mem_time_fastarg_tsinfer"
     def summarize(self):
-        self.inset_dataset = self.inset_datasetClass()
-        self.inset_dataset.load_data()
-        self.inset_dataset.data = self.inset_dataset.data.query(
-            "recombination_rate == mutation_rate")
-        self.inset_dataset.data['inset'] = True
-        self.dataset.data['inset'] = False
-        self.dataset.data[ERROR_COLNAME] = 0
-        self.dataset.data = self.dataset.data.append(self.inset_dataset.data, sort=False)
         return super().summarize_cols_ending(("cputime", "memory"))
 
 
