@@ -1005,7 +1005,7 @@ class TgpGnnFigure(Figure):
                     ax.annotate(
                         df.population[int(x)], xy=(x, 100), horizontalalignment='centre',
                         annotation_clip=False)
-            ax.set_title(title)
+            ax.set_title(title + " individuals")
         axes[0].set_ylim(0, 1500)
         axes[1].set_ylim(0, 3500)
 
@@ -1049,7 +1049,7 @@ class TgpGnnFigure(Figure):
         ax.set_ylim(0, 1)
         ax.set_xticks([])
         ax.set_ylabel("GNN Fraction")
-        ax.set_title("TGP PEL population")
+        ax.set_title("TGP PEL population haplotypes sorted by GNN")
         for x in [x1, x2]:
             p = matplotlib.patches.Rectangle(
                 (x, 0), width=1, height=1, fill=False, linestyle="--", color="grey")
@@ -1071,7 +1071,7 @@ class TgpGnnFigure(Figure):
                     left, df[region].values, bottom=total, width=width, align="edge",
                     label=region, color=colours[region])
                 total += df[region].values
-            ax.set_title("HG01933")
+            ax.set_title("HG01933 haplotype ({})".format(j + 1))
             ax.set_xticks([])
             ax.set_yticks([])
             ax.set_xlim(0, df.right.max())
