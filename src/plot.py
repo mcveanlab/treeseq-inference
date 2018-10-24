@@ -156,9 +156,7 @@ class StoringEveryone(Figure):
 class SampleEdges(Figure):
     name = "sample_edges"
 
-    def plot_region(self, df, dataset, region):
-        fig = plt.figure(figsize=(14, 6))
-        ax = fig.add_subplot(111)
+    def plot_region(self, df, ax, rotate_labels):
         ax.plot(df.sample_edges.values, "o")
         breakpoints = np.where(df.population.values[1:] != df.population.values[:-1])[0]
         breakpoints = np.array([-1] + list(breakpoints) + [len(df)-1])+0.5
@@ -172,63 +170,37 @@ class SampleEdges(Figure):
         # use major ticks for labels, so they are not cut off
         ax.tick_params(axis="x", which="major", length=0)
         ax.set_xticks(x_pos)
-        ax.set_xticklabels(x_labels, rotation=90)
-        ax.tick_params(axis="x", which="minor", length=12)
+        if rotate_labels:
+            ax.set_xticklabels(x_labels, rotation=30)
+        else:
+            ax.set_xticklabels(x_labels)
+        ax.tick_params(axis="x", which="minor", length=0)
         ax.set_xticks(breakpoints, minor=True)
         ax.set_xticklabels([], minor=True)
         ax.set_xlim(-0.5, len(df) - 0.5)
-        ax.set_title("{}:{}".format(dataset.upper(), region))
+        ax.set_title(df.region.unique()[0])
         ax.grid(which="minor", axis="x")
-        fig.tight_layout()
-        self.save("{}_{}_{}".format(self.name, dataset, region))
 
     def plot(self):
         full_df = self.data
 
-        fig, axes = plt.subplots(2, figsize=(14, 6))
-        for ax, dataset in zip(axes, ["1kg", "sgdp"]):
-            df = full_df[full_df.dataset == dataset]
-            df = df.sort_values(by=["region", "population", "sample", "strand"])
-            df = df.reset_index()
+        for ds in ["1kg", "sgdp"]:
 
-            ax.plot(df.sample_edges.values)
-            breakpoints = np.where(df.region.values[1:] != df.region.values[:-1])[0]
-            for bp in breakpoints:
-                ax.axvline(x=bp, ls="--", color="black")
+            df_ds = full_df[full_df.dataset == ds]
+            fig, axes = plt.subplots(5, 1, figsize=(14, 16))
+            plt.subplots_adjust(hspace=0.5)
+            if ds == "1kg":
+                plt.title("TGP sample edges per population")
+            else:
+                plt.title("SGDP sample edges per population")
+            for ax, region  in zip(axes, df_ds.region.unique()):
+                df = df_ds[df_ds.region == region]
+                df = df.sort_values(by=["population", "sample", "strand"])
+                df = df.reset_index()
+                self.plot_region(df, ax, rotate_labels=ds == "sgdp")
 
-            last = 0
-            for j, bp in enumerate(list(breakpoints) + [len(df)]):
-                x = last + (bp - last) / 2
-                ax.annotate(df.region[bp - 1], xy=(x, 200), horizontalalignment='center')
-                last = bp
+            self.save("{}_{}".format(self.name, ds))
 
-            breakpoints = np.where(
-                df.population.values[1:] != df.population.values[:-1])[0]
-            breakpoints = list(breakpoints) + [len(df)]
-            ax.set_xticks(breakpoints)
-            ax.set_xticklabels([])
-            ax.grid(axis="x")
-            ax.set_xlim(0, len(df))
-
-            if dataset == "1kg":
-                last = 0
-                for bp in breakpoints:
-                    x = last + (bp - last) / 2
-                    last = bp
-                    ax.annotate(
-                        df.population[int(x)], xy=(x, 0), horizontalalignment='right',
-                        verticalalignment='top', rotation=270)
-
-        axes[0].set_ylim(0, 1500)
-        axes[1].set_ylim(0, 3500)
-        self.save()
-
-        # Also plot each region
-        for dataset, region in set(zip(full_df.dataset, full_df.region)):
-            df = full_df[(full_df.dataset == dataset) & (full_df.region == region)]
-            df = df.sort_values(by=["population", "sample", "strand"])
-            df = df.reset_index()
-            self.plot_region(df, dataset, region)
 
 class FrequencyDistanceAccuracy(Figure):
     """
