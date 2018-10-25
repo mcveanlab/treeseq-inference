@@ -12,7 +12,8 @@ FIGURES=\
 	figures/fastarg_tsinfer_comparison_time.pdf\
 	figures/tsinfer_compression_ln.pdf\
 	figures/tsinfer_edges_ln.pdf \
-	figures/ukbb_structure.pdf
+	figures/ukbb_structure.pdf \
+	figures/sample_edges_1kg.pdf 
 
 help:
 	echo WRITE SOME HELP
@@ -41,6 +42,9 @@ data/storing_everyone.csv:
 
 data/sample_edges.csv:
 	python3 src/analyse_human_data.py sample_edges
+
+figures/sample_edges_1kg.pdf: data/sample_edges.csv
+	python3 src/plot.py sample_edges
 
 figures/ukbb_structure.pdf: data/1kg_ukbb_british_centre.csv data/ukbb_ukbb_british_centre.csv
 	python3 src/plot.py ukbb_structure

@@ -5,9 +5,14 @@ data files used for plotting.
 import argparse
 import os.path
 import json
+import collections
 
 import numpy as np
 import pandas as pd
+
+import sys
+# FIXME!!! mean_descendants not yet merged to msprime.
+sys.path.insert(0, "/gpfs1/well/mcvean/ukbb12788/jk/msprime")
 
 import msprime
 
@@ -94,6 +99,47 @@ def get_1kg_sample_edges():
     return df
 
 
+def process_hg01933_parent_ancestry():
+    filename = os.path.join(data_prefix, "1kg_chr20.snipped.trees")
+    ts = msprime.load(filename)
+    tables = ts.tables
+    region_sample_set_map = collections.defaultdict(list)
+    for population in ts.populations():
+        md = json.loads(population.metadata.decode())
+        region = md["super_population"]
+        region_sample_set_map[region].extend(list(ts.samples(population=population.id)))
+    regions = list(region_sample_set_map.keys())
+    region_sample_sets = [region_sample_set_map[k] for k in regions]
+
+    D = ts.mean_descendants(region_sample_sets)   
+
+    def parent_gnn(sample_id):
+        index = tables.edges.child == sample_id
+        left = tables.edges.left[index]
+        right = tables.edges.right[index]
+        parent = tables.edges.parent[index]
+        k = parent.shape[0]
+        length = (right - left).reshape((k, 1))
+        D_parent = D[parent]
+        total = np.sum(D_parent, axis=1).reshape(k, 1)
+        P_gnn = D_parent / total
+        df = pd.DataFrame({region: P_gnn[:,j] for j, region in enumerate(regions)})
+        df["left"] = left
+        df["right"] = right
+        df = df.sort_values("left")
+        return df.set_index("left")
+
+    for ind in ts.individuals():
+        md = json.loads(ind.metadata.decode())
+        if md["individual_id"] == "HG01933":
+            for j, node in enumerate(ind.nodes):
+                df = parent_gnn(node)
+                df.to_csv("data/HG01933_parent_ancestry_{}.csv".format(j))
+
+
+
+
+
 def process_sample_edges():
     """
     Processes data from the SGDP and 1KG data files to produce a data frame
@@ -145,6 +191,7 @@ def main():
         "sample_edges": process_sample_edges,
         "1kg_ukbb_gnn": process_1kg_ukbb_gnn,
         "ukbb_ukbb_gnn": process_ukbb_ukbb_gnn,
+        "hg01933_parent_ancestry": process_hg01933_parent_ancestry,
     }
 
     parser = argparse.ArgumentParser(
