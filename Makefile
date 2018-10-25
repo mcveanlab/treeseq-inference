@@ -3,14 +3,13 @@ FIGURES=\
 	figures/storing_everyone.pdf\
 	figures/metric_all_tools.pdf\
 	figures/metrics_all_tools_accuracy.pdf\
-	figures/metrics_all_tools_demography.pdf\
+	figures/metric_all_tools_accuracy_demography.pdf\
 	figures/metric_subsampling.pdf\
 	figures/metric_all_tools_accuracy_sweep.pdf\
 	figures/cputime_all_tools_by_sample_size.pdf\
-	figures/fastarg_tsinfer_comparison_memory.pdf\
-	figures/fastarg_tsinfer_comparison_time.pdf\
-	figures/tsinfer_compression_ln.pdf\
-	figures/tsinfer_edges_ln.pdf \
+	figures/mem_time_fastarg_tsinfer.pdf\
+	figures/tsinfer_vcf_compression_ln.pdf\
+	figures/tsinfer_ts_filesize_ln.pdf\
 	figures/ukbb_structure.pdf \
 	figures/sample_edges_1kg.pdf \
 	figures/global_structure.pdf 
