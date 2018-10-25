@@ -39,6 +39,18 @@ ${STORING_EVERYONE_VCF}: ${STORING_EVERYONE_TREES}
 data/storing_everyone.csv: 
 	python3 src/storing_everyone.py make-data
 
+data/sample_edges.csv:
+	python3 src/analyse_human_data.py sample_edges
+
+figures/ukbb_structure.pdf: data/1kg_ukbb_british_centre.csv data/ukbb_ukbb_british_centre.csv
+	python3 src/plot.py ukbb_structure
+
+data/1kg_ukbb_british_centre.csv:
+	python3 src/analyse_human_data.py 1kg_ukbb_gnn
+	 
+data/ukbb_ukbb_british_centre.csv:
+	python3 src/analyse_human_data.py ukbb_ukbb_gnn
+
 deps:
 	make -C src
 	# this should download and compile fastARG, ARGweaver, RentPlus, ftprime, etc

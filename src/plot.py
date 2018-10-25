@@ -932,15 +932,16 @@ class UkbbStructureFigure(Figure):
     Figure showing the structure for UKBB using heatmaps.
     """
     name = "ukbb_structure"
+    def __init__(self):
+        # We don't have a CSV called this, name.csv so skip loading.
+        pass
 
     def plot(self):
         dfs = [
-            pd.read_csv("data/ukbb_1kg_ethnicity.csv").set_index("Ethnicity"),
-            pd.read_csv("data/ukbb_1kg_british_centre.csv").set_index("CentreName"),
-            self.data.set_index("CentreName")
+            pd.read_csv("data/1kg_ukbb_ethnicity.csv").set_index("ethnicity"),
+            pd.read_csv("data/1kg_ukbb_british_centre.csv").set_index("centre"),
+            pd.read_csv("data/ukbb_ukbb_british_centre.csv").set_index("centre"),
         ]
-        # print(self.data)
-
         vmax = max([df.values.max() for df in dfs])
         vmin = min([df.values.min() for df in dfs])
 
