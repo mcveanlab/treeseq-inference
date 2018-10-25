@@ -171,9 +171,15 @@ ukbb_chr20.augmented_131072.nosimplify.trees: ukbb_chr20.samples ukbb_chr20.ance
 
 1kg_ukbb_chr20.snipped.trees: 1kg_ukbb_chr20.trees ${CENTROMERES_CSV}
 	python3 tsutil.py snip-centromere $< $@ chr20 ${CENTROMERES_CSV}
+	 
+1kg_ukbb_chr20.snipped.trees.gnn.csv: 1kg_ukbb_chr20.snipped.trees 
+	python3 tsutil.py compute-1kg-ukbb-gnn $< $@
 
 ukbb_chr20.augmented_131072.snipped.trees: ukbb_chr20.augmented_131072.trees ${CENTROMERES_CSV}
 	python3 tsutil.py snip-centromere $< $@ chr20 ${CENTROMERES_CSV}
+	 
+ukbb_chr20.augmented_131072.snipped.trees.gnn.csv: ukbb_chr20.augmented_131072.snipped.trees
+	python3 tsutil.py compute-ukbb-gnn $< $@
 
 clean:
 	rm -f 1kg_samples.ped sgdp_samples.txt *.vcf* *.samples

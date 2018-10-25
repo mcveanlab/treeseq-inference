@@ -9,6 +9,10 @@ import json
 import sys
 import io
 import csv
+import itertools
+
+# FIXME!!! Not GNN not yet merged to msprime.
+sys.path.insert(0, "/gpfs1/well/mcvean/ukbb12788/jk/msprime")
 
 import msprime
 import tsinfer
@@ -193,8 +197,12 @@ def run_combine_ukbb_1kg(args):
             path=samples_file, num_flush_threads=4,
             sequence_length=ukbb_samples.sequence_length) as samples:
 
-        for _ in tqdm.tqdm(range(n)):
-            samples.add_individual(ploidy=2)
+        iterator = tqdm.tqdm(itertools.islice(
+                tqdm.tqdm(ukbb_samples.individuals()), n), total=n)
+        for ind in iterator:
+            samples.add_individual(
+                ploidy=2, location=ind.location, metadata=ind.metadata)
+
         for variant in tqdm.tqdm(ukbb_samples.variants(), total=ukbb_samples.num_sites):
             if variant.site.position in intersecting_sites:
                 samples.add_site(
@@ -209,36 +217,98 @@ def run_combine_ukbb_1kg(args):
     print(samples)
 
 
-def run_compute_1kg_ancestry(args):
+def run_compute_1kg_ukbb_gnn(args):
     ts = msprime.load(args.input)
-    populations = [ts.samples(pop) for pop in range(ts.num_populations)]
-    A = tsinfer.mean_sample_ancestry(ts, populations, show_progress=True)
-    np.save(args.output, A)
-     
+    tables = ts.tables
+    reference_sets = []
+    population_names = []
+    for pop in ts.populations():
+        reference_sets.append(np.where(tables.nodes.population == pop.id)[0].astype(np.int32))
+        name = json.loads(pop.metadata.decode())["name"]
+        population_names.append(name)
 
-def run_compute_ukbb_ancestry(args):
+    ind_metadata = [None for _ in range(ts.num_individuals)]
+    for ind in ts.individuals():
+        ind_metadata[ind.id] = json.loads(ind.metadata.decode())
+    
+    cols = {
+        "centre": [
+            ind_metadata[ts.node(u).individual]["CentreName"] for u in ts.samples()],
+        "sample_id": [
+            ind_metadata[ts.node(u).individual]["SampleID"] for u in ts.samples()],
+        "ethnicity": [
+            ind_metadata[ts.node(u).individual]["Ethnicity"] for u in ts.samples()],
+    }
+    print("Computing GNNs")
+    before = time.time()
+    A = ts.genealogical_nearest_neighbours(
+        ts.samples(), reference_sets, num_threads=args.num_threads)
+    duration = time.time() - before
+    print("Done in {:.2f} mins".format(duration / 60))
+
+    for j, name in enumerate(population_names):
+        cols[name] = A[:, j]
+    df = pd.DataFrame(cols)
+    df.to_csv(args.output)
+
+
+def get_augmented_samples(tables):
+    # Shortcut. Iterating over all the IDs is very slow here.j
+    # return np.load("ukbb_chr20.augmented_samples.npy")
+    nodes = tables.nodes
+    ids = np.where(nodes.flags == tsinfer.NODE_IS_SAMPLE_ANCESTOR)[0]
+    sample_ids = np.zeros(len(ids), dtype=int)
+    for j, node_id in enumerate(tqdm.tqdm(ids)):
+        offset = nodes.metadata_offset[node_id: node_id + 2]       
+        buff = bytearray(nodes.metadata[offset[0]: offset[1]])
+        md = json.loads(buff.decode())       
+        sample_ids[j] = md["sample"]
+    return sample_ids           
+ 
+
+def run_compute_ukbb_gnn(args):
     ts = msprime.load(args.input)
-    # TODO this is temporary --- we should be doing this with metadata encoded in the
-    # tree sequence.
-    mdf = pd.read_csv("/well/mcvean/ukbb12788/ukb_metadata.csv")
-    total = 0
-    total_nan = 0
-    samples = ts.samples()
-    sample_sets = []
-    for centre_id in sorted(mdf.CentreID.unique()):
-        order = mdf.loc[mdf.CentreID == centre_id].Order.values
-        total += order.shape[0]
-        nans = np.isnan(order)
-        total_nan += np.sum(nans)
-        order = order[np.logical_not(nans)].astype(int)
-        sample_ids = np.hstack([samples[2 * order], samples[2 * order + 1]])    
-        sample_sets.append(sample_ids)
+    tables = ts.tables
+    before = time.time()
+    augmented_samples = set(get_augmented_samples(tables))
+    duration = time.time() - before
+    print("Got augmented:", len(augmented_samples), "in ", duration)
 
-    print("total = ", total, "missing = ", total_nan, "usable", total - total_nan)
-
-    A = tsinfer.mean_sample_ancestry(ts, sample_sets, show_progress=True)
-    np.save(args.output, A)
+    reference_sets_map = collections.defaultdict(list)
      
+    ind_metadata = [None for _ in range(ts.num_individuals)]
+    all_samples = []
+    for ind in ts.individuals():
+        md = json.loads(ind.metadata.decode())
+        ind_metadata[ind.id] = md
+        for node in ind.nodes:
+            if node not in augmented_samples:
+                reference_sets_map[md["CentreName"]].append(node)
+                all_samples.append(node)
+    reference_set_names = list(reference_sets_map.keys())
+    reference_sets = [reference_sets_map[key] for key in reference_set_names]
+    
+    cols = {
+        "centre": [
+            ind_metadata[ts.node(u).individual]["CentreName"] for u in all_samples],
+        "sample_id": [
+            ind_metadata[ts.node(u).individual]["SampleID"] for u in all_samples],
+        "ethnicity": [
+            ind_metadata[ts.node(u).individual]["Ethnicity"] for u in all_samples],
+    }
+    print("Computing GNNs for ", len(all_samples), "samples")
+    before = time.time()
+    A = ts.genealogical_nearest_neighbours(
+        all_samples, reference_sets, num_threads=args.num_threads)
+    duration = time.time() - before
+    print("Done in {:.2f} mins".format(duration / 60))
+
+    for j, name in enumerate(reference_set_names):
+        cols[name] = A[:, j]
+    df = pd.DataFrame(cols)
+    df.to_csv(args.output)
+     
+    
 
 def run_snip_centromere(args):
     with open(args.centromeres) as csvfile:
@@ -305,19 +375,21 @@ def main():
         help="Number of variants to benchmark genotypes decoding performance on")
     subparser.set_defaults(func=run_benchmark_tskit)
 
-    subparser = subparsers.add_parser("compute-1kg-ancestry")
+    subparser = subparsers.add_parser("compute-1kg-ukbb-gnn")
     subparser.add_argument(
         "input", type=str, help="Input tree sequence")
     subparser.add_argument(
-        "output", type=str, help="Filename to write numpy array to.")
-    subparser.set_defaults(func=run_compute_1kg_ancestry)
-
-    subparser = subparsers.add_parser("compute-ukbb-ancestry")
+        "output", type=str, help="Filename to write CSV to.")
+    subparser.add_argument("--num-threads", type=int, default=16)
+    subparser.set_defaults(func=run_compute_1kg_ukbb_gnn)
+     
+    subparser = subparsers.add_parser("compute-ukbb-gnn")
     subparser.add_argument(
         "input", type=str, help="Input tree sequence")
     subparser.add_argument(
-        "output", type=str, help="Filename to write numpy array to.")
-    subparser.set_defaults(func=run_compute_ukbb_ancestry)
+        "output", type=str, help="Filename to write CSV to.")
+    subparser.add_argument("--num-threads", type=int, default=16)
+    subparser.set_defaults(func=run_compute_ukbb_gnn)
 
     subparser = subparsers.add_parser("snip-centromere")
     subparser.add_argument(

@@ -105,9 +105,46 @@ def process_sample_edges():
     df_all.to_csv(datafile)
 
 
+def process_1kg_ukbb_gnn():
+    source_file = os.path.join(data_prefix, "1kg_ukbb_chr20.snipped.trees.gnn.csv")
+    df = pd.read_csv(source_file)
+
+    # Use TGP populations here to make sure we don't leak any metadata.
+    tgp_populations = [
+        'CHB', 'JPT', 'CHS', 'CDX', 'KHV',
+        'CEU', 'TSI', 'FIN', 'GBR', 'IBS',
+        'YRI', 'LWK', 'GWD', 'MSL', 'ESN', 'ASW', 'ACB',
+        'MXL', 'PUR', 'CLM', 'PEL',
+        'GIH', 'PJL', 'BEB', 'STU', 'ITU']
+    # Overall GNN by 1KG population
+    dfg = df.groupby(df.ethnicity).mean()
+    dfg = dfg[tgp_populations]
+    datafile = "data/1kg_ukbb_ethnicity.csv"
+    dfg.to_csv(datafile)
+
+    # Subset down to the british ethnicity.
+    df = df[df.ethnicity == "British"]
+    dfg = df.groupby(df.centre).mean()
+    dfg = dfg[tgp_populations]
+    datafile = "data/1kg_ukbb_british_centre.csv"
+    dfg.to_csv(datafile)
+
+def process_ukbb_ukbb_gnn():
+    source_file = os.path.join(data_prefix, "ukbb_chr20.augmented_131072.snipped.trees.gnn.csv")
+    df = pd.read_csv(source_file)
+    
+    # Subset down to the british ethnicity.
+    df = df[df.ethnicity == "British"]
+    dfg = df.groupby(df.centre).mean()
+    dfg = dfg[df.centre.unique()]
+    datafile = "data/ukbb_ukbb_british_centre.csv"
+    dfg.to_csv(datafile)
+
 def main():
     name_map = {
-        "sample_edges": process_sample_edges
+        "sample_edges": process_sample_edges,
+        "1kg_ukbb_gnn": process_1kg_ukbb_gnn,
+        "ukbb_ukbb_gnn": process_ukbb_ukbb_gnn,
     }
 
     parser = argparse.ArgumentParser(
