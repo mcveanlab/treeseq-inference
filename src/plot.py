@@ -959,16 +959,13 @@ class UkbbStructureFigure(Figure):
             ax=axes[2], vmax=vmax, vmin=vmin, cbar=False, rasterized=True)
         self.save()
 
-class TgpGnnFigure(Figure):
-    name = "1kg_gnn"
+class GlobalStructureFigure(Figure):
+    name = "global_structure"
 
-    def plot_clustermap(self):
-        dfg = self.data.groupby("population").mean()
-        colours = pd.Series(get_tgp_colours())
-        sns.clustermap(
-            dfg[tgp_populations], row_colors=colours, col_colors=colours)
-        self.save(self.name + "_clustermap")
-
+    def __init__(self):
+        # We don't have a CSV called this, name.csv so skip loading.
+        pass
+    
 
     def plot_sample_edges(self, axes):
         full_df = pd.read_csv("data/sample_edges.csv")
@@ -1040,8 +1037,8 @@ class TgpGnnFigure(Figure):
                 "({})".format(label), xy=(-0.1, 0.5), xycoords="axes fraction", fontsize=15)
         self.plot_sample_edges(axes)
 
-
-        df = self.data[self.data.population == "PEL"].reset_index()
+        full_df = pd.read_csv("data/1kg_gnn.csv")
+        df = full_df[full_df.population == "PEL"].reset_index()
         A = np.zeros((len(tgp_region_pop), len(df)))
 
         regions = ['EUR', 'EAS', 'SAS', 'AFR', 'AMR']
@@ -1118,8 +1115,6 @@ class TgpGnnFigure(Figure):
 
         self.save()
 
-        # Plot other figures based on this data.
-        self.plot_clustermap()
 
 
 ######################################

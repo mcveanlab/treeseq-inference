@@ -2,7 +2,6 @@
 FIGURES=\
 	figures/storing_everyone.pdf\
 	figures/metric_all_tools.pdf\
-	figures/sample_edges.pdf\
 	figures/metrics_all_tools_accuracy.pdf\
 	figures/metrics_all_tools_demography.pdf\
 	figures/metric_subsampling.pdf\
@@ -13,7 +12,8 @@ FIGURES=\
 	figures/tsinfer_compression_ln.pdf\
 	figures/tsinfer_edges_ln.pdf \
 	figures/ukbb_structure.pdf \
-	figures/sample_edges_1kg.pdf 
+	figures/sample_edges_1kg.pdf \
+	figures/global_structure.pdf 
 
 help:
 	echo WRITE SOME HELP
@@ -43,12 +43,6 @@ data/storing_everyone.csv:
 data/sample_edges.csv:
 	python3 src/analyse_human_data.py sample_edges
 
-figures/sample_edges_1kg.pdf: data/sample_edges.csv
-	python3 src/plot.py sample_edges
-
-figures/ukbb_structure.pdf: data/1kg_ukbb_british_centre.csv data/ukbb_ukbb_british_centre.csv
-	python3 src/plot.py ukbb_structure
-
 data/1kg_ukbb_british_centre.csv:
 	python3 src/analyse_human_data.py 1kg_ukbb_gnn
 	 
@@ -57,6 +51,18 @@ data/ukbb_ukbb_british_centre.csv:
 
 data/1kg_gnn.csv:
 	cp human-data/1kg_chr20.snipped.trees.gnn.csv $@
+
+data/HG01933_parent_ancestry_0.csv:
+	python3 src/analyse_human_data.py hg01933_parent_ancestry
+
+figures/sample_edges_1kg.pdf: data/sample_edges.csv
+	python3 src/plot.py sample_edges
+
+figures/ukbb_structure.pdf: data/1kg_ukbb_british_centre.csv data/ukbb_ukbb_british_centre.csv
+	python3 src/plot.py ukbb_structure
+
+figures/global_structure.pdf: data/sample_edges.csv data/1kg_gnn.csv data/HG01933_parent_ancestry_0.csv
+	python3 src/plot.py global_structure
 
 deps:
 	make -C src
