@@ -253,7 +253,9 @@ def run_compute_1kg_ukbb_gnn(args):
 
 
 def get_augmented_samples(tables):
-    # Shortcut. Iterating over all the IDs is very slow here.j
+    # Shortcut. Iterating over all the IDs is very slow here.
+    # Note that we don't necessarily recover all of the samples that were 
+    # augmented here because they might have been simplified out.
     # return np.load("ukbb_chr20.augmented_samples.npy")
     nodes = tables.nodes
     ids = np.where(nodes.flags == tsinfer.NODE_IS_SAMPLE_ANCESTOR)[0]
@@ -308,7 +310,44 @@ def run_compute_ukbb_gnn(args):
     df = pd.DataFrame(cols)
     df.to_csv(args.output)
      
-    
+ 
+def run_compute_1kg_gnn(args):
+    ts = msprime.load(args.input)
+
+    population_name = []
+    region_name = []
+
+    for population in ts.populations():
+        md = json.loads(population.metadata.decode())
+        name = md["name"]
+        population_name.append(name)    
+        region_name.append(md["super_population"])     
+
+    population = []
+    region = []
+    individual = []
+    for j, u in enumerate(ts.samples()):
+        node = ts.node(u)
+        ind = json.loads(ts.individual(node.individual).metadata.decode())
+        individual.append(ind["individual_id"])
+        population.append(population_name[node.population])
+        region.append(region_name[node.population])
+
+    sample_sets = [ts.samples(pop) for pop in range(ts.num_populations)]
+    print("Computing GNNs")
+    before = time.time()
+    A = ts.genealogical_nearest_neighbours(
+        ts.samples(), sample_sets, num_threads=args.num_threads)   
+    duration = time.time() - before
+    print("Done in {:.2f} mins".format(duration / 60))
+
+    cols = {population_name[j]: A[:, j] for j in range(ts.num_populations)}
+    cols["population"] = population
+    cols["region"] = region
+    cols["individual"] = individual
+    df = pd.DataFrame(cols)
+    df.to_csv(args.output)
+   
 
 def run_snip_centromere(args):
     with open(args.centromeres) as csvfile:
@@ -390,6 +429,14 @@ def main():
         "output", type=str, help="Filename to write CSV to.")
     subparser.add_argument("--num-threads", type=int, default=16)
     subparser.set_defaults(func=run_compute_ukbb_gnn)
+
+    subparser = subparsers.add_parser("compute-1kg-gnn")
+    subparser.add_argument(
+        "input", type=str, help="Input tree sequence")
+    subparser.add_argument(
+        "output", type=str, help="Filename to write CSV to.")
+    subparser.add_argument("--num-threads", type=int, default=16)
+    subparser.set_defaults(func=run_compute_1kg_gnn)
 
     subparser = subparsers.add_parser("snip-centromere")
     subparser.add_argument(

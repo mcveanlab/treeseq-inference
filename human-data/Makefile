@@ -110,8 +110,11 @@ GENOTYPES_BASE=http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/suppor
 		--reference-name=${REFERENCE_NAME}\
 		$@  > $@.report
 
-1kg_%.trees.ancestry.npy: 1kg_%.trees
-	python3 tsutil.py compute-1kg-ancestry $^ $@ 
+1kg_chr20.snipped.trees: 1kg_chr20.trees ${CENTROMERES_CSV}
+	python3 tsutil.py snip-centromere $< $@ chr20 ${CENTROMERES_CSV}
+
+1kg_chr20.snipped.trees.gnn.csv: 1kg_chr20.snipped.trees
+	python3 tsutil.py compute-1kg-gnn $^ $@ --num-threads=16
 
 
 #############################################

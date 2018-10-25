@@ -51,6 +51,9 @@ data/1kg_ukbb_british_centre.csv:
 data/ukbb_ukbb_british_centre.csv:
 	python3 src/analyse_human_data.py ukbb_ukbb_gnn
 
+data/1kg_gnn.csv:
+	cp human-data/1kg_chr20.snipped.trees.gnn.csv $@
+
 deps:
 	make -C src
 	# this should download and compile fastARG, ARGweaver, RentPlus, ftprime, etc

@@ -8,6 +8,7 @@ import json
 
 import numpy as np
 import pandas as pd
+
 import msprime
 
 data_prefix = "human-data"
@@ -103,7 +104,6 @@ def process_sample_edges():
     df_all = pd.concat([df_sgdp, df_1kg], ignore_index=True)
     datafile = "data/sample_edges.csv"
     df_all.to_csv(datafile)
-
 
 def process_1kg_ukbb_gnn():
     source_file = os.path.join(data_prefix, "1kg_ukbb_chr20.snipped.trees.gnn.csv")
