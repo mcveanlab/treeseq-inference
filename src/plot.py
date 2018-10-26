@@ -3,7 +3,6 @@
 Generates all the actual figures. Run like
  python3 src/plot.py PLOT_NAME
 """
-
 import argparse
 import collections
 
@@ -15,6 +14,7 @@ matplotlib.use('Agg')  # NOQA
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1.inset_locator import InsetPosition, inset_axes
 import seaborn as sns
+import scipy
 
 tgp_region_pop = {
     'AMR': ['CLM', 'MXL', 'PUR', 'PEL'],
@@ -538,8 +538,8 @@ class PerformanceLengthSamplesFigure(ToolsFigure):
             for linestyle, rho in zip(recombination_linestyles, recombination_rates)]
         ax1.legend(
             params,
-            [r"$\rho$ = {}".format("$\mu$" if rho==mu else 
-                r"{:g}$\mu$ (high recombination)".format(rho/mu) if rho>mu else 
+            [r"$\rho$ = {}".format("$\mu$" if rho==mu else
+                r"{:g}$\mu$ (high recombination)".format(rho/mu) if rho>mu else
                 r"$\mu$/{:g} (low recombination)".format(mu/rho))
                 for rho_index, rho in enumerate(recombination_rates)],
             loc="upper right", fontsize=10, title="Relative rate of recombination")
@@ -911,12 +911,127 @@ class UkbbStructureFigure(Figure):
         # We don't have a CSV called this, name.csv so skip loading.
         pass
 
+    def plot_clustermap(self):
+        df = pd.read_csv("data/ukbb_ukbb_british_centre.csv").set_index("centre")
+        linkage = scipy.cluster.hierarchy.linkage(df, method="average")
+
+        # code to print out the linkage map so we can manually tweak it below.
+        # All we do here is reverse the order of nodes (the values in the first
+        # two columns) in certain cases.
+
+        # for j, name in enumerate(df.index):
+        #     print("\t#", j, name, sep="\t")
+        # for j, row in enumerate(linkage):
+        #     print("\t[\t", end="")
+        #     print(*row, "], ", sep=",\t", end="# {}\n".format(22 + j))
+
+        #       0       Barts
+        #       1       Birmingham
+        #       2       Bristol
+        #       3       Bury
+        #       4       Cardiff
+        #       5       Croydon
+        #       6       Edinburgh
+        #       7       Glasgow
+        #       8       Hounslow
+        #       9       Leeds
+        #       10      Liverpool
+        #       11      Manchester
+        #       12      Middlesborough
+        #       13      Newcastle
+        #       14      Nottingham
+        #       15      Oxford
+        #       16      Reading
+        #       17      Sheffield
+        #       18      Stockport (pilot)
+        #       19      Stoke
+        #       20      Swansea
+        #       21      Wrexham
+
+        # reverse Middlesborough and Newcastle
+        # reverse the parent of (Swansea, Cardiff), Bristol
+        # reverse the parent of (Sheffield, Nottingham)
+        # reverse (Sheffield and  Nottingham)
+        # reverse common ancestor of Wrexham---Birmingham (11 leaves)
+        # reverse Hounslow and Barts
+
+        linkage = [
+            [       8.0,    0.0,    0.00992614684231246,    2.0,    ],# 22
+            [       11.0,   18.0,   0.00997358573889835,    2.0,    ],# 23
+            [       5.0,    22.0,   0.012720285548015757,   3.0,    ],# 24
+            [       16.0,   24.0,   0.01602686671104711,    4.0,    ],# 25
+            [       15.0,   25.0,   0.020879183617452446,   5.0,    ],# 26
+            [       4.0,    20.0,   0.026004780648220194,   2.0,    ],# 27 (Swansea, Cardiff)
+            [       3.0,    23.0,   0.03498028829287645,    3.0,    ],# 28
+            [       10.0,   21.0,   0.04306044723401903,    2.0,    ],# 29
+            [       6.0,    7.0,    0.05242778863401149,    2.0,    ],# 30
+            [       1.0,    26.0,   0.05655872804283459,    6.0,    ],# 31
+            [       28.0,   29.0,   0.057631057816274575,   5.0,    ],# 32
+            [       32.0,   31.0,   0.07008248782572693,    11.0,   ],# 33
+            [       2.0,    27.0,   0.07008802730760219,    3.0,    ],# 34 (Bristol, ..)
+            [       17.0,   14.0,   0.0777903496622653,     2.0,    ],# 35 (Nottingham, Sheffield)
+            [       13.0,   12.0,   0.08685999565530317,    2.0,    ],# 36
+            [       35.0,   33.0,   0.0891683306777255,     13.0,   ],# 37
+            [       9.0,    37.0,   0.09112732405105738,    14.0,   ],# 38
+            [       38.0,   34.0,   0.09903665224311753,    17.0,   ],# 39
+            [       30.0,   36.0,   0.12361544256393858,    4.0,    ],# 40
+
+            [       19.0,   39.0,   0.12850096617078194,    18.0,   ],# 41
+            [       40.0,   41.0,   0.1330479611549711,     22.0,   ],# 42
+        ]
+
+        order=scipy.cluster.hierarchy.leaves_list(linkage)
+        centres = df.index.values[order]
+
+        sns.clustermap(
+            df[centres[::-1]], col_cluster=False, row_linkage=linkage, figsize=(16, 14),
+            rasterized=True)
+        # FIXME replace with self.save
+        plt.savefig("ukbb_clustermap.png")
+        plt.savefig("ukbb_clustermap.pdf")
+
+    def plot_1kg_ukbb_clustermap(self):
+
+        df = pd.read_csv("data/1kg_ukbb_ethnicity.csv").set_index("ethnicity")
+
+        # population_colour = {}
+        # for population in final_ts.populations():
+        #     md = json.loads(population.metadata.decode())
+        #     name = md["name"]
+        #     region = md["super_population"]
+        #     population_colour[name] = region_colours[region]
+
+        df_tmp = df[tgp_populations]
+        colour_map = get_tgp_colours()
+        colours = [colour_map[pop] for pop in tgp_populations]
+
+        linkage = scipy.cluster.hierarchy.linkage(df_tmp, method="average")
+        def rotate(index):
+            x, y = linkage[index][0:2]
+            linkage[index][0] = y
+            linkage[index][1] = x
+        rotate(-1)
+        rotate(-4)
+
+        cg = sns.clustermap(
+            df_tmp, col_colors=colours, row_linkage=linkage, rasterized=True)#, figsize=(16, 14))
+        plt.subplots_adjust(left=0.01, right=0.75, bottom=0.1, top=0.95)
+        cg.fig.axes[1].set_title("TGP GNN Proportions by self-reported ethnicity")
+        cg.fig.axes[1].set_xlabel("TGP Population GNN")
+        cg.fig.axes[-2].set_ylabel("Self-reported ethnicity")
+        plt.savefig("ukbb-1kg-clustermap.pdf")
+
+
     def plot(self):
         dfs = [
             pd.read_csv("data/1kg_ukbb_ethnicity.csv").set_index("ethnicity"),
             pd.read_csv("data/1kg_ukbb_british_centre.csv").set_index("centre"),
             pd.read_csv("data/ukbb_ukbb_british_centre.csv").set_index("centre"),
         ]
+
+        self.plot_clustermap()
+        self.plot_1kg_ukbb_clustermap()
+
         vmax = max([df.values.max() for df in dfs])
         vmin = min([df.values.min() for df in dfs])
 
@@ -965,7 +1080,7 @@ class GlobalStructureFigure(Figure):
     def __init__(self):
         # We don't have a CSV called this, name.csv so skip loading.
         pass
-    
+
 
     def plot_sample_edges(self, axes):
         full_df = pd.read_csv("data/sample_edges.csv")
