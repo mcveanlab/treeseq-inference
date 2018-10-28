@@ -10,6 +10,7 @@ import sys
 import io
 import csv
 import itertools
+import os.path
 
 # FIXME!!! Not GNN not yet merged to msprime.
 sys.path.insert(0, "/gpfs1/well/mcvean/ukbb12788/jk/msprime")
@@ -20,6 +21,7 @@ import daiquiri
 import numpy as np
 import pandas as pd
 import tqdm
+import humanize
 
 
 def run_simplify(args):
@@ -84,6 +86,11 @@ def run_benchmark_tskit(args):
     ts = msprime.load(args.input)
     duration = time.perf_counter() - before
     print("Loaded in {:.2f}s".format(duration))
+
+    print("num_nodes = ", ts.num_nodes)
+    print("num_edges = ", ts.num_edges)
+    print("num_trees = ", ts.num_trees)
+    print("size = ", humanize.naturalsize(os.path.getsize(args.input), binary=True))
 
     before = time.perf_counter()
     j = 0
