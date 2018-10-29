@@ -42,17 +42,17 @@ tgp_region_palettes =  {
 
 def get_tgp_region_colours():
     return {
-        region: sns.color_palette(palette, 1)[0]
-        for region, palette in tgp_region_palettes.items()
+        "EAS": sns.color_palette("Greens", 2)[1],
+        "EUR": sns.color_palette("Blues", 1)[0],
+        "AFR": sns.color_palette("Wistia", 3)[0],
+        "AMR": sns.color_palette("Reds", 2)[1],
+        "SAS": sns.color_palette("Purples", 2)[1],
     }
 
 
 def get_tgp_colours():
     # TODO add option to give shades for the different pops.
-    region_colours = {
-        region: sns.color_palette(palette, 1)[0]
-        for region, palette in tgp_region_palettes.items()
-    }
+    region_colours = get_tgp_region_colours()
     pop_colour_map = {}
     for region, pops in tgp_region_pop.items():
         for pop in pops:
@@ -1005,21 +1005,55 @@ class UkbbStructureFigure(Figure):
         colour_map = get_tgp_colours()
         colours = [colour_map[pop] for pop in tgp_populations]
 
-        linkage = scipy.cluster.hierarchy.linkage(df_tmp, method="average")
-        def rotate(index):
+        def rotate(linkage, index):
             x, y = linkage[index][0:2]
             linkage[index][0] = y
             linkage[index][1] = x
-        rotate(-1)
-        rotate(-4)
+
+        row_linkage = scipy.cluster.hierarchy.linkage(df_tmp, method="average")
+        # rotate(row_linkage, -1)
+        rotate(row_linkage, -2)
+        rotate(row_linkage, -4)
+        rotate(row_linkage, 15)  # Other ethnic group, parent
+        rotate(row_linkage, 14)  # white and asian, parent
+
+
+        for j, name in enumerate(df_tmp.index):
+            print("\t#", j, name, sep="\t")
+        num_labels = len(df_tmp.index)
+        for j, row in enumerate(row_linkage):
+            print("\t[\t", end="")
+            print(*row, "], ", sep=",\t", end="# {}\t{}\n".format(j, num_labels + j))
+
+        col_linkage = scipy.cluster.hierarchy.linkage(df_tmp.values.T, method="average")
+
+        for j, name in enumerate(df_tmp):
+            print("\t#", j, name, sep="\t")
+        num_labels = len(list(df_tmp))
+        for j, row in enumerate(col_linkage):
+            print("\t[\t", end="")
+            print(*row, "], ", sep=",\t", end="# {}\t{}\n".format(j, num_labels + j))
+
+        rotate(col_linkage, -1)
+        rotate(col_linkage, -2)
+        rotate(col_linkage, -3)
+        rotate(col_linkage, -4)
+
 
         cg = sns.clustermap(
-            df_tmp, col_colors=colours, row_linkage=linkage, rasterized=True)#, figsize=(16, 14))
+            df_tmp, col_colors=colours, row_linkage=row_linkage,
+            col_linkage=col_linkage, rasterized=True)
+
+        for region, col in get_tgp_region_colours().items():
+            cg.ax_col_dendrogram.bar(0, 0, color=col, label=region, linewidth=0)
+        cg.ax_col_dendrogram.legend(bbox_to_anchor=(1.2, 0.8))
+
+
         plt.subplots_adjust(left=0.01, right=0.75, bottom=0.1, top=0.95)
         cg.fig.axes[1].set_title("TGP GNN Proportions by self-reported ethnicity")
         cg.fig.axes[1].set_xlabel("TGP Population GNN")
         cg.fig.axes[-2].set_ylabel("Self-reported ethnicity")
-        plt.savefig("ukbb-1kg-clustermap.pdf")
+        self.save("ukbb_1kg_clustermap_ethnicity")
 
 
     def plot(self):
@@ -1207,6 +1241,27 @@ class GlobalStructureFigure(Figure):
             ax.set_yticks([])
             ax.set_xlim(0, df.right.max())
             ax.set_ylim(0, 1)
+
+            centre_index = np.where(df.left.values[1:] != df.right.values[:-1])[0][0]
+            start = df.right.iloc[centre_index]
+            end = df.left.iloc[centre_index + 1]
+
+            L = df.right.max()
+            size = L / 18
+            paths = [
+                [(0, 0), (-size, 0.5), (0, 1), (0, 0)],
+                [(start, 0), (start + size, 0.5), (start, 1), (start, 0)],
+                [(end, 0), (end - size, 0.5), (end, 1), (end, 0)],
+                [(L, 0), (L + size, 0.5), (L, 1), (L, 0)],
+            ]
+            for path in paths:
+                Path = matplotlib.path.Path
+                pp = matplotlib.patches.PathPatch(
+                    Path(path, [Path.MOVETO, Path.CURVE3, Path.CURVE3, Path.CLOSEPOLY]),
+                    transform=ax.transData, clip_on=False,
+                    facecolor='grey', alpha=0.5)
+                ax.add_patch(pp)
+
             ax.axis('off')
         # Note: we have to manually tweak the label on this axis left a bit
         ax_left.annotate(
