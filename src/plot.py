@@ -539,8 +539,8 @@ class PerformanceLengthSamplesFigure(ToolsFigure):
         ax1.legend(
             params,
             [r"$\rho$ = {}".format("$\mu$" if rho==mu else
-                r"{:g}$\mu$ (high recombination)".format(rho/mu) if rho>mu else
-                r"$\mu$/{:g} (low recombination)".format(mu/rho))
+                r"{:g}$\mu$ (more recombination)".format(rho/mu) if rho>mu else
+                r"$\mu$/{:g} (less recombination)".format(mu/rho))
                 for rho_index, rho in enumerate(recombination_rates)],
             loc="upper right", fontsize=10, title="Relative rate of recombination")
 
