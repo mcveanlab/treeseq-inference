@@ -1168,6 +1168,14 @@ class GlobalStructureFigure(Figure):
         axes[0].set_ylim(0, 1500)
         axes[1].set_ylim(0, 3500)
 
+    def plot_1kg_clustermap(self):
+        df = pd.read_csv("data/1kg_gnn.csv")
+        dfg = df.groupby("population").mean()
+
+        colours = pd.Series(get_tgp_colours())
+        sns.clustermap(dfg[tgp_populations], col_colors=colours, row_colors=colours)
+        self.save("1kg_gnn_clustermap")
+
 
     def plot(self):
 
@@ -1179,7 +1187,12 @@ class GlobalStructureFigure(Figure):
         for ax, label in zip(axes, ["A", "B"]):
             ax.annotate(
                 "({})".format(label), xy=(-0.1, 0.5), xycoords="axes fraction", fontsize=15)
-        self.plot_sample_edges(axes)
+        # self.plot_sample_edges(axes)
+
+        self.plot_1kg_clustermap()
+
+        return
+
 
         full_df = pd.read_csv("data/1kg_gnn.csv")
         df = full_df[full_df.population == "PEL"].reset_index()
@@ -1280,7 +1293,7 @@ class GlobalStructureFigure(Figure):
 
         self.save()
 
- 
+
 class OoaSampleEdges(Figure):
     """
     Figure showing the number of sample edges we get in a simple simulation of OOA.
