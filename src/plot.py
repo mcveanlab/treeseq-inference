@@ -992,11 +992,10 @@ class UkbbStructureFigure(Figure):
         centres = df.index.values[order]
 
         sns.clustermap(
-            df[centres[::-1]], col_cluster=False, row_linkage=linkage, figsize=(16, 14),
+            df[centres[::-1]], z_score=1, col_cluster=False, row_linkage=linkage, figsize=(16, 14),
             rasterized=True)
         # FIXME replace with self.save
-        plt.savefig("ukbb_clustermap.png")
-        plt.savefig("ukbb_clustermap.pdf")
+        self.save("ukbb_ukbb_gnn_clustermap")
 
     def plot_1kg_ukbb_clustermap(self):
 
@@ -1050,7 +1049,7 @@ class UkbbStructureFigure(Figure):
 
         cg = sns.clustermap(
             df_tmp, col_colors=colours, row_linkage=row_linkage,
-            col_linkage=col_linkage, rasterized=True)
+            col_linkage=col_linkage, rasterized=True, z_score=1)
 
         for region, col in get_tgp_region_colours().items():
             cg.ax_col_dendrogram.bar(0, 0, color=col, label=region, linewidth=0)
@@ -1186,7 +1185,11 @@ class GlobalStructureFigure(Figure):
         dfg = df.groupby("population").mean()
 
         colours = pd.Series(get_tgp_colours())
-        sns.clustermap(dfg[tgp_populations], col_colors=colours, row_colors=colours)
+        cg = sns.clustermap(dfg[tgp_populations], z_score=1, col_colors=colours, row_colors=colours)
+
+        for region, col in get_tgp_region_colours().items():
+            cg.ax_col_dendrogram.bar(0, 0, color=col, label=region, linewidth=0)
+        cg.ax_col_dendrogram.legend(bbox_to_anchor=(1.1, 1.1))
         self.save("1kg_gnn_clustermap")
 
     def plot_sgdp_clustermap(self):
@@ -1197,7 +1200,14 @@ class GlobalStructureFigure(Figure):
             colours[pop] = region_colours[region]
         dfg = df.groupby("population").mean()
         colours = pd.Series(colours)
-        sns.clustermap(dfg[dfg.index.unique()], standard_scale=0, col_colors=colours, row_colors=colours)
+        cg = sns.clustermap(
+            dfg[dfg.index.unique()], z_score=1, col_colors=colours, row_colors=colours,
+            figsize=(30, 30))
+
+        for region, col in get_sgdp_region_colours().items():
+            cg.ax_col_dendrogram.bar(0, 0, color=col, label=region, linewidth=0)
+        cg.ax_col_dendrogram.legend(bbox_to_anchor=(1.3, 1.1))
+
         self.save("sgdp_gnn_clustermap")
 
 
@@ -1213,7 +1223,7 @@ class GlobalStructureFigure(Figure):
                 "({})".format(label), xy=(-0.1, 0.5), xycoords="axes fraction", fontsize=15)
         # self.plot_sample_edges(axes)
 
-        # self.plot_1kg_clustermap()
+        self.plot_1kg_clustermap()
         self.plot_sgdp_clustermap()
 
         return
