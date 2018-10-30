@@ -32,13 +32,6 @@ tgp_populations = [
     'MXL', 'PUR', 'CLM', 'PEL',
     'GIH', 'PJL', 'BEB', 'STU', 'ITU']
 
-tgp_region_palettes =  {
-    "EAS": "Greens",
-    "EUR": "Blues",
-    "AFR": "Reds",
-    "AMR": "Oranges",
-    "SAS": "Purples",
-}
 
 def get_tgp_region_colours():
     return {
@@ -187,6 +180,7 @@ class SampleEdges(Figure):
         for ds in ["1kg", "sgdp"]:
 
             df_ds = full_df[full_df.dataset == ds]
+            print(ds, "Overall", df_ds.sample_edges.mean(), sep="\t")
             fig, axes = plt.subplots(5, 1, figsize=(14, 16))
             plt.subplots_adjust(hspace=0.5)
             if ds == "1kg":
@@ -197,6 +191,7 @@ class SampleEdges(Figure):
                 df = df_ds[df_ds.region == region]
                 df = df.sort_values(by=["population", "sample", "strand"])
                 df = df.reset_index()
+                print(ds, region, df.sample_edges.mean(), sep="\t")
                 self.plot_region(df, ax, rotate_labels=ds == "sgdp")
 
             self.save("{}_{}".format(self.name, ds))
