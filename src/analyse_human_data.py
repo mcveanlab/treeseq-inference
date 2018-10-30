@@ -170,6 +170,7 @@ def process_1kg_ukbb_gnn():
 
     # Subset down to the british ethnicity.
     df = df[df.ethnicity == "British"]
+    print("British subset = ", len(df))
     dfg = df.groupby(df.centre).mean()
     dfg = dfg[tgp_populations]
     datafile = "data/1kg_ukbb_british_centre.csv"
@@ -181,6 +182,7 @@ def process_ukbb_ukbb_gnn():
     
     # Subset down to the british ethnicity.
     df = df[df.ethnicity == "British"]
+    print("British subset = ", len(df))
     dfg = df.groupby(df.centre).mean()
     dfg = dfg[df.centre.unique()]
     datafile = "data/ukbb_ukbb_british_centre.csv"

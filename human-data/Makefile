@@ -47,8 +47,8 @@ simplebgen: setup.py simplebgenmodule.c
 %.trees.gz: %.trees
 	gzip -c $^ > $@
 
-%.trees.vcf.gz: %.trees
-	msp vcf -P 2 $^ | gzip -c > $@
+%.trees.bcf: %.trees
+	msp vcf -P 2 $^ | bcftools view - -O b -o $@
 
 #############################################
 # Centromere locations for GRCh37 (aka hg19) from UCSC

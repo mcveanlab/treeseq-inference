@@ -22,6 +22,7 @@ import numpy as np
 import pandas as pd
 import tqdm
 import humanize
+import cyvcf2
 
 
 def run_simplify(args):
@@ -113,6 +114,20 @@ def run_benchmark_tskit(args):
     total_genotypes = (ts.num_samples * num_variants) / 10**6
     print("Iterated over {} variants in {:.2f}s @ {:.2f} M genotypes/s".format(
         num_variants, duration, total_genotypes / duration))
+
+
+def run_benchmark_vcf(args):
+
+    before = time.perf_counter()
+    records = cyvcf2.VCF(args.input)
+    duration = time.perf_counter() - before
+    print("Read BCF header in {:.2f} seconds".format(duration))
+    before = time.perf_counter()
+    count = 0
+    for record in records:
+        count += 1
+    duration = time.perf_counter() - before
+    print("Read {} VCF records in {:.2f} seconds".format(count, duration))
 
 
 def run_combine_ukbb_1kg(args):
@@ -420,6 +435,14 @@ def main():
         "--num-variants", type=int, default=None,
         help="Number of variants to benchmark genotypes decoding performance on")
     subparser.set_defaults(func=run_benchmark_tskit)
+
+    subparser = subparsers.add_parser("benchmark-vcf")
+    subparser.add_argument(
+        "input", type=str, help="Input VCF")
+    subparser.add_argument(
+        "--num-variants", type=int, default=None,
+        help="Number of variants to benchmark genotypes decoding performance on")
+    subparser.set_defaults(func=run_benchmark_vcf)
 
     subparser = subparsers.add_parser("compute-1kg-ukbb-gnn")
     subparser.add_argument(
