@@ -18,11 +18,44 @@ import msprime
 
 data_prefix = "human-data"
 
+def print_sample_edge_stats(ts):
+    """ 
+    Print out some basic stats about the sample edges in the specified tree 
+    sequence.
+    """
+    tables = ts.tables
+    child_counts = np.bincount(tables.edges.child)
+    samples = ts.samples()
+    all_counts = child_counts[samples]
+    print("mean sample count    = ", np.mean(all_counts))
+
+    index = tables.nodes.flags[tables.edges.child] == msprime.NODE_IS_SAMPLE
+    length = tables.edges.right[index]- tables.edges.left[index]
+    print("mean length          = ", np.mean(length))
+    print("median length        = ", np.median(length))
+
+    n50 = np.zeros(ts.num_samples)
+    edges = tables.edges
+    child = edges.child
+    left = edges.left
+    right = edges.right
+    for j, sample in enumerate(samples):
+        index = child == sample
+        length = right[index]- left[index]
+        length = np.sort(length)[::-1]
+        cumulative = np.cumsum(length)
+        # N50 is the first length such that the cumulative sum up to that point
+        # is >= L / 2.
+        n50[j] = length[cumulative >= ts.sequence_length / 2][0]
+    print("Average N50          = ", np.mean(n50))
+
 
 def get_sgdp_sample_edges():
     filename = os.path.join(data_prefix, "sgdp_chr20.nosimplify.trees")
 
     ts = msprime.load(filename)
+    print("SGDP")
+    print_sample_edge_stats(ts)
     population_name = []
     population_region = []
     for pop in ts.populations():
@@ -63,6 +96,8 @@ def get_1kg_sample_edges():
     filename = os.path.join(data_prefix, "1kg_chr20.nosimplify.trees")
 
     ts = msprime.load(filename)
+    print("TGP")
+    print_sample_edge_stats(ts)
     population_name = []
     population_region = []
     for pop in ts.populations():
