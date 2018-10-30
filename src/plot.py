@@ -43,6 +43,19 @@ def get_tgp_region_colours():
     }
 
 
+def get_sgdp_region_colours():
+    cols = get_tgp_region_colours()
+    return {
+        'Africa': cols["AFR"],
+        'America': cols["AMR"],
+        'EastAsia': cols["EAS"],
+        'SouthAsia': cols["SAS"],
+        'Oceania': "brown",
+        'WestEurasia': cols["EUR"],
+        'CentralAsiaSiberia': "pink"
+     }
+
+
 def get_tgp_colours():
     # TODO add option to give shades for the different pops.
     region_colours = get_tgp_region_colours()
@@ -1176,6 +1189,17 @@ class GlobalStructureFigure(Figure):
         sns.clustermap(dfg[tgp_populations], col_colors=colours, row_colors=colours)
         self.save("1kg_gnn_clustermap")
 
+    def plot_sgdp_clustermap(self):
+        df = pd.read_csv("data/sgdp_gnn.csv")
+        colours = {}
+        region_colours = get_sgdp_region_colours()
+        for pop, region in df.groupby(["population", "region"]).size().index:
+            colours[pop] = region_colours[region]
+        dfg = df.groupby("population").mean()
+        colours = pd.Series(colours)
+        sns.clustermap(dfg[dfg.index.unique()], standard_scale=0, col_colors=colours, row_colors=colours)
+        self.save("sgdp_gnn_clustermap")
+
 
     def plot(self):
 
@@ -1189,7 +1213,8 @@ class GlobalStructureFigure(Figure):
                 "({})".format(label), xy=(-0.1, 0.5), xycoords="axes fraction", fontsize=15)
         # self.plot_sample_edges(axes)
 
-        self.plot_1kg_clustermap()
+        # self.plot_1kg_clustermap()
+        self.plot_sgdp_clustermap()
 
         return
 
