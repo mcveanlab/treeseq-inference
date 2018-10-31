@@ -1329,19 +1329,6 @@ class GlobalStructureFigure(Figure):
         self.save()
 
 
-class OoaSampleEdges(Figure):
-    """
-    Figure showing the number of sample edges we get in a simple simulation of OOA.
-    """
-    name = "ooa_sample_edges_sim"
-
-    def plot(self):
-        sns.boxplot(data=self.data, x="population", y="sample_edges")
-        plt.ylabel("Number of Sample Edges")
-        plt.xlabel("Population")
-        self.save()
-
-
 ######################################
 #
 # Helper functions
