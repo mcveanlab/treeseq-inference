@@ -32,13 +32,6 @@ tgp_populations = [
     'MXL', 'PUR', 'CLM', 'PEL',
     'GIH', 'PJL', 'BEB', 'STU', 'ITU']
 
-tgp_region_palettes =  {
-    "EAS": "Greens",
-    "EUR": "Blues",
-    "AFR": "Reds",
-    "AMR": "Oranges",
-    "SAS": "Purples",
-}
 
 def get_tgp_region_colours():
     return {
@@ -48,6 +41,19 @@ def get_tgp_region_colours():
         "AMR": sns.color_palette("Reds", 2)[1],
         "SAS": sns.color_palette("Purples", 2)[1],
     }
+
+
+def get_sgdp_region_colours():
+    cols = get_tgp_region_colours()
+    return {
+        'Africa': cols["AFR"],
+        'America': cols["AMR"],
+        'EastAsia': cols["EAS"],
+        'SouthAsia': cols["SAS"],
+        'Oceania': "brown",
+        'WestEurasia': cols["EUR"],
+        'CentralAsiaSiberia': "pink"
+     }
 
 
 def get_tgp_colours():
@@ -187,6 +193,7 @@ class SampleEdges(Figure):
         for ds in ["1kg", "sgdp"]:
 
             df_ds = full_df[full_df.dataset == ds]
+            print(ds, "Overall", df_ds.sample_edges.mean(), sep="\t")
             fig, axes = plt.subplots(5, 1, figsize=(14, 16))
             plt.subplots_adjust(hspace=0.5)
             if ds == "1kg":
@@ -197,6 +204,7 @@ class SampleEdges(Figure):
                 df = df_ds[df_ds.region == region]
                 df = df.sort_values(by=["population", "sample", "strand"])
                 df = df.reset_index()
+                print(ds, region, df.sample_edges.mean(), sep="\t")
                 self.plot_region(df, ax, rotate_labels=ds == "sgdp")
 
             self.save("{}_{}".format(self.name, ds))
@@ -984,11 +992,10 @@ class UkbbStructureFigure(Figure):
         centres = df.index.values[order]
 
         sns.clustermap(
-            df[centres[::-1]], col_cluster=False, row_linkage=linkage, figsize=(16, 14),
+            df[centres[::-1]], z_score=1, col_cluster=False, row_linkage=linkage, figsize=(16, 14),
             rasterized=True)
         # FIXME replace with self.save
-        plt.savefig("ukbb_clustermap.png")
-        plt.savefig("ukbb_clustermap.pdf")
+        self.save("ukbb_ukbb_gnn_clustermap")
 
     def plot_1kg_ukbb_clustermap(self):
 
@@ -1042,7 +1049,7 @@ class UkbbStructureFigure(Figure):
 
         cg = sns.clustermap(
             df_tmp, col_colors=colours, row_linkage=row_linkage,
-            col_linkage=col_linkage, rasterized=True)
+            col_linkage=col_linkage, rasterized=True, z_score=1)
 
         for region, col in get_tgp_region_colours().items():
             cg.ax_col_dendrogram.bar(0, 0, color=col, label=region, linewidth=0)
@@ -1173,6 +1180,36 @@ class GlobalStructureFigure(Figure):
         axes[0].set_ylim(0, 1500)
         axes[1].set_ylim(0, 3500)
 
+    def plot_1kg_clustermap(self):
+        df = pd.read_csv("data/1kg_gnn.csv")
+        dfg = df.groupby("population").mean()
+
+        colours = pd.Series(get_tgp_colours())
+        cg = sns.clustermap(dfg[tgp_populations], z_score=1, col_colors=colours, row_colors=colours)
+
+        for region, col in get_tgp_region_colours().items():
+            cg.ax_col_dendrogram.bar(0, 0, color=col, label=region, linewidth=0)
+        cg.ax_col_dendrogram.legend(bbox_to_anchor=(1.1, 1.1))
+        self.save("1kg_gnn_clustermap")
+
+    def plot_sgdp_clustermap(self):
+        df = pd.read_csv("data/sgdp_gnn.csv")
+        colours = {}
+        region_colours = get_sgdp_region_colours()
+        for pop, region in df.groupby(["population", "region"]).size().index:
+            colours[pop] = region_colours[region]
+        dfg = df.groupby("population").mean()
+        colours = pd.Series(colours)
+        cg = sns.clustermap(
+            dfg[dfg.index.unique()], z_score=1, col_colors=colours, row_colors=colours,
+            figsize=(30, 30))
+
+        for region, col in get_sgdp_region_colours().items():
+            cg.ax_col_dendrogram.bar(0, 0, color=col, label=region, linewidth=0)
+        cg.ax_col_dendrogram.legend(bbox_to_anchor=(1.3, 1.1))
+
+        self.save("sgdp_gnn_clustermap")
+
 
     def plot(self):
 
@@ -1184,7 +1221,13 @@ class GlobalStructureFigure(Figure):
         for ax, label in zip(axes, ["A", "B"]):
             ax.annotate(
                 "({})".format(label), xy=(-0.1, 0.5), xycoords="axes fraction", fontsize=15)
-        self.plot_sample_edges(axes)
+        # self.plot_sample_edges(axes)
+
+        self.plot_1kg_clustermap()
+        self.plot_sgdp_clustermap()
+
+        return
+
 
         full_df = pd.read_csv("data/1kg_gnn.csv")
         df = full_df[full_df.population == "PEL"].reset_index()
@@ -1285,6 +1328,18 @@ class GlobalStructureFigure(Figure):
 
         self.save()
 
+
+class OoaSampleEdges(Figure):
+    """
+    Figure showing the number of sample edges we get in a simple simulation of OOA.
+    """
+    name = "ooa_sample_edges_sim"
+
+    def plot(self):
+        sns.boxplot(data=self.data, x="population", y="sample_edges")
+        plt.ylabel("Number of Sample Edges")
+        plt.xlabel("Population")
+        self.save()
 
 
 ######################################

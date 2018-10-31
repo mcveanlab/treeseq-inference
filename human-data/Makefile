@@ -47,8 +47,8 @@ simplebgen: setup.py simplebgenmodule.c
 %.trees.gz: %.trees
 	gzip -c $^ > $@
 
-%.trees.vcf.gz: %.trees
-	msp vcf -P 2 $^ | gzip -c > $@
+%.trees.bcf: %.trees
+	msp vcf -P 2 $^ | bcftools view - -O b -o $@
 
 #############################################
 # Centromere locations for GRCh37 (aka hg19) from UCSC
@@ -145,6 +145,13 @@ sgdp_chr20.samples: sgdp_chr20_genotypes.bcf.csi chr20_ancestral_states.fa sgdp_
 		--ancestral-states-url=${ANCESTRAL_STATES_URL}\
 		--reference-name=${REFERENCE_NAME}\
 		$@  > $@.report
+
+
+sgdp_chr20.snipped.trees: sgdp_chr20.trees ${CENTROMERES_CSV}
+	python3 tsutil.py snip-centromere $< $@ chr20 ${CENTROMERES_CSV}
+
+sgdp_chr20.snipped.trees.gnn.csv: sgdp_chr20.snipped.trees
+	python3 tsutil.py compute-sgdp-gnn $^ $@ --num-threads=16
 
 #############################################
 # UKBB
