@@ -973,6 +973,14 @@ class MetricSubsamplingFigure(TreeMetricsFigure):
                 self.save("_".join([self.name, metric, rooting]))
 
 
+
+
+def rotate_linkage(linkage, index):
+    x, y = linkage[index][0:2]
+    linkage[index][0] = y
+    linkage[index][1] = x
+
+
 class UkbbStructureFigure(Figure):
     """
     Figure showing the structure for UKBB using heatmaps.
@@ -985,221 +993,68 @@ class UkbbStructureFigure(Figure):
     def plot_ukbb_region_clustermap(self):
         df = pd.read_csv("data/ukbb_ukbb_british_centre.csv").set_index("centre")
 
-        self.plot_clustermap(df)
-        self.save("ukbb_ukbb_gnn_clustermap")
-
-        # linkage = scipy.cluster.hierarchy.linkage(df, method="average")
-
-        # code to print out the linkage map so we can manually tweak it below.
-        # All we do here is reverse the order of nodes (the values in the first
-        # two columns) in certain cases.
-
-        # for j, name in enumerate(df.index):
-        #     print("\t#", j, name, sep="\t")
-        # for j, row in enumerate(linkage):
-        #     print("\t[\t", end="")
-        #     print(*row, "], ", sep=",\t", end="# {}\n".format(22 + j))
-
-        #       0       Barts
-        #       1       Birmingham
-        #       2       Bristol
-        #       3       Bury
-        #       4       Cardiff
-        #       5       Croydon
-        #       6       Edinburgh
-        #       7       Glasgow
-        #       8       Hounslow
-        #       9       Leeds
-        #       10      Liverpool
-        #       11      Manchester
-        #       12      Middlesborough
-        #       13      Newcastle
-        #       14      Nottingham
-        #       15      Oxford
-        #       16      Reading
-        #       17      Sheffield
-        #       18      Stockport (pilot)
-        #       19      Stoke
-        #       20      Swansea
-        #       21      Wrexham
-
-        # reverse Middlesborough and Newcastle
-        # reverse the parent of (Swansea, Cardiff), Bristol
-        # reverse the parent of (Sheffield, Nottingham)
-        # reverse (Sheffield and  Nottingham)
-        # reverse common ancestor of Wrexham---Birmingham (11 leaves)
-        # reverse Hounslow and Barts
-
-#         linkage = [
-#             [       8.0,    0.0,    0.00992614684231246,    2.0,    ],# 22
-#             [       11.0,   18.0,   0.00997358573889835,    2.0,    ],# 23
-#             [       5.0,    22.0,   0.012720285548015757,   3.0,    ],# 24
-#             [       16.0,   24.0,   0.01602686671104711,    4.0,    ],# 25
-#             [       15.0,   25.0,   0.020879183617452446,   5.0,    ],# 26
-#             [       4.0,    20.0,   0.026004780648220194,   2.0,    ],# 27 (Swansea, Cardiff)
-#             [       3.0,    23.0,   0.03498028829287645,    3.0,    ],# 28
-#             [       10.0,   21.0,   0.04306044723401903,    2.0,    ],# 29
-#             [       6.0,    7.0,    0.05242778863401149,    2.0,    ],# 30
-#             [       1.0,    26.0,   0.05655872804283459,    6.0,    ],# 31
-#             [       28.0,   29.0,   0.057631057816274575,   5.0,    ],# 32
-#             [       32.0,   31.0,   0.07008248782572693,    11.0,   ],# 33
-#             [       2.0,    27.0,   0.07008802730760219,    3.0,    ],# 34 (Bristol, ..)
-#             [       17.0,   14.0,   0.0777903496622653,     2.0,    ],# 35 (Nottingham, Sheffield)
-#             [       13.0,   12.0,   0.08685999565530317,    2.0,    ],# 36
-#             [       35.0,   33.0,   0.0891683306777255,     13.0,   ],# 37
-#             [       9.0,    37.0,   0.09112732405105738,    14.0,   ],# 38
-#             [       38.0,   34.0,   0.09903665224311753,    17.0,   ],# 39
-#             [       30.0,   36.0,   0.12361544256393858,    4.0,    ],# 40
-
-#             [       19.0,   39.0,   0.12850096617078194,    18.0,   ],# 41
-#             [       40.0,   41.0,   0.1330479611549711,     22.0,   ],# 42
-#         ]
-
-#         order=scipy.cluster.hierarchy.leaves_list(linkage)
-#         centres = df.index.values[order]
-
-#         sns.clustermap(
-#             df[centres[::-1]], z_score=1, col_cluster=False, row_linkage=linkage, figsize=(16, 14),
-#             rasterized=True)
-
-
-    def plot_clustermap(self, dfg): #, pop_colours, region_colours, figsize):
-
-        print(dfg)
         # Zscore normalise
-        for col in list(dfg):
-            dfg[col] = scipy.stats.zscore(dfg[col])
+        for col in list(df):
+            df[col] = scipy.stats.zscore(df[col])
 
-        row_linkage = scipy.cluster.hierarchy.linkage(dfg, method="average")
+        row_linkage = scipy.cluster.hierarchy.linkage(df, method="average")
+        # Flip the london clade to be on the bottom
+        rotate_linkage(row_linkage, -2)
         order = scipy.cluster.hierarchy.leaves_list(row_linkage)
-        x_pop = dfg.index.values[order]
+        x_pop = df.index.values[order]
 
-        # colours = pd.Series(pop_colours)
-        cg = sns.clustermap(
-            dfg[x_pop], row_linkage=row_linkage, col_cluster=False)
-            # row_colors=colours, figsize=figsize)
-
-        # for region, col in region_colours.items():
-        #     cg.ax_col_dendrogram.bar(0, 0, color=col, label=region, linewidth=0)
-        return cg
-
+        cg = sns.clustermap(df[x_pop], row_linkage=row_linkage, col_cluster=False)
+        cg.ax_heatmap.set_ylabel("")
+        self.save("ukbb_ukbb_clustermap_british")
 
     def plot_1kg_ukbb_clustermap(self):
 
         df = pd.read_csv("data/1kg_ukbb_ethnicity.csv").set_index("ethnicity")
 
-        # population_colour = {}
-        # for population in final_ts.populations():
-        #     md = json.loads(population.metadata.decode())
-        #     name = md["name"]
-        #     region = md["super_population"]
-        #     population_colour[name] = region_colours[region]
-
-        df_tmp = df[tgp_populations]
         colour_map = get_tgp_colours()
         colours = [colour_map[pop] for pop in tgp_populations]
+        df = df[tgp_populations]
 
-        def rotate(linkage, index):
-            x, y = linkage[index][0:2]
-            linkage[index][0] = y
-            linkage[index][1] = x
-
-        row_linkage = scipy.cluster.hierarchy.linkage(df_tmp, method="average")
-        # rotate(row_linkage, -1)
-        rotate(row_linkage, -2)
-        rotate(row_linkage, -4)
-        rotate(row_linkage, 15)  # Other ethnic group, parent
-        rotate(row_linkage, 14)  # white and asian, parent
-
-
-        for j, name in enumerate(df_tmp.index):
-            print("\t#", j, name, sep="\t")
-        num_labels = len(df_tmp.index)
-        for j, row in enumerate(row_linkage):
-            print("\t[\t", end="")
-            print(*row, "], ", sep=",\t", end="# {}\t{}\n".format(j, num_labels + j))
-
-        col_linkage = scipy.cluster.hierarchy.linkage(df_tmp.values.T, method="average")
-
-        for j, name in enumerate(df_tmp):
-            print("\t#", j, name, sep="\t")
-        num_labels = len(list(df_tmp))
-        for j, row in enumerate(col_linkage):
-            print("\t[\t", end="")
-            print(*row, "], ", sep=",\t", end="# {}\t{}\n".format(j, num_labels + j))
-
-        rotate(col_linkage, -1)
-        rotate(col_linkage, -2)
-        rotate(col_linkage, -3)
-        rotate(col_linkage, -4)
+        row_linkage = scipy.cluster.hierarchy.linkage(df, method="average")
 
         cg = sns.clustermap(
-            df_tmp, col_colors=colours, row_linkage=row_linkage,
-            col_linkage=col_linkage, rasterized=True, z_score=1)
-
+            df, row_linkage=row_linkage, col_cluster=False, col_colors=colours)
+        cg.ax_heatmap.set_ylabel("")
         for region, col in get_tgp_region_colours().items():
             cg.ax_col_dendrogram.bar(0, 0, color=col, label=region, linewidth=0)
         cg.ax_col_dendrogram.legend(bbox_to_anchor=(1.2, 0.8))
 
-
-        plt.subplots_adjust(left=0.01, right=0.75, bottom=0.1, top=0.95)
-        cg.fig.axes[1].set_title("TGP GNN Proportions by self-reported ethnicity")
-        cg.fig.axes[1].set_xlabel("TGP Population GNN")
-        cg.fig.axes[-2].set_ylabel("Self-reported ethnicity")
         self.save("ukbb_1kg_clustermap_ethnicity")
 
 
-    def plot(self):
-        # dfs = [
-        #     pd.read_csv("data/1kg_ukbb_ethnicity.csv").set_index("ethnicity"),
-        #     pd.read_csv("data/1kg_ukbb_british_centre.csv").set_index("centre"),
-        #     pd.read_csv("data/ukbb_ukbb_british_centre.csv").set_index("centre"),
-        # ]
+    def plot_1kg_ukbb_british_centre_clustermap(self):
 
+        df = pd.read_csv("data/1kg_ukbb_british_centre.csv").set_index("centre")
+
+        colour_map = get_tgp_colours()
+        colours = [colour_map[pop] for pop in tgp_populations]
+        df = df[tgp_populations]
+
+        # Zscore normalise
+        for col in list(df):
+            df[col] = scipy.stats.zscore(df[col])
+
+        row_linkage = scipy.cluster.hierarchy.linkage(df, method="average")
+
+        cg = sns.clustermap(
+            df, row_linkage=row_linkage, col_cluster=False, col_colors=colours)
+        cg.ax_heatmap.set_ylabel("")
+        for region, col in get_tgp_region_colours().items():
+            cg.ax_col_dendrogram.bar(0, 0, color=col, label=region, linewidth=0)
+        cg.ax_col_dendrogram.legend(bbox_to_anchor=(1.2, 0.8))
+
+        self.save("ukbb_1kg_clustermap_british_centre")
+
+
+    def plot(self):
         self.plot_ukbb_region_clustermap()
         self.plot_1kg_ukbb_clustermap()
-
-#         vmax = max([df.values.max() for df in dfs])
-#         vmin = min([df.values.min() for df in dfs])
-
-#         # Make a dummy figure so we can run a clustermap to give us the ordering
-#         # for the rows.
-#         fig, ax = plt.subplots(1, 1)
-#         cg = sns.clustermap(dfs[0], row_cluster=True, col_cluster=False)
-#         row_index = cg.dendrogram_row.reordered_ind
-#         plt.clf()
-
-#         fig, axes = plt.subplots(1, 3, figsize=(18, 8))
-#         axes[0].set_title("(A)")
-#         axes[1].set_title("(B)")
-#         axes[2].set_title("(C)")
-#         cbar_ax = fig.add_axes([.94, .3, .03, .4])
-#         plt.subplots_adjust(wspace=0.35, left=0.12, bottom=0.2, right=0.92, top=0.95)
-
-#         # Need rasterized=True to get rid of fine lines on the PDF output.
-#         df = dfs[0]
-#         row_labels = df.index.unique()
-#         V = df.values
-#         sns.heatmap(
-#             V[row_index], xticklabels=list(df), yticklabels=df.index[row_index],
-#             ax=axes[0], vmax=vmax, vmin=vmin, cbar=True,
-#             cbar_ax=cbar_ax, rasterized=True)
-
-#         df = dfs[1]
-#         sns.heatmap(
-#             df, ax=axes[1], vmax=vmax, vmin=vmin, cbar=False, rasterized=True)
-#         axes[1].set_ylabel("")
-
-#         df = dfs[2]
-#         V = df[df.index].values
-#         index = np.argsort(np.sum(V, axis=0))[::-1]
-#         names = df.index.values
-
-#         sns.heatmap(
-#             V[index[::-1]][:,index], xticklabels=names[index],
-#             yticklabels=names[index][::-1],
-#             ax=axes[2], vmax=vmax, vmin=vmin, cbar=False, rasterized=True)
-#         self.save()
+        self.plot_1kg_ukbb_british_centre_clustermap()
 
 
 class GlobalStructureFigure(Figure):
@@ -1225,6 +1080,7 @@ class GlobalStructureFigure(Figure):
         cg = sns.clustermap(
             dfg[x_pop], row_linkage=row_linkage, col_cluster=False,
             row_colors=colours, figsize=figsize)
+        cg.ax_heatmap.set_ylabel("")
 
         for region, col in region_colours.items():
             cg.ax_col_dendrogram.bar(0, 0, color=col, label=region, linewidth=0)
@@ -1243,16 +1099,19 @@ class GlobalStructureFigure(Figure):
         region_colours = get_sgdp_region_colours()
         for pop, region in df.groupby(["population", "region"]).size().index:
             colours[pop] = region_colours[region]
-        cg = self.plot_clustermap(df, colours, region_colours, figsize=(30, 30))
+
+        cg = self.plot_clustermap(df, colours, region_colours, figsize=(10, 10))
         cg.ax_col_dendrogram.legend(ncol=2)
         self.save("sgdp_gnn_clustermap")
+        cg = self.plot_clustermap(df, colours, region_colours, figsize=(30, 30))
+        cg.ax_col_dendrogram.legend(ncol=2)
+        self.save("sgdp_gnn_clustermap_full_size")
 
     def plot(self):
-
-        colours = get_tgp_region_colours()
-
         self.plot_1kg_clustermap()
         self.plot_sgdp_clustermap()
+
+        colours = get_tgp_region_colours()
 
         gs = matplotlib.gridspec.GridSpec(2, 2, height_ratios=[4, 1], hspace=0.6)
         fig = plt.figure(figsize=(14, 4))
