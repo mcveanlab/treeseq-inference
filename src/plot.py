@@ -713,6 +713,7 @@ class MetricAllToolsFigure(TreeMetricsFigure):
     Plot each metric in a different pdf file.
     For the publication: make symbols small and solid
     """
+    plot_height = 4.5
     name = "metric_all_tools"
     y_axis_label="Average distance from true trees"
     hide_polytomy_breaking = True
@@ -736,8 +737,8 @@ class MetricAllToolsFigure(TreeMetricsFigure):
             # x-direction is different error rates
             error_params = df.error_param.unique()
 
-            fig, axes = plt.subplots(1, len(error_params),
-                figsize=getattr(self,'figsize',(6*len(error_params), 3.5)), sharey=True)
+            fig, axes = plt.subplots(1, len(error_params), sharey=True,
+                figsize=getattr(self,'figsize',(6*len(error_params), self.plot_height)))
             for k, error in enumerate(error_params):
                 ax = axes[k] if len(error_params)>1 else axes
                 display_order = self.single_metric_plot(
@@ -775,6 +776,7 @@ class MetricAllToolsAccuracyDemographyFigure(MetricAllToolsFigure):
     Simple figure that shows an ARG metrics for a genome under a more complex demographic
     model (the Gutenkunst Out Of Africa model), as mutation rate increases to high values
     """
+    plot_height = 3.5 # To more-or-less match to other supplementary figures
     name = "metric_all_tools_accuracy_demography"
     hide_polytomy_breaking = True
 
