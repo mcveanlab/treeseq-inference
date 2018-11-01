@@ -76,12 +76,12 @@ class Figure(object):
         datafile_name = "data/{}.csv".format(self.name)
         self.data = pd.read_csv(datafile_name)
 
-    def save(self, figure_name=None):
+    def save(self, figure_name=None, bbox_inches="tight"):
         if figure_name is None:
             figure_name = self.name
         print("Saving figure '{}'".format(figure_name))
-        plt.savefig("figures/{}.pdf".format(figure_name), bbox_inches='tight')
-        plt.savefig("figures/{}.png".format(figure_name), bbox_inches='tight')
+        plt.savefig("figures/{}.pdf".format(figure_name), bbox_inches='tight', dpi=400)
+        plt.savefig("figures/{}.png".format(figure_name), bbox_inches='tight', dpi=400)
         plt.close()
 
     def error_label(self, error, label_for_no_error = "No genotyping error"):
@@ -1003,7 +1003,7 @@ class UkbbStructureFigure(Figure):
         order = scipy.cluster.hierarchy.leaves_list(row_linkage)
         x_pop = df.index.values[order]
 
-        cg = sns.clustermap(df[x_pop], row_linkage=row_linkage, col_cluster=False)
+        cg = sns.clustermap(df[x_pop], row_linkage=row_linkage, col_cluster=False, rasterized=True)
         cg.ax_heatmap.set_ylabel("")
         self.save("ukbb_ukbb_clustermap_british")
 
@@ -1018,7 +1018,7 @@ class UkbbStructureFigure(Figure):
         row_linkage = scipy.cluster.hierarchy.linkage(df, method="average")
 
         cg = sns.clustermap(
-            df, row_linkage=row_linkage, col_cluster=False, col_colors=colours)
+            df, row_linkage=row_linkage, col_cluster=False, col_colors=colours, rasterized=True)
         cg.ax_heatmap.set_ylabel("")
         for region, col in get_tgp_region_colours().items():
             cg.ax_col_dendrogram.bar(0, 0, color=col, label=region, linewidth=0)
@@ -1042,7 +1042,7 @@ class UkbbStructureFigure(Figure):
         row_linkage = scipy.cluster.hierarchy.linkage(df, method="average")
 
         cg = sns.clustermap(
-            df, row_linkage=row_linkage, col_cluster=False, col_colors=colours)
+            df, row_linkage=row_linkage, col_cluster=False, col_colors=colours, rasterized=True)
         cg.ax_heatmap.set_ylabel("")
         for region, col in get_tgp_region_colours().items():
             cg.ax_col_dendrogram.bar(0, 0, color=col, label=region, linewidth=0)
@@ -1079,7 +1079,7 @@ class GlobalStructureFigure(Figure):
         colours = pd.Series(pop_colours)
         cg = sns.clustermap(
             dfg[x_pop], row_linkage=row_linkage, col_cluster=False,
-            row_colors=colours, figsize=figsize)
+            row_colors=colours, figsize=figsize, rasterized=True)
         cg.ax_heatmap.set_ylabel("")
 
         for region, col in region_colours.items():
@@ -1102,6 +1102,8 @@ class GlobalStructureFigure(Figure):
 
         cg = self.plot_clustermap(df, colours, region_colours, figsize=(10, 10))
         cg.ax_col_dendrogram.legend(ncol=2)
+        cg.ax_heatmap.set_yticks([])
+        cg.ax_heatmap.set_xticks([])
         self.save("sgdp_gnn_clustermap")
         cg = self.plot_clustermap(df, colours, region_colours, figsize=(30, 30))
         cg.ax_col_dendrogram.legend(ncol=2)
