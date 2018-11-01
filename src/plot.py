@@ -629,7 +629,7 @@ class VCFCompressionFigure(PerformanceLengthSamplesFigure):
 
 
 class NodesWithMutations(PerformanceLengthSamplesFigure):
-    name = "tsinfer_mutation_ancestors_ln"
+    name = "mutation_ancestors_ln"
     plotted_column = "prop_nodes_with_mutation"
     y_axis_label = "Proportion of internal nodes associated with at least one mutation"
 

@@ -2150,7 +2150,7 @@ class CompressionPerformanceFigure(PerformanceLengthSamplesSummary):
         return super().summarize_cols_ending("vcf_compression_factor")
 
 class CompressionPerformanceFigure(PerformanceLengthSamplesSummary):
-    name = "tsinfer_mutation_ancestors_ln"
+    name = "mutation_ancestors_ln"
 
     def summarize(self):
         self.dataset.data['tsinfer_prop_nodes_with_mutation'] = \
