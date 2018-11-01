@@ -76,12 +76,12 @@ class Figure(object):
         datafile_name = "data/{}.csv".format(self.name)
         self.data = pd.read_csv(datafile_name)
 
-    def save(self, figure_name=None):
+    def save(self, figure_name=None, bbox_inches="tight"):
         if figure_name is None:
             figure_name = self.name
         print("Saving figure '{}'".format(figure_name))
-        plt.savefig("figures/{}.pdf".format(figure_name), bbox_inches='tight')
-        plt.savefig("figures/{}.png".format(figure_name), bbox_inches='tight')
+        plt.savefig("figures/{}.pdf".format(figure_name), bbox_inches='tight', dpi=400)
+        plt.savefig("figures/{}.png".format(figure_name), bbox_inches='tight', dpi=400)
         plt.close()
 
     def error_label(self, error, label_for_no_error = "No genotyping error"):
@@ -1003,7 +1003,7 @@ class UkbbStructureFigure(Figure):
         order = scipy.cluster.hierarchy.leaves_list(row_linkage)
         x_pop = df.index.values[order]
 
-        cg = sns.clustermap(df[x_pop], row_linkage=row_linkage, col_cluster=False)
+        cg = sns.clustermap(df[x_pop], row_linkage=row_linkage, col_cluster=False, rasterized=True)
         cg.ax_heatmap.set_ylabel("")
         self.save("ukbb_ukbb_clustermap_british")
 
@@ -1018,7 +1018,7 @@ class UkbbStructureFigure(Figure):
         row_linkage = scipy.cluster.hierarchy.linkage(df, method="average")
 
         cg = sns.clustermap(
-            df, row_linkage=row_linkage, col_cluster=False, col_colors=colours)
+            df, row_linkage=row_linkage, col_cluster=False, col_colors=colours, rasterized=True)
         cg.ax_heatmap.set_ylabel("")
         for region, col in get_tgp_region_colours().items():
             cg.ax_col_dendrogram.bar(0, 0, color=col, label=region, linewidth=0)
@@ -1042,7 +1042,7 @@ class UkbbStructureFigure(Figure):
         row_linkage = scipy.cluster.hierarchy.linkage(df, method="average")
 
         cg = sns.clustermap(
-            df, row_linkage=row_linkage, col_cluster=False, col_colors=colours)
+            df, row_linkage=row_linkage, col_cluster=False, col_colors=colours, rasterized=True)
         cg.ax_heatmap.set_ylabel("")
         for region, col in get_tgp_region_colours().items():
             cg.ax_col_dendrogram.bar(0, 0, color=col, label=region, linewidth=0)
@@ -1079,7 +1079,7 @@ class GlobalStructureFigure(Figure):
         colours = pd.Series(pop_colours)
         cg = sns.clustermap(
             dfg[x_pop], row_linkage=row_linkage, col_cluster=False,
-            row_colors=colours, figsize=figsize)
+            row_colors=colours, figsize=figsize, rasterized=True)
         cg.ax_heatmap.set_ylabel("")
 
         for region, col in region_colours.items():
@@ -1102,17 +1102,77 @@ class GlobalStructureFigure(Figure):
 
         cg = self.plot_clustermap(df, colours, region_colours, figsize=(10, 10))
         cg.ax_col_dendrogram.legend(ncol=2)
+        cg.ax_heatmap.set_yticks([])
+        cg.ax_heatmap.set_xticks([])
         self.save("sgdp_gnn_clustermap")
         cg = self.plot_clustermap(df, colours, region_colours, figsize=(30, 30))
         cg.ax_col_dendrogram.legend(ncol=2)
         self.save("sgdp_gnn_clustermap_full_size")
 
-    def plot(self):
-        self.plot_1kg_clustermap()
-        self.plot_sgdp_clustermap()
+    def plot_pel_population(self):
+        # Same as plot_composite but we don't include the fancy annotations.
 
         colours = get_tgp_region_colours()
+        full_df = pd.read_csv("data/1kg_gnn.csv")
+        df = full_df[full_df.population == "PEL"].reset_index()
+        A = np.zeros((len(tgp_region_pop), len(df)))
 
+        regions = ['EUR', 'EAS', 'SAS', 'AFR', 'AMR']
+        for j, region in enumerate(regions):
+            A[j, :] = np.sum([df[pop].values for pop in tgp_region_pop[region]], axis=0)
+
+        focal_ind = "HG01933"
+        index = np.argsort(A[0])[::-1]
+        inds = df.individual.values
+
+        inds = list(inds[index])
+        x1 = inds.index(focal_ind)
+        x2 = inds.index(focal_ind, x1 + 1)
+
+        A = A[:, index]
+
+        fig, ax = plt.subplots(1, 1, figsize=(17, 3))
+        x = np.arange(len(df))
+        for j, region in enumerate(regions):
+            ax.bar(
+                x, A[j], bottom=np.sum(A[:j, :], axis=0), label=region, width=1,
+                color=colours[region], align="edge")
+        ax.set_xlim(0, len(df) - 1)
+        ax.set_ylim(0, 1)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.axis('off')
+        self.save("1kg_gnn_pel")
+
+        for j in range(2):
+            df = pd.read_csv("data/HG01933_parent_ancestry_{}.csv".format((j + 1) % 2))
+            left = df.left
+            width = df.right - left
+            total = np.zeros_like(width)
+            fig, ax = plt.subplots(1, 1, figsize=(17, 1.5))
+            for region in regions:
+                ax.bar(
+                    left, df[region].values, bottom=total, width=width, align="edge",
+                    label=region, color=colours[region])
+                total += df[region].values
+            # ax.set_title("HG01933 haplotype ({})".format(j + 1))
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_xlim(0, df.right.max())
+            ax.set_ylim(0, 1)
+            ax.axis('off')
+            self.save("1kg_gnn_HG01933_{}".format(j))
+
+
+    def plot(self):
+        self.plot_pel_population()
+        self.plot_1kg_clustermap()
+        self.plot_sgdp_clustermap()
+        self.plot_composite()
+
+    def plot_composite(self):
+
+        colours = get_tgp_region_colours()
         gs = matplotlib.gridspec.GridSpec(2, 2, height_ratios=[4, 1], hspace=0.6)
         fig = plt.figure(figsize=(14, 4))
 
