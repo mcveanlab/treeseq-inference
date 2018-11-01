@@ -200,7 +200,8 @@ def process_sample_edge_outliers():
         name = metadata["individual_id"]
         individual_name_map[name] = individual
 
-    #construct a dictionary linking individual's names to their number of breakpoints within 100bp of each other
+    # construct a dictionary linking individual's names to their number of 
+    # breakpoints within 100bp of each other
     close_breakpoints = dict()
     child = tables.edges.child
     left = tables.edges.left
@@ -212,13 +213,12 @@ def process_sample_edge_outliers():
         left_1 = left[index_1]
         close_100 = 0
         for breakpoint in left_0:
-            close_100 += len(left_1[(left_1 >= breakpoint-100) & (left_1 <= breakpoint+100)])
+            close_100 += len(left_1[(left_1 >= breakpoint - 100) & (left_1 <= breakpoint + 100)])
         close_breakpoints[key] = close_100
 
     print("Average = ", np.mean(list(close_breakpoints.values())))
     for ind in ["NA20289", "HG02789"]:
         print(ind, ":", close_breakpoints[ind])
-
 
 
 def process_1kg_ukbb_gnn():
@@ -258,6 +258,48 @@ def process_ukbb_ukbb_gnn():
     datafile = "data/ukbb_ukbb_british_centre.csv"
     dfg.to_csv(datafile)
 
+def process_ukbb_1kg_duplicates():
+    source_file = os.path.join(data_prefix, "1kg_ukbb_chr20.nosimplify.trees")
+    ts = msprime.load(source_file)
+    print("loaded")
+    tables = ts.tables
+    child_counts = np.bincount(tables.edges.child)
+    samples = ts.samples()
+    all_counts = child_counts[ts.samples()]
+
+    # First find all samples with < 50 edges.
+    candidates = samples[np.where(all_counts < 50)]
+
+    # Now pull out those that are consecutive (i.e. from the same individual)
+    c1 = candidates[np.where(candidates[:-1] == (candidates[1:] - 1))]
+
+    print("Found", c1.shape[0], "matches")
+     
+    edge_child = tables.edges.child
+    edge_parent = tables.edges.parent
+    edge_left = tables.edges.left
+    edge_right = tables.edges.right
+
+    for c in c1:
+        node = ts.node(c)
+        ind = ts.individual(node.individual)
+        print("Individual", ind.id, ind.nodes)
+        for u in [c, c + 1]:
+            print("\tChild", u)
+            index = edge_child == u
+            p = edge_parent[index]
+            length = edge_right[index] - edge_left[index]
+            # Compute the total length covered by all the parents
+            counter = collections.Counter()
+            for parent, L in zip(p, length):
+                counter[parent] += L / ts.sequence_length
+
+            for parent, L in counter.most_common(2):
+                node = ts.node(parent)
+                print("\t\tparent=", parent, "ind=", node.individual, "len=", L)
+                if L > 0.9:
+                    break
+
 def main():
     name_map = {
         "sample_edges": process_sample_edges,
@@ -265,6 +307,7 @@ def main():
         "1kg_ukbb_gnn": process_1kg_ukbb_gnn,
         "ukbb_ukbb_gnn": process_ukbb_ukbb_gnn,
         "hg01933_parent_ancestry": process_hg01933_parent_ancestry,
+        "ukbb_1kg_duplicates": process_ukbb_1kg_duplicates,
     }
 
     parser = argparse.ArgumentParser(
