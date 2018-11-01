@@ -1109,12 +1109,70 @@ class GlobalStructureFigure(Figure):
         cg.ax_col_dendrogram.legend(ncol=2)
         self.save("sgdp_gnn_clustermap_full_size")
 
+    def plot_pel_population(self):
+        # Same as plot_composite but we don't include the fancy annotations.
+
+        colours = get_tgp_region_colours()
+        full_df = pd.read_csv("data/1kg_gnn.csv")
+        df = full_df[full_df.population == "PEL"].reset_index()
+        A = np.zeros((len(tgp_region_pop), len(df)))
+
+        regions = ['EUR', 'EAS', 'SAS', 'AFR', 'AMR']
+        for j, region in enumerate(regions):
+            A[j, :] = np.sum([df[pop].values for pop in tgp_region_pop[region]], axis=0)
+
+        focal_ind = "HG01933"
+        index = np.argsort(A[0])[::-1]
+        inds = df.individual.values
+
+        inds = list(inds[index])
+        x1 = inds.index(focal_ind)
+        x2 = inds.index(focal_ind, x1 + 1)
+
+        A = A[:, index]
+
+        fig, ax = plt.subplots(1, 1, figsize=(14, 3))
+        x = np.arange(len(df))
+        for j, region in enumerate(regions):
+            ax.bar(
+                x, A[j], bottom=np.sum(A[:j, :], axis=0), label=region, width=1,
+                color=colours[region], align="edge")
+        ax.set_xlim(0, len(df) - 1)
+        ax.set_ylim(0, 1)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        self.save("1kg_gnn_pel")
+
+
+        for j in range(2):
+            df = pd.read_csv("data/HG01933_parent_ancestry_{}.csv".format((j + 1) % 2))
+            left = df.left
+            width = df.right - left
+            total = np.zeros_like(width)
+            fig, ax = plt.subplots(1, 1, figsize=(14, 1.5))
+            for region in regions:
+                ax.bar(
+                    left, df[region].values, bottom=total, width=width, align="edge",
+                    label=region, color=colours[region])
+                total += df[region].values
+            # ax.set_title("HG01933 haplotype ({})".format(j + 1))
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_xlim(0, df.right.max())
+            ax.set_ylim(0, 1)
+            ax.axis('off')
+            self.save("1kg_gnn_HG01933_{}".format(j))
+
+
     def plot(self):
         self.plot_1kg_clustermap()
         self.plot_sgdp_clustermap()
+        self.plot_pel_population()
+        self.plot_composite()
+
+    def plot_composite(self):
 
         colours = get_tgp_region_colours()
-
         gs = matplotlib.gridspec.GridSpec(2, 2, height_ratios=[4, 1], hspace=0.6)
         fig = plt.figure(figsize=(14, 4))
 
