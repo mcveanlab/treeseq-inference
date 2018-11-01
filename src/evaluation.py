@@ -999,7 +999,6 @@ class Dataset(object):
         """
         Generate a samples file from a simulated ts based on the empirically estimated 
         error matrix saved in self.error_matrix.
-        Reject any variants that result in a fixed column. 
         """
         record_rate = logging.getLogger().isEnabledFor(logging.INFO)
         n_variants = bits_flipped = 0
