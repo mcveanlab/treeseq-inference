@@ -1035,9 +1035,9 @@ class Dataset(object):
                 genotypes=genotypes)
 
         if error_param != 0:
-            logging.info("Error = {} used with actual error rate = {}".format(
-                error_param,
-                bits_flipped/(n_variants*ts.sample_size)) if record_rate else "")
+            logging.info("Error: {} used; actual error rate = {} over {} sites".format(
+                error_param, bits_flipped/(n_variants*ts.sample_size), n_variants) 
+                if record_rate else "")
       
         sample_data.finalise()
         return sample_data
@@ -1554,7 +1554,8 @@ class TsinferPerformanceDataset(AllToolsPerformanceDataset):
         ERROR_COLNAME : [0],
     }
 
-    extra_sim_cols = ["ts_filesize", "vcf_filesize", "vcfgz_filesize"]
+    extra_sim_cols = ["ts_filesize", "vcf_filesize", "vcfgz_filesize", 
+        "internal_nodes", "internal_nodes_with_mutations"]
 
 
     def single_sim(self, row_id, sim_params, rng):
@@ -1570,6 +1571,9 @@ class TsinferPerformanceDataset(AllToolsPerformanceDataset):
                 break
             except ValueError as e: #No non-singleton variants
                 logging.warning(e)
+        nodes_with_muts = set()
+        for m in ts.mutations():
+            nodes_with_muts.add(m.node)
         vcf_filename = fn + ".vcf"
         with open(vcf_filename, "w") as vcf_file:
             ts.write_vcf(vcf_file, 2)
@@ -1581,6 +1585,8 @@ class TsinferPerformanceDataset(AllToolsPerformanceDataset):
         # only need the file size, so can delete the .gz file too
         os.remove(vcfgz_filename)
         row_data = self.save_within_sim_data(row_id, ts, fn, dict(sim_params,
+            internal_nodes = ts.num_nodes - ts.num_samples,
+            internal_nodes_with_mutations = len(nodes_with_muts - set(ts.samples())),
             ts_filesize = os.path.getsize(fn + ".hdf5"),
             vcf_filesize = vcf_filesize,
             vcfgz_filesize = vcfgz_filesize
@@ -2142,6 +2148,14 @@ class CompressionPerformanceFigure(PerformanceLengthSamplesSummary):
         self.dataset.data['tsinfer_vcf_compression_factor'] = \
             self.dataset.data.vcfgz_filesize / self.dataset.data.tsinfer_ts_filesize
         return super().summarize_cols_ending("vcf_compression_factor")
+
+class CompressionPerformanceFigure(PerformanceLengthSamplesSummary):
+    name = "tsinfer_mutation_ancestors_ln"
+
+    def summarize(self):
+        self.dataset.data['tsinfer_prop_nodes_with_mutation'] = \
+            self.dataset.data.internal_nodes_with_mutations / self.dataset.data.internal_nodes
+        return super().summarize_cols_ending("prop_nodes_with_mutation")
 
 
 class MemTimeFastargTsinferSummary(CputimeMemoryAllToolsSummary):
