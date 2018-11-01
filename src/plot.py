@@ -1131,7 +1131,7 @@ class GlobalStructureFigure(Figure):
 
         A = A[:, index]
 
-        fig, ax = plt.subplots(1, 1, figsize=(14, 3))
+        fig, ax = plt.subplots(1, 1, figsize=(17, 3))
         x = np.arange(len(df))
         for j, region in enumerate(regions):
             ax.bar(
@@ -1141,15 +1141,15 @@ class GlobalStructureFigure(Figure):
         ax.set_ylim(0, 1)
         ax.set_xticks([])
         ax.set_yticks([])
+        ax.axis('off')
         self.save("1kg_gnn_pel")
-
 
         for j in range(2):
             df = pd.read_csv("data/HG01933_parent_ancestry_{}.csv".format((j + 1) % 2))
             left = df.left
             width = df.right - left
             total = np.zeros_like(width)
-            fig, ax = plt.subplots(1, 1, figsize=(14, 1.5))
+            fig, ax = plt.subplots(1, 1, figsize=(17, 1.5))
             for region in regions:
                 ax.bar(
                     left, df[region].values, bottom=total, width=width, align="edge",
@@ -1165,9 +1165,9 @@ class GlobalStructureFigure(Figure):
 
 
     def plot(self):
+        self.plot_pel_population()
         self.plot_1kg_clustermap()
         self.plot_sgdp_clustermap()
-        self.plot_pel_population()
         self.plot_composite()
 
     def plot_composite(self):
