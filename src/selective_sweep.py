@@ -104,7 +104,7 @@ def recapitate_amd_mutate(filename, mu, rho, Ne, seed):
 def simulate_sweep(popsize, chrom_length, recomb_rate, mut_rate, 
     selection_coef, dominance_coef, nsamples, output_at_freqs, 
     mutations_after_simulation = True, equilibration_gens=100,
-    max_generations=1e9, treefile_prefix="sweepfile", seed=None):
+    max_generations=1e9, treefile_prefix="sweepfile", seed=None, slimname="slim"):
     """
     Carry out a simulation of a selective sweep, and save msprime-format files at frequencies
     specified by output_at_freqs, which is a list of (frequency, post_generation) tuples
@@ -144,7 +144,7 @@ def simulate_sweep(popsize, chrom_length, recomb_rate, mut_rate,
             equilibration_gens = equilibration_gens
         )
         print(cmd, file=eidos_file, flush=True)
-        subprocess.call(["slim",eidos_file.name], stdout=subprocess.DEVNULL)
+        subprocess.call([slimname,eidos_file.name], stdout=subprocess.DEVNULL)
     ret_val = {}
     for o in output_at_freqs:
         is_tuple = isinstance(o, tuple)

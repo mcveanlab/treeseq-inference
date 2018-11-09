@@ -50,6 +50,7 @@ fastARG_executable = os.path.join('tools','fastARG','fastARG')
 ARGweaver_executable = os.path.join('tools','argweaver','bin','arg-sample')
 smc2arg_executable = os.path.join('tools','argweaver','bin','smc2arg')
 RentPlus_executable = os.path.join('tools','RentPlus','RentPlus.jar')
+SLiM_executable = os.path.join('tools','SLiM','build','slim')
 tsinfer_executable = os.path.join('src','run_tsinfer.py')
 
 #monkey-patch nexus saving/writing into msprime/tskit
@@ -1324,7 +1325,7 @@ class Dataset(object):
         the specified number of generations after that frequency has been reached (e.g.
         if stop = (1.0, 200), the simulation is stopped 200 generations after fixation.
 
-        Convert the output to multiple .trees files using ftprime. Other
+        Convert the output to multiple .trees files using slim. Other
         details as for single_neutral_simulation()
         Returns an iterator over (treesequence, filename, output_freq) tuples
         (without file type extension)
@@ -1338,7 +1339,7 @@ class Dataset(object):
             "n = {}, Ne = {}, l = {:.2g}, rho = {}, mu = {}, s = {}".format(
                 sample_size, Ne, length, recombination_rate, mutation_rate, selection_coefficient))
         sim_fn = mk_sim_name(sample_size, Ne, length, recombination_rate, mutation_rate, seed, mut_seed, self.simulations_dir,
-            tool="ftprime", s=selection_coefficient, h=dominance_coefficient) + "_f" #freq + post_gens added by simulate_sweep()
+            tool="slim", s=selection_coefficient, h=dominance_coefficient) + "_f" #freq + post_gens added by simulate_sweep()
 
 
         saved_files = simulate_sweep(
@@ -1353,7 +1354,8 @@ class Dataset(object):
             max_generations=int(1e8), #bail after ridiculous numbers of generations
             mutations_after_simulation=True,
             treefile_prefix=sim_fn,
-            seed=seed)
+            seed=seed,
+            slimname=SLiM_executable)
 
         expected_suffix = ".trees"
         for outfreq, fn in saved_files.items():
@@ -1790,7 +1792,7 @@ class AllToolsAccuracyWithSelectiveSweepDataset(Dataset):
                 for ts, fn, out_info in self.single_simulation_with_selective_sweep(
                     stop_freqs = stop_freqs, **sim_params):
                     #create new parameters to save to the csv file
-                    params = {SIMTOOL_COLNAME:    'ftprime',
+                    params = {SIMTOOL_COLNAME:    'slim',
                         SELECTED_FREQ_COLNAME:    out_info[0],
                         SELECTED_POSTGEN_COLNAME: out_info[1] if len(out_info)>1 else 0}
                     params.update(sim_params)
