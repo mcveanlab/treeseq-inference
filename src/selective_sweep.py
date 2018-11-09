@@ -75,7 +75,7 @@ def output_to_msprime(pop, recomb_collector, treefile_prefix, nsamples, mut_rate
             logging.info("----------")
             
             fn = treefile_prefix + output[0] + \
-                ("+{}".format(output[1]) if len(output)>1 else "") + ".hdf5"
+                ("+{}".format(output[1]) if len(output)>1 else "") + ".trees"
             if mutations_after_simulation:
                 ts = msprime.mutate(
                     ts, mut_rate, random_seed=random.randint(1, 2**32 - 1), keep=True)
@@ -262,7 +262,7 @@ def main():
     parser.add_argument("-k","--nsamples", dest="nsamples", type=int,
             help="Number of *diploid* samples, total", default=100)
     parser.add_argument("--treefile_prefix","-t", type=str, dest="treefile_prefix",
-            help="Prefix used when saving treefiles (will have freq+gens .hdf5 appended)", default="sweepfile")
+            help="Prefix used when saving treefiles (will have freq+gens .trees appended)", default="sweepfile")
     parser.add_argument("-B","--generations_before_sweep", dest="generations_before_sweep", type=int, default=0,
             help="Start introducing the selective variant this many generations into the simulation")
     parser.add_argument("-M","--max_generations", dest="max_generations", type=int, default=int(1e6),

@@ -104,11 +104,11 @@ def resolve_polytomy_jk(old_edgesets_with_shared_parent, new_edgesets, nodes):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description='Test polytomy resolving')
-    parser.add_argument('--sample_size', '-n', type=int, default=5, help='the sample size if an hdf5 file is not given')
-    parser.add_argument('--effective_population_size', '-Ne', type=float, default=5000, help='the effective population size if an hdf5 file is not given')
-    parser.add_argument('--sequence_length', '-l', type=float, default=55000, help='the sequence length if an hdf5 file is not given')
-    parser.add_argument('--recombination_rate', '-rho', type=float, default=2.5e-8, help='the recombination rate if an hdf5 file is not given')
-    parser.add_argument('--mutation_rate', '-mu', type=float, default=5e-8, help='the mutation rate if an hdf5 file is not given')
+    parser.add_argument('--sample_size', '-n', type=int, default=5, help='the sample size if an .trees file is not given')
+    parser.add_argument('--effective_population_size', '-Ne', type=float, default=5000, help='the effective population size')
+    parser.add_argument('--sequence_length', '-l', type=float, default=55000, help='the sequence length')
+    parser.add_argument('--recombination_rate', '-rho', type=float, default=2.5e-8, help='the recombination rate')
+    parser.add_argument('--mutation_rate', '-mu', type=float, default=5e-8, help='the mutation rate')
     parser.add_argument('--random_seed', '-seed', type=int, default=1234, help='a random seed for msprime & AW simulation')
     parser.add_argument('--verbosity', '-v', action='count', default=0)
     args = parser.parse_args()
