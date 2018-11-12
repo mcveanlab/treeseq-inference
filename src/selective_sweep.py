@@ -1,14 +1,17 @@
-import tempfile
 import subprocess
-import logging
+import random
 import string
+import logging
+
+import argparse
 
 import msprime, pyslim
 
 eidos_cmd = string.Template("""
 function (void)save_treeseq(string prefix, string string_freq, integer ogens) {
-	catn("Saving in generation " + sim.generation);
-	sim.treeSeqOutput(prefix+string_freq+(ogens ? format("+%i", ogens) else "")+".decap");
+	fn = prefix+string_freq+(ogens ? format("+%i", ogens) else "")+".decap";
+	catn("Saving " + fn + " in generation " + sim.generation);
+	sim.treeSeqOutput(fn);
 }
 
 function (void)check_freq_save(integer freq_index) {
@@ -31,7 +34,7 @@ function (void)check_freq_save(integer freq_index) {
 }
 
 function (void)register_freq_check(integer f_index) {
-	sim.registerLateEvent(f_index, format("{check_freq_save(%i);}", f_index), $equilibration_gens, NULL);
+	sim.registerLateEvent(f_index, format("{check_freq_save(%i);}", f_index), sim.generation+1);
 }
 
 initialize() {
@@ -50,14 +53,18 @@ initialize() {
 	defineConstant("output_at_freq_float", freq_float[order(freq_float)]);
 	defineConstant("output_after_fixation_gens", output_generations_after_fixation);
 	defineConstant("treefile_prefix", "$treefile_prefix");
+	catn("Saving to " + treefile_prefix);
 }
 
 1 late() {
     sim.addSubpop("p0", $popsize);
+}
+
+$equilibration_gens {
 	register_freq_check(0);
 }
 
-// Allow {equilibration_gens} generations for equilibrating before 
+// Allow $equilibration_gens generations for equilibrating before 
 $equilibration_gens: late() {
 	if (sim.substitutions.size()) {
 		catn("Fixed in generation " + sim.generation);
@@ -94,7 +101,6 @@ def comma_separated_list(arr):
     '''
     return "{}".format(arr)[1:-1]
 
-
 def recapitate_amd_mutate(filename, mu, rho, Ne, seed):
     ts = pyslim.load(filename) #no simplify
     ts = ts.recapitate(recombination_rate=rho, Ne=Ne, random_seed=seed)
@@ -127,24 +133,28 @@ def simulate_sweep(popsize, chrom_length, recomb_rate, mut_rate,
             freq_to_output.add(freq)
 
     eidos_seed_cmd = "" if seed is None else "setSeed({});".format(int(seed))
-    with tempfile.NamedTemporaryFile(mode="w+t") as eidos_file:
-        #use a temporary file for the SLiM commands until https://github.com/MesserLab/SLiM/issues/24 is addressed 
-        cmd = eidos_cmd.substitute(
-            set_random_seed_cmd = eidos_seed_cmd,
-            treefile_prefix = treefile_prefix,
-            dominance_coefficient = dominance_coef,
-            selection_coefficient = selection_coef,
-            mutant_position = chrom_length//2,
-            popsize = popsize,
-            length = chrom_length,
-            recombination_rate = recomb_rate,
-            freq_strings = comma_separated_list(freq_to_output),
-            output_gens  = comma_separated_list(gens_post_fixation_to_output),
-            max_generations = int(max_generations),
-            equilibration_gens = equilibration_gens
-        )
-        print(cmd, file=eidos_file, flush=True)
-        subprocess.call([slimname,eidos_file.name], stdout=subprocess.DEVNULL)
+    cmd = eidos_cmd.substitute(
+        set_random_seed_cmd = eidos_seed_cmd,
+        treefile_prefix = treefile_prefix,
+        dominance_coefficient = dominance_coef,
+        selection_coefficient = selection_coef,
+        mutant_position = chrom_length//2,
+        popsize = popsize,
+        length = chrom_length,
+        recombination_rate = recomb_rate,
+        freq_strings = comma_separated_list(freq_to_output),
+        output_gens  = comma_separated_list(gens_post_fixation_to_output),
+        max_generations = int(max_generations),
+        equilibration_gens = equilibration_gens
+    )
+
+    process = subprocess.Popen(slimname,
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, 
+        universal_newlines=True)
+    process.stdin.write(cmd)
+    process.stdin.close()
+    for line in iter(process.stdout.readline, ''):
+        logging.info(line.rstrip()) # do something with the output here
     ret_val = {}
     for o in output_at_freqs:
         is_tuple = isinstance(o, tuple)
@@ -159,6 +169,20 @@ def simulate_sweep(popsize, chrom_length, recomb_rate, mut_rate,
     return ret_val
 
 if __name__ == '__main__':
-    simulate_sweep(
-        5000, 100000, 1e-8, 1e-8, 0.1, 0.5, 16,  
-        output_at_freqs=['0.2', '0.5', '0.8', '1.0', ('1.0', 200), ('1.0', 100)])
+    parser = argparse.ArgumentParser(description="Make the plots for specific figures.")
+    parser.add_argument("--seed", "-s", type=int, help="run a single simulation with this seed")
+    parser.add_argument("-v", "--verbose", help="increase output verbosity",
+                    action="store_true")
+
+    args = parser.parse_args()
+    if args.verbose:
+        logging.basicConfig(level=logging.DEBUG)
+
+
+    random.seed(123)
+    for i in range(1 if args.seed else 100): #repeat 100 times
+        seed = args.seed or random.randint(1,1000000)
+        simulate_sweep(
+            5000, 100000, 1e-8, 0.000000132288, 0.1, 0.5, 16,  
+            output_at_freqs=['0.2', '0.5', '0.8', '1.0', ('1.0', 200), ('1.0', 1000)], 
+            seed = seed, treefile_prefix="sim{}_".format(seed), slimname="./tools/SLiM/build/slim")
