@@ -53,7 +53,6 @@ initialize() {
 	defineConstant("output_at_freq_float", freq_float[order(freq_float)]);
 	defineConstant("output_after_fixation_gens", output_generations_after_fixation);
 	defineConstant("treefile_prefix", "$treefile_prefix");
-	catn("Saving to " + treefile_prefix);
 }
 
 1 late() {
@@ -84,7 +83,7 @@ $equilibration_gens: late() {
 	} else if (sim.countOfMutationsOfType(m1) == 0) { //no mutations, must introduce
 		target = sample(sim.subpopulations.genomes, 1);
 		target.addNewDrawnMutation(m1, $mutant_position);
-		catn("Introduced in generation " + sim.generation);
+		catn("Introduced new advantageous mutant in generation " + sim.generation);
 	}
 }
 
@@ -153,8 +152,15 @@ def simulate_sweep(popsize, chrom_length, recomb_rate, mut_rate,
         universal_newlines=True)
     process.stdin.write(cmd)
     process.stdin.close()
+    suppress_header_line = 3
     for line in iter(process.stdout.readline, ''):
-        logging.info(line.rstrip()) # do something with the output here
+        if suppress_header_line:
+            if suppress_header_line != 3:
+                suppress_header_line -= 1 #decrement
+            if line.startswith("// Starting run at generation"):
+                suppress_header_line = 2 #this is the penultimate line of the header
+        else:
+            logging.info(line.rstrip())
     ret_val = {}
     for o in output_at_freqs:
         is_tuple = isinstance(o, tuple)
