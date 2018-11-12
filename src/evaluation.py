@@ -1037,9 +1037,9 @@ class Dataset(object):
                 position=v.site.position, alleles=v.alleles,
                 genotypes=genotypes)
 
-            if record_rate and (error_param != 0):
-                logging.info(" actual error rate = {} over {} sites".format(
-                    bits_flipped/(n_variants*ts.sample_size), n_variants))
+        if record_rate and (error_param != 0):
+            logging.info(" actual error rate = {} over {} sites".format(
+                bits_flipped/(n_variants*ts.sample_size), n_variants))
 
         sample_data.finalise()
         return sample_data
