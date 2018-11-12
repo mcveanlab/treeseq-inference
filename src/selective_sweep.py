@@ -172,6 +172,7 @@ def simulate_sweep(popsize, chrom_length, recomb_rate, mut_rate,
         fn += ".trees"
         ts.dump(fn)
         ret_val[o] = fn
+        logging.info("Finished recapitating and mutating " + fn)
     return ret_val
 
 if __name__ == '__main__':
