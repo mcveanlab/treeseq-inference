@@ -1005,6 +1005,8 @@ class Dataset(object):
         n_variants = bits_flipped = 0
         assert ts.num_sites != 0
         sample_data = tsinfer.SampleData(path=filename+".samples", sequence_length=ts.sequence_length)
+        if error_param != 0:
+            logging.info("Adding genotyping error: {} used".format(error_param))
         for v in ts.variants():
             n_variants += 1
     
@@ -1035,11 +1037,10 @@ class Dataset(object):
                 position=v.site.position, alleles=v.alleles,
                 genotypes=genotypes)
 
-        if error_param != 0:
-            logging.info("Error: {} used; actual error rate = {} over {} sites".format(
-                error_param, bits_flipped/(n_variants*ts.sample_size), n_variants) 
-                if record_rate else "")
-      
+            if record_rate:
+                logging.info(" actual error rate = {} over {} sites".format(
+                    bits_flipped/(n_variants*ts.sample_size), n_variants))
+
         sample_data.finalise()
         return sample_data
     
