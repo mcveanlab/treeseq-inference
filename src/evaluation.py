@@ -996,7 +996,7 @@ class Dataset(object):
             "A dataset should implement a single_sim method that runs" \
             " a simulation, e.g. by calling self.single_neutral_simulation")
 
-    def generate_samples(self, ts, filename, error_param=0):
+    def generate_samples(self, ts, fn, error_param=0):
         """
         Generate a samples file from a simulated ts based on the empirically estimated 
         error matrix saved in self.error_matrix.
@@ -1004,9 +1004,11 @@ class Dataset(object):
         record_rate = logging.getLogger().isEnabledFor(logging.INFO)
         n_variants = bits_flipped = 0
         assert ts.num_sites != 0
-        sample_data = tsinfer.SampleData(path=filename+".samples", sequence_length=ts.sequence_length)
+        fn += ".samples"
+        sample_data = tsinfer.SampleData(path=fn, sequence_length=ts.sequence_length)
         if error_param != 0:
-            logging.info("Adding genotyping error: {} used".format(error_param))
+            logging.info("Adding genotyping error: {} used for file {}".format(
+                error_param, fn))
         for v in ts.variants():
             n_variants += 1
     
