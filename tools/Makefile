@@ -21,6 +21,6 @@ RentPlus:
 
 SLiM:
 	#this is used for the file selective_sweep.py
-	git clone --branch v3.2 https://github.com/MesserLab/SLiM
-	mkdir SLiM/build && cd SLiM/build && cmake ../
+	git clone https://github.com/MesserLab/SLiM
+	cd SLiM && git checkout 58d41bef3d4363ca3c9e571ae1f34a5540e89eaa && mkdir build && cd build && cmake ../
 
