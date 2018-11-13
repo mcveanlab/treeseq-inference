@@ -1031,7 +1031,6 @@ class UkbbStructureFigure(Figure):
         # Push Croydon (furthest east) to the end
         rotate_linkage(row_linkage, -21)
 
-        print(row_linkage)
         order = scipy.cluster.hierarchy.leaves_list(row_linkage)
         x_pop = df.index.values[order]
 
