@@ -143,25 +143,30 @@ def run_comparisons(params):
         distance = int(abs(mutation_positions[combo[0]] - mutation_positions[combo[1]]))
         
         if (age1[1] != age2[1]):
-            total[distance//bin_size] += 1
+            if (freq1 > 1/sample_size) and (freq2 > 1/sample_size) and (freq1 < (sample_size-1)/sample_size) and (freq2 < (sample_size-1)/sample_size):
+                total[distance//bin_size] += 1
 
-            if (freq1 != freq2):
-                if ((age1[1] < age2[1]) == (freq1 < freq2)):
-                    agree[distance//bin_size] += 1
+                if (freq1 != freq2):
+                    if ((age1[1] < age2[1]) == (freq1 < freq2)):
+                        agree[distance//bin_size] += 1
 
-            else:
-                if (random.choice([True, False])):
-                    agree[distance//bin_size] += 1
+                else:
+                    if (random.choice([True, False])):
+                        agree[distance//bin_size] += 1
 
-            if (freq1_error != freq2_error):
-                if ((age1[1] < age2[1]) == (freq1_error < freq2_error)):
-                    agree_error[distance//bin_size] += 1
+            if (freq1_error > 1/sample_size) and (freq2_error > 1/sample_size) and (freq1_error < (sample_size-1)/sample_size) and (freq2_error < (sample_size-1)/sample_size):
 
-            else:
-                if (random.choice([True, False])):
-                    agree_error[distance//bin_size] += 1
+                total_error[distance//bin_size] += 1
 
-    return total, agree, agree_error
+                if (freq1_error != freq2_error):
+                    if ((age1[1] < age2[1]) == (freq1_error < freq2_error)):
+                        agree_error[distance//bin_size] += 1
+
+                else:
+                    if (random.choice([True, False])):
+                        agree_error[distance//bin_size] += 1
+
+    return total, total_error, agree, agree_error
 
 
 
@@ -190,7 +195,7 @@ if __name__ == "__main__":
     random_seeds = np.random.randint(1 , 2**32, size = args.replicates)
     run_params = zip(
         itertools.repeat(50),     # sample_size
-        itertools.repeat(5000),   # Ne 
+        itertools.repeat(10000),   # Ne 
         itertools.repeat(args.length), # length
         itertools.repeat(1e-8), # recomb_rate
         itertools.repeat(1e-8), # mut_rate
@@ -203,14 +208,16 @@ if __name__ == "__main__":
         "SeparationDistanceEnd":(np.arange(0, args.bins)+1)*(args.length//args.bins)-1,
         "Agree":np.zeros(args.bins),
         "Total":np.zeros(args.bins),
-        "ErrorAgree":np.zeros(args.bins)})
+        "ErrorAgree":np.zeros(args.bins),
+        "TotalError":np.zeros(args.bins)})
     
     if args.processes > 1:
         logging.info("Setting up using multiprocessing ({} processes)".format(args.processes))
         with multiprocessing.Pool(processes=args.processes, maxtasksperchild=2) as pool:
-            for total, agree, agree_error in tqdm.tqdm(
+            for total, total_error, agree, agree_error in tqdm.tqdm(
                 pool.imap_unordered(run_comparisons, run_params), total=args.replicates, disable=not args.progress):
                 df.Total += total
+                df.TotalError += total_error
                 df.Agree += agree
                 df.ErrorAgree += agree_error
                 
@@ -221,6 +228,7 @@ if __name__ == "__main__":
         for total, agree, agree_error in tqdm.tqdm(
             map(run_comparisons, run_params), total=args.replicates, disable=not args.progress):
             df.Total += total
+            df.TotalError += total_error
             df.Agree += agree
             df.ErrorAgree += agree_error
 
