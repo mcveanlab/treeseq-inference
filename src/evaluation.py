@@ -111,42 +111,28 @@ def make_errors_genotype_model(g, error_probs):
     Given an empirically estimated error probability matrix, resample for a particular
     variant. Determine variant frequency and true genotype (g0, g1, or g2),
     then return observed genotype based on row in error_probs with nearest
-    frequency. Treat each pair of alleles as a diploid individual. 
+    frequency. Treat each pair of alleles as a diploid individual.
     """
     w = np.copy(g)
     
-    #Make diploid (iterate each pair of alleles)
-    genos=[(w[i],w[i+1]) for i in range(0,w.shape[0],2)]
-    
-    #Record the true genotypes
-    g0 = [i for i, x in enumerate(genos) if x == (0,0)]
-    g1a = [i for i, x in enumerate(genos) if x == (1,0)]
-    g1b = [i for i, x in enumerate(genos) if x == (0,1)]
-    g2 = [i for i, x in enumerate(genos) if x == (1,1)]
-    
+    # Make diploid (iterate each pair of alleles)
+    genos = np.reshape(g,(-1,2))
 
-    for idx in g0:
-        result=[(0,0),(1,0),(1,1)][np.random.choice(3,
-            p=error_probs[['p00','p01','p02']].values[0])]
-        if result == (1,0):
-            genos[idx]=[(0,1),(1,0)][np.random.choice(2)]
-        else:
-            genos[idx] = result
-    for idx in g1a:
-        genos[idx]=[(0,0),(1,0),(1,1)][np.random.choice(3,
-            p=error_probs[['p10','p11','p12']].values[0])]
-    for idx in g1b:
-        genos[idx]=[(0,0),(0,1),(1,1)][np.random.choice(3,
-            p=error_probs[['p10','p11','p12']].values[0])]
-    for idx in g2:
-        result=[(0,0),(1,0),(1,1)][np.random.choice(3,
-            p=error_probs[['p20','p21','p22']].values[0])]
-        if result == (1,0):
-            genos[idx]=[(0,1),(1,0)][np.random.choice(2)]
-        else:
-            genos[idx] = result
-            
-    return(np.array(sum(genos, ())))
+    # Record the true genotypes (0,0=>0; 1,0=>1; 0,1=>2, 1,1=>3)
+    count = np.sum(np.array([1,2]) * genos,axis=1)
+    
+    base_genotypes = np.array([[0, 0], [1, 0], [0, 1], [1, 1]])
+    
+    genos[count==0,:]=base_genotypes[
+        np.random.choice(4,sum(count==0), p=error_probs[['p00', 'p01','p01', 'p02']].values[0]*[1,0.5,0.5,1]),:]
+    genos[count==1,:]=base_genotypes[[0,1,3],:][
+        np.random.choice(3,sum(count==1), p=error_probs[['p10', 'p11', 'p12']].values[0]),:]
+    genos[count==2,:]=base_genotypes[[0,2,3],:][
+        np.random.choice(3,sum(count==2), p=error_probs[['p10', 'p11', 'p12']].values[0]),:]
+    genos[count==3,:]=base_genotypes[
+        np.random.choice(4,sum(count==3), p=error_probs[['p20', 'p21', 'p21', 'p22']].values[0]*[1,0.5,0.5,1]),:]
+
+    return(np.reshape(genos,-1))
 
 
 def mk_sim_name(sample_size, Ne, length, recombination_rate, mutation_rate, seed, 
@@ -1010,8 +996,7 @@ class Dataset(object):
             logging.info("Adding genotyping error: {} used for file {}".format(
                 error_param, fn))
         for v in ts.variants():
-            n_variants += 1
-    
+            n_variants += 1    
             try:
                 error_param = float(error_param)
                 if error_param == 0:
