@@ -116,7 +116,7 @@ def make_errors_genotype_model(g, error_probs):
     w = np.copy(g)
     
     # Make diploid (iterate each pair of alleles)
-    genos = np.reshape(g,(-1,2))
+    genos = np.reshape(w,(-1,2))
 
     # Record the true genotypes (0,0=>0; 1,0=>1; 0,1=>2, 1,1=>3)
     count = np.sum(np.array([1,2]) * genos,axis=1)
