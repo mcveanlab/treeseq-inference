@@ -156,7 +156,7 @@ def mk_sim_name(sample_size, Ne, length, recombination_rate, mutation_rate, seed
         file += "_h{}".format(h)
     if freq is not None:
         file += "_f{}".format(freq)
-        if post_gens is not None:
+        if post_gens:
             file += "+{}".format(post_gens)
     if directory is None:
         return file
