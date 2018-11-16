@@ -1329,7 +1329,7 @@ class Dataset(object):
         sim_fn = mk_sim_name(sample_size, Ne, length, recombination_rate, mutation_rate, seed, mut_seed, self.simulations_dir,
             tool="slim", s=selection_coefficient, h=dominance_coefficient) + "_f" #freq + post_gens added by simulate_sweep()
 
-
+        assert sample_size%2 == 0
         saved_files = simulate_sweep(
             popsize = Ne,
             chrom_length = length,

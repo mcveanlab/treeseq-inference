@@ -100,10 +100,10 @@ def comma_separated_list(arr):
     '''
     return "{}".format(arr)[1:-1]
 
-def recapitate_amd_mutate(filename, mu, rho, Ne, seed):
+def recapitate_mutate_simplify(filename, mu, rho, Ne, samples, seed):
     ts = pyslim.load(filename) #no simplify
     ts = ts.recapitate(recombination_rate=rho, Ne=Ne, random_seed=seed)
-    return msprime.mutate(ts, mu, random_seed=seed, keep=True)
+    return msprime.mutate(ts, mu, random_seed=seed, keep=True).simplify(samples)
 
 
 def simulate_sweep(popsize, chrom_length, recomb_rate, mut_rate, 
@@ -162,13 +162,15 @@ def simulate_sweep(popsize, chrom_length, recomb_rate, mut_rate,
         else:
             logging.info(line.rstrip())
     ret_val = {}
+    samples = list(range(nsamples*2)) #pick the first 0..(2n-1) haploid genomes
     for o in output_at_freqs:
         is_tuple = isinstance(o, tuple)
         freq = o[0] if is_tuple else o        
         fn = treefile_prefix + freq
         if is_tuple and len(o)>1 and o[1]:
             fn += "+%i" % o[1]
-        ts = recapitate_amd_mutate(fn + ".decap", mut_rate, recomb_rate, popsize, seed)
+        ts = recapitate_mutate_simplify(
+            fn + ".decap", mut_rate, recomb_rate, popsize, samples, seed)
         fn += ".trees"
         ts.dump(fn)
         ret_val[o] = fn
