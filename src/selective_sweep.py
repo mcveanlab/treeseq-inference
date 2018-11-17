@@ -2,8 +2,9 @@ import subprocess
 import random
 import string
 import logging
-
 import argparse
+
+import numpy as np
 
 import msprime, pyslim
 
@@ -103,7 +104,9 @@ def comma_separated_list(arr):
 def recapitate_mutate_simplify(filename, mu, rho, Ne, samples, seed):
     ts = pyslim.load(filename) #no simplify
     ts = ts.recapitate(recombination_rate=rho, Ne=Ne, random_seed=seed)
-    return msprime.mutate(ts, mu, random_seed=seed, keep=True).simplify(samples)
+    terminal_nodes = [n.id for n in ts.nodes() if n.is_sample() and n.time==0]
+    terminal_samples = np.array(terminal_nodes, dtype=np.int32)[samples]
+    return msprime.mutate(ts, mu, random_seed=seed, keep=True).simplify(terminal_samples)
 
 
 def simulate_sweep(popsize, chrom_length, recomb_rate, mut_rate, 
