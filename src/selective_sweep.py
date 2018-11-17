@@ -101,12 +101,10 @@ def comma_separated_list(arr):
     '''
     return "{}".format(arr)[1:-1]
 
-def recapitate_mutate_simplify(filename, mu, rho, Ne, samples, seed):
-    ts = pyslim.load(filename) #no simplify
+def recapitate_mutate_simplify(ts, mu, rho, Ne, samples, seed):
     ts = ts.recapitate(recombination_rate=rho, Ne=Ne, random_seed=seed)
-    terminal_nodes = [n.id for n in ts.nodes() if n.is_sample() and n.time==0]
-    terminal_samples = np.array(terminal_nodes, dtype=np.int32)[samples]
-    return msprime.mutate(ts, mu, random_seed=seed, keep=True).simplify(terminal_samples)
+    subsamples = ts.samples()[samples]
+    return msprime.mutate(ts, mu, random_seed=seed, keep=True).simplify(subsamples)
 
 
 def simulate_sweep(popsize, chrom_length, recomb_rate, mut_rate, 
@@ -165,15 +163,16 @@ def simulate_sweep(popsize, chrom_length, recomb_rate, mut_rate,
         else:
             logging.info(line.rstrip())
     ret_val = {}
-    samples = list(range(nsamples*2)) #pick the first 0..(2n-1) haploid genomes
     for o in output_at_freqs:
         is_tuple = isinstance(o, tuple)
         freq = o[0] if is_tuple else o        
         fn = treefile_prefix + freq
         if is_tuple and len(o)>1 and o[1]:
             fn += "+%i" % o[1]
-        ts = recapitate_mutate_simplify(
-            fn + ".decap", mut_rate, recomb_rate, popsize, samples, seed)
+        #pick a different N samples each time (the recapitation may be different anyway)
+        ts = pyslim.load(fn + ".decap") #no simplify
+        samp = np.random.choice(ts.num_samples, nsamples*2, replace=False)
+        ts = recapitate_mutate_simplify(ts, mut_rate, recomb_rate, popsize, samp, seed)
         fn += ".trees"
         ts.dump(fn)
         ret_val[o] = fn
