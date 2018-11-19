@@ -519,7 +519,7 @@ class InferenceRunner(object):
                     " (https://github.com/SajadMirzaei/RentPlus/issues/5),"\
                     " aborting this replicate.")
             elif "main.Main.makeDistanceMatrices(Main.java:228)":
-                logging.warning("RENTplus bug hit"\
+                logging.warning("RENTplus bug hit for samples with no variable sites"\
                     " (https://github.com/SajadMirzaei/RentPlus/issues/6),"\
                     " aborting this replicate.")
             else:
