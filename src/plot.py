@@ -1003,9 +1003,34 @@ class UkbbStructureFigure(Figure):
         for col in list(df):
             df[col] = scipy.stats.zscore(df[col])
 
-        row_linkage = scipy.cluster.hierarchy.linkage(df, method="average")
-        # Flip the london clade to be on the bottom
-        rotate_linkage(row_linkage, -2)
+        row_linkage = scipy.cluster.hierarchy.linkage(df, method="average", optimal_ordering=True)
+        
+        # Tweaks to the clade rotation order
+        # Flip the north vs north-west cities
+        rotate_linkage(row_linkage, -3)
+        
+        # Put Welsh towns next to Birmingham
+        rotate_linkage(row_linkage, -8)
+        
+        # Do Leeds - Sheffield - Nottingham, not Nottingham - Sheffield - Leeds
+        # (this simply helps the top-to-bottom labelling scheme
+        rotate_linkage(row_linkage, -9)
+        rotate_linkage(row_linkage, -11)
+
+        # Bristol near Welsh towns
+        rotate_linkage(row_linkage, -12)
+
+        # Swansea then Cardiff (highlights association between Cardiff & Bristol)
+        rotate_linkage(row_linkage, -15)
+        
+        # The south/south-east centres are a bit visually messy - try putting east at end
+        # Oxford near Bristol
+        rotate_linkage(row_linkage, -16)
+        # Reading nearer Oxford
+        rotate_linkage(row_linkage, -20)
+        # Push Croydon (furthest east) to the end
+        rotate_linkage(row_linkage, -21)
+
         order = scipy.cluster.hierarchy.leaves_list(row_linkage)
         x_pop = df.index.values[order]
 
