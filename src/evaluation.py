@@ -50,6 +50,7 @@ fastARG_executable = os.path.join('tools','fastARG','fastARG')
 ARGweaver_executable = os.path.join('tools','argweaver','bin','arg-sample')
 smc2arg_executable = os.path.join('tools','argweaver','bin','smc2arg')
 RentPlus_executable = os.path.join('tools','RentPlus','RentPlus.jar')
+SLiM_executable = os.path.join('tools','SLiM','build','slim')
 tsinfer_executable = os.path.join('src','run_tsinfer.py')
 
 #monkey-patch nexus saving/writing into msprime/tskit
@@ -110,42 +111,28 @@ def make_errors_genotype_model(g, error_probs):
     Given an empirically estimated error probability matrix, resample for a particular
     variant. Determine variant frequency and true genotype (g0, g1, or g2),
     then return observed genotype based on row in error_probs with nearest
-    frequency. Treat each pair of alleles as a diploid individual. 
+    frequency. Treat each pair of alleles as a diploid individual.
     """
     w = np.copy(g)
     
-    #Make diploid (iterate each pair of alleles)
-    genos=[(w[i],w[i+1]) for i in range(0,w.shape[0],2)]
-    
-    #Record the true genotypes
-    g0 = [i for i, x in enumerate(genos) if x == (0,0)]
-    g1a = [i for i, x in enumerate(genos) if x == (1,0)]
-    g1b = [i for i, x in enumerate(genos) if x == (0,1)]
-    g2 = [i for i, x in enumerate(genos) if x == (1,1)]
-    
+    # Make diploid (iterate each pair of alleles)
+    genos = np.reshape(w,(-1,2))
 
-    for idx in g0:
-        result=[(0,0),(1,0),(1,1)][np.random.choice(3,
-            p=error_probs[['p00','p01','p02']].values[0])]
-        if result == (1,0):
-            genos[idx]=[(0,1),(1,0)][np.random.choice(2)]
-        else:
-            genos[idx] = result
-    for idx in g1a:
-        genos[idx]=[(0,0),(1,0),(1,1)][np.random.choice(3,
-            p=error_probs[['p10','p11','p12']].values[0])]
-    for idx in g1b:
-        genos[idx]=[(0,0),(0,1),(1,1)][np.random.choice(3,
-            p=error_probs[['p10','p11','p12']].values[0])]
-    for idx in g2:
-        result=[(0,0),(1,0),(1,1)][np.random.choice(3,
-            p=error_probs[['p20','p21','p22']].values[0])]
-        if result == (1,0):
-            genos[idx]=[(0,1),(1,0)][np.random.choice(2)]
-        else:
-            genos[idx] = result
-            
-    return(np.array(sum(genos, ())))
+    # Record the true genotypes (0,0=>0; 1,0=>1; 0,1=>2, 1,1=>3)
+    count = np.sum(np.array([1,2]) * genos,axis=1)
+    
+    base_genotypes = np.array([[0, 0], [1, 0], [0, 1], [1, 1]])
+    
+    genos[count==0,:]=base_genotypes[
+        np.random.choice(4,sum(count==0), p=error_probs[['p00', 'p01','p01', 'p02']].values[0]*[1,0.5,0.5,1]),:]
+    genos[count==1,:]=base_genotypes[[0,1,3],:][
+        np.random.choice(3,sum(count==1), p=error_probs[['p10', 'p11', 'p12']].values[0]),:]
+    genos[count==2,:]=base_genotypes[[0,2,3],:][
+        np.random.choice(3,sum(count==2), p=error_probs[['p10', 'p11', 'p12']].values[0]),:]
+    genos[count==3,:]=base_genotypes[
+        np.random.choice(4,sum(count==3), p=error_probs[['p20', 'p21', 'p21', 'p22']].values[0]*[1,0.5,0.5,1]),:]
+
+    return(np.reshape(genos,-1))
 
 
 def mk_sim_name(sample_size, Ne, length, recombination_rate, mutation_rate, seed, 
@@ -169,7 +156,7 @@ def mk_sim_name(sample_size, Ne, length, recombination_rate, mutation_rate, seed
         file += "_h{}".format(h)
     if freq is not None:
         file += "_f{}".format(freq)
-        if post_gens is not None:
+        if post_gens:
             file += "+{}".format(post_gens)
     if directory is None:
         return file
@@ -532,7 +519,7 @@ class InferenceRunner(object):
                     " (https://github.com/SajadMirzaei/RentPlus/issues/5),"\
                     " aborting this replicate.")
             elif "main.Main.makeDistanceMatrices(Main.java:228)":
-                logging.warning("RENTplus bug hit"\
+                logging.warning("RENTplus bug hit for samples with no variable sites"\
                     " (https://github.com/SajadMirzaei/RentPlus/issues/6),"\
                     " aborting this replicate.")
             else:
@@ -995,7 +982,7 @@ class Dataset(object):
             "A dataset should implement a single_sim method that runs" \
             " a simulation, e.g. by calling self.single_neutral_simulation")
 
-    def generate_samples(self, ts, filename, error_param=0):
+    def generate_samples(self, ts, fn, error_param=0):
         """
         Generate a samples file from a simulated ts based on the empirically estimated 
         error matrix saved in self.error_matrix.
@@ -1003,10 +990,13 @@ class Dataset(object):
         record_rate = logging.getLogger().isEnabledFor(logging.INFO)
         n_variants = bits_flipped = 0
         assert ts.num_sites != 0
-        sample_data = tsinfer.SampleData(path=filename+".samples", sequence_length=ts.sequence_length)
+        fn += ".samples"
+        sample_data = tsinfer.SampleData(path=fn, sequence_length=ts.sequence_length)
+        if error_param != 0:
+            logging.info("Adding genotyping error: {} used for file {}".format(
+                error_param, fn))
         for v in ts.variants():
-            n_variants += 1
-    
+            n_variants += 1    
             try:
                 error_param = float(error_param)
                 if error_param == 0:
@@ -1034,11 +1024,10 @@ class Dataset(object):
                 position=v.site.position, alleles=v.alleles,
                 genotypes=genotypes)
 
-        if error_param != 0:
-            logging.info("Error: {} used; actual error rate = {} over {} sites".format(
-                error_param, bits_flipped/(n_variants*ts.sample_size), n_variants) 
-                if record_rate else "")
-      
+        if record_rate and (error_param != 0):
+            logging.info(" actual error rate = {} over {} sites".format(
+                bits_flipped/(n_variants*ts.sample_size), n_variants))
+
         sample_data.finalise()
         return sample_data
     
@@ -1324,7 +1313,7 @@ class Dataset(object):
         the specified number of generations after that frequency has been reached (e.g.
         if stop = (1.0, 200), the simulation is stopped 200 generations after fixation.
 
-        Convert the output to multiple .trees files using ftprime. Other
+        Convert the output to multiple .trees files using slim. Other
         details as for single_neutral_simulation()
         Returns an iterator over (treesequence, filename, output_freq) tuples
         (without file type extension)
@@ -1338,9 +1327,9 @@ class Dataset(object):
             "n = {}, Ne = {}, l = {:.2g}, rho = {}, mu = {}, s = {}".format(
                 sample_size, Ne, length, recombination_rate, mutation_rate, selection_coefficient))
         sim_fn = mk_sim_name(sample_size, Ne, length, recombination_rate, mutation_rate, seed, mut_seed, self.simulations_dir,
-            tool="ftprime", s=selection_coefficient, h=dominance_coefficient) + "_f" #freq + post_gens added by simulate_sweep()
+            tool="slim", s=selection_coefficient, h=dominance_coefficient) + "_f" #freq + post_gens added by simulate_sweep()
 
-
+        assert sample_size%2 == 0
         saved_files = simulate_sweep(
             popsize = Ne,
             chrom_length = length,
@@ -1353,7 +1342,8 @@ class Dataset(object):
             max_generations=int(1e8), #bail after ridiculous numbers of generations
             mutations_after_simulation=True,
             treefile_prefix=sim_fn,
-            seed=seed)
+            seed=seed,
+            slimname=SLiM_executable)
 
         expected_suffix = ".trees"
         for outfreq, fn in saved_files.items():
@@ -1790,7 +1780,7 @@ class AllToolsAccuracyWithSelectiveSweepDataset(Dataset):
                 for ts, fn, out_info in self.single_simulation_with_selective_sweep(
                     stop_freqs = stop_freqs, **sim_params):
                     #create new parameters to save to the csv file
-                    params = {SIMTOOL_COLNAME:    'ftprime',
+                    params = {SIMTOOL_COLNAME:    'slim',
                         SELECTED_FREQ_COLNAME:    out_info[0],
                         SELECTED_POSTGEN_COLNAME: out_info[1] if len(out_info)>1 else 0}
                     params.update(sim_params)

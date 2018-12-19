@@ -1,326 +1,199 @@
-#!/usr/bin/env python3.5
-description = '''
-Use ftprime to simulate a chromosome with a neutral mutations and a single advantageous variant swept to a 
-user-specified frequency (or set of frequencies) using simuPOP. Sampled tree sequences will be
-written at each user-specified point, and the variant reintroduced on a single individual if lost
-from the population. The simulation ends when the condition to produce the final output file is met.
-'''
-
-import gzip
-import sys
-import math
-import time
+import subprocess
 import random
+import string
 import logging
-from collections import OrderedDict
+import argparse
 
-# some simupop options involving mutation type
-import simuOpt
-if logging.getLogger().isEnabledFor(logging.INFO):
-    simuOpt.setOptions(alleleType='mutant')
-else:
-    simuOpt.setOptions(alleleType='mutant', quiet=True)
+import numpy as np
 
-import simuPOP as sim
-from ftprime import RecombCollector
-import msprime
+import msprime, pyslim
 
-REPORTING_STEP = 50
+eidos_cmd = string.Template("""
+function (void)save_treeseq(string prefix, string string_freq, integer ogens) {
+	fn = prefix+string_freq+(ogens ? format("+%i", ogens) else "")+".decap";
+	catn("Saving " + fn + " in generation " + sim.generation);
+	sim.treeSeqOutput(fn);
+}
 
-def fileopt(fname,opts):
-    '''Return the file referred to by fname, open with options opts;
-    if fname is "-" return stdin/stdout; if fname ends with .gz run it through gzip.
+function (void)check_freq_save(integer freq_index) {
+	if (sim.countOfMutationsOfType(m1)) {
+		//there is a segregating site
+		if (sim.mutationFrequencies(NULL, NULL) > output_at_freq_float[freq_index]) {
+			//we have hit the first freq
+			save_treeseq(treefile_prefix, output_at_freq[freq_index], 0);
+			// don't need this event any more
+			sim.deregisterScriptBlock(freq_index);
+			// but we might need to check the next freq in line
+			if ((freq_index+1)<length(output_at_freq_float)) {
+				register_freq_check(freq_index+1);
+			} else {
+				// No more frequencies to check
+				if (length(output_after_fixation_gens)==0) sim.simulationFinished();
+			}
+		}
+	}
+}
+
+function (void)register_freq_check(integer f_index) {
+	sim.registerLateEvent(f_index, format("{check_freq_save(%i);}", f_index), sim.generation+1);
+}
+
+initialize() {
+    $set_random_seed_cmd
+	initializeTreeSeq();
+	initializeMutationRate(0);
+	initializeMutationType("m1", $dominance_coefficient, "f", $selection_coefficient);
+	initializeGenomicElementType("g1", m1, 1.0);
+	initializeGenomicElement(g1, 0, $length-1);
+	initializeRecombinationRate($recombination_rate);
+	output_at_frequency = c($freq_strings); // strings, for nice filename creation
+	output_generations_after_fixation = c($output_gens);
+	// Save these variables into constants so we can access them in other functions
+	freq_float = asFloat(output_at_frequency);
+	defineConstant("output_at_freq",output_at_frequency[order(freq_float)]);
+	defineConstant("output_at_freq_float", freq_float[order(freq_float)]);
+	defineConstant("output_after_fixation_gens", output_generations_after_fixation);
+	defineConstant("treefile_prefix", "$treefile_prefix");
+}
+
+1 late() {
+    sim.addSubpop("p0", $popsize);
+}
+
+$equilibration_gens {
+	register_freq_check(0);
+}
+
+// Allow $equilibration_gens generations for equilibrating before 
+$equilibration_gens: late() {
+	if (sim.substitutions.size()) {
+		catn("Fixed in generation " + sim.generation);
+		// Now fixed: stop checking for fixation / reintroduction
+		sim.deregisterScriptBlock(self);
+		for (post_gen in output_after_fixation_gens) {
+			event = format("save_treeseq(treefile_prefix, '1.0', %i);", post_gen);
+			if (post_gen == max(output_after_fixation_gens)) 
+				event = event+"sim.simulationFinished();";
+			if (post_gen == 0) {
+				executeLambda(event); // Should output NOW
+			} else {
+				output_gen = post_gen + sim.generation; // Output in further generations
+				sim.registerLateEvent(NULL, "{"+event+"}", output_gen, output_gen);
+			}
+		}
+	} else if (sim.countOfMutationsOfType(m1) == 0) { //no mutations, must introduce
+		target = sample(sim.subpopulations.genomes, 1);
+		target.addNewDrawnMutation(m1, $mutant_position);
+		catn("Introduced new advantageous mutant in generation " + sim.generation);
+	}
+}
+
+$max_generations {
+	stop("Got to end without fixing");
+}
+""")
+
+def comma_separated_list(arr):
     '''
-    if fname == "-":
-        if opts == "r":
-            fobj = sys.stdin
-        elif opts == "w":
-            fobj = sys.stdout
-        else:
-            print("Something not right here.")
-    elif fname[len(fname)-3:len(fname)]==".gz":
-        fobj = gzip.open(fname,opts)
-    else:
-        fobj = open(fname,opts)
-    return fobj
+    Return string version of list without braces, e.g. for [1,2,3] return "1,2,3" and
+    for ['a','b','c'] return "'a','b','c'". This should work for both arrays, sets, and
+    tuples (since e.g. sets are formatted as {1,2,3}
+    '''
+    return "{}".format(arr)[1:-1]
 
-# Check on frequency of selected allele (run every generation)
-def check_freqs_reached(pop, selected_locus, output_frequency_reached, countdown):
-    """
-    output_freqs is a mutable dictionary of (frequency,generations):g 
-    giving the number of generations after a given frequency at which
-    to output files. If g is None, we have already met this criterion
-    """
-    curr_freq = pop.dvars().alleleFreq[selected_locus][1]
-    for output in [o for o,reached in output_frequency_reached.items() if not reached]:
-        if curr_freq >= float(output[0]):
-            countdown[output] = output[1] if len(output)>1 else 0 #if no "post_gen", output 0 gens after freq
-            output_frequency_reached[output] = True
-    return True
+def recapitate_mutate_simplify(ts, mu, rho, Ne, samples, seed):
+    ts = ts.recapitate(recombination_rate=rho, Ne=Ne, random_seed=seed)
+    subsamples = ts.samples()[samples]
+    return msprime.mutate(ts, mu, random_seed=seed, keep=True).simplify(subsamples)
 
-# output if necessary    
-def output_to_msprime(pop, recomb_collector, treefile_prefix, nsamples, mut_rate, 
-    output_freqs, countdown, mutations_after_simulation):
-    """
-    Check if any files need outputting this generation, if so, output and add names to output_freqs
-    """
-    for output in list(countdown.keys()):
-        if countdown[output] == 0:
-            assert output_freqs[output]==True
-            #save msprime file as a sample from pop
-            diploid_samples = random.sample(pop.indInfo("ind_id"), nsamples)
-            ts = recomb_collector.tree_sequence(diploid_samples)
-            
-            logging.info("Loaded into tree sequence!")
-            logging.info("----------")
-            
-            fn = treefile_prefix + output[0] + \
-                ("+{}".format(output[1]) if len(output)>1 else "") + ".trees"
-            if mutations_after_simulation:
-                ts = msprime.mutate(
-                    ts, mut_rate, random_seed=random.randint(1, 2**32 - 1), keep=True)
-                ts.dump(fn)
-            else:
-                #to do
-                assert False, \
-                    "Injecting simuPOP mutations into the treesequence is not yet supported in ftprime"
-                ts.dump(fn)
-            
-            logging.info("Written out samples to {} ({} variable sites)".format(fn, ts.get_num_mutations()))
-            logging.info("----------")
 
-            
-            output_freqs[output] = fn #hacky: save so that we can return the file names
-            del countdown[output]
-        else:
-            #count down until output
-            countdown[output] -= 1
-    return any(reached == False for reached in output_freqs.values()) or len(countdown) > 0
-
-class FixedFitness:
-    def __init__(self, s, h):
-        # mean is alpha/beta
-        self.s = s
-        self.h = h
-    def __call__(self, loc, alleles):
-        # needn't return fitness for alleles=(0,0) as simupop knows that's 1
-        if 0 in alleles:
-            return 1. + self.h*self.s
-        else:
-            return 1. + self.s
-
-def add_mutant_to_RC_ARG(simuPOP_population, ind, pos, chrom, val, recomb_collector):
-    """
-    Take an index into the specified population, get the unique 
-    individual ID corresponding to that index, convert it to
-    the ID used in the ARG stored in a recomb_collector instance,
-    and mutate it to the derived value
-    """
-    ind_id = simuPOP_population.individual(ind).info('ind_id')
-    haploid_id = recomb_collector.i2c(ind_id, chrom)
-    logging.info("Gen: {:4d}. Mutation (re)introduced at locus {} in simupop individual {:g} chrom {} = ftprime id {}".format(
-        simuPOP_population.dvars().gen, pos, ind_id, chrom, haploid_id))
-    recomb_collector.args.add_mutation(position=pos, node=haploid_id, derived_state=b'1', ancestral_state=b'0')
-    return True
-
-def simulate_sweep(popsize, chrom_length, recomb_rate, mut_rate, selection_coef, dominance_coef, 
-    output_at_freqs, nsamples, simplify_interval=500, generations_before_sweep=0, max_generations=-1, 
-    mutations_after_simulation=True, treefile_prefix="sweepfile", seed=None, verbosity = 0):
+def simulate_sweep(popsize, chrom_length, recomb_rate, mut_rate, 
+    selection_coef, dominance_coef, nsamples, output_at_freqs, 
+    mutations_after_simulation = True, equilibration_gens=100,
+    max_generations=1e9, treefile_prefix="sweepfile", seed=None, slimname="slim"):
     """
     Carry out a simulation of a selective sweep, and save msprime-format files at frequencies
     specified by output_at_freqs, which is a list of (frequency, post_generation) tuples
     Note that some of these files may have fixed variants (i.e. mutations above the root node)
+    
+    nsamples is number of *diploid* samples
     """
-    
-    if seed is not None:
-        sim.setRNG(seed=seed)
-        random.seed(seed)
+    freq_to_output = set()
+    gens_post_fixation_to_output = set()
+    for o in output_at_freqs:
+        is_tuple = isinstance(o, tuple)
+        freq = o[0] if is_tuple else o
+        post_gens = int(o[1]) if is_tuple else 0
+        assert isinstance(freq, str)
+        if float(freq) == 1.0:
+            #this is specified as something at fixation
+            gens_post_fixation_to_output.add(post_gens)
+        else:
+            assert post_gens==0 # Ban output some generations after an intermediate freq
+            freq_to_output.add(freq)
 
-    # locations of the loci along the chromosome?
-    # hard code defaults for simupop:
-    # >The default positions are 1, 2, 3, 4, ... on each
-    # >chromosome.
-    locus_position = list(range(0, chrom_length))
-    
-    # which loci are under selection?
-    selected_locus = math.ceil(chrom_length / 2)
-    neutral_loci = list(set(range(1,chrom_length)) - set([selected_locus]))
-        
-    output_countdown = {} #will contain the countdown generations before output
-    output_frequency_reached = OrderedDict() # (freq,gens) tuples showing if these
-    for params in output_at_freqs:
-        output_frequency_reached[(params[0],int(params[1])) if len(params)>1 else (params[0],)]=False
-
-
-    pop = sim.Population(
-            size=popsize,
-            loci=[chrom_length],
-            lociPos=locus_position,
-            infoFields=['ind_id','fitness'])
-    
-    
-    # set up recomb collector
-    # NB: we have to simulate an initial tree sequence, but we can put neutral mutations on
-    # *after* we have run the simulation, since regardless of selective forces,
-    # the probability of neutral mutations is simply proportional to branch length 
-    
-    id_tagger = sim.IdTagger()
-    id_tagger.apply(pop)
-    first_gen = pop.indInfo("ind_id")
-    length = max(locus_position)
-    # Since we want to have a finite site model, we force the recombination map
-    # to have exactly `length` loci with a fixed recombination rate between them.
-    rcmb_map = msprime.RecombinationMap.uniform_map(length, recomb_rate, length)
-    if mutations_after_simulation:
-        init_ts = msprime.simulate(2*len(first_gen), Ne=popsize, recombination_map=rcmb_map)
-    else:
-        init_ts = msprime.simulate(2*len(first_gen), Ne=popsize, recombination_map=rcmb_map, mutation_rate=mut_rate)
-    
-    haploid_labels = [(k,p) for k in first_gen
-                            for p in (0,1)]
-    node_ids = {x:j for x, j in zip(haploid_labels, init_ts.samples())}
-    
-    rc = RecombCollector(ts=init_ts, node_ids=node_ids,
-                         locus_position=locus_position)
-    
-    if mutations_after_simulation:
-        mutate = []
-        # initially, population is monogenic
-        init_geno=[sim.InitGenotype(freq=1.0)]
-    else:
-        #create a mutator to inject mutations in forward time
-        mutate = [sim.SNPMutator(u=neut_mut_rate,v=0,loci=neutral_loci)]
-        assert False, "Need to implement conversion of msprime haplotypes -> simuPOP initial haplotypes"
-
-    if verbosity:
-        logger = logging.getLogger('')
-        report = [sim.PyEval(r"'Gen: %4d - report. Focal allele at freq %f' % (gen, alleleFreq[{}][1])".format(
-            selected_locus), step=REPORTING_STEP, output=logger.info)]
-    else:
-        report = []
-        
-    pop.evolve(
-        initOps=[
-            sim.InitSex(),
-        ]+init_geno,
-        preOps= mutate + [
-            sim.PyOperator(lambda pop: rc.increment_time() or True),
-            sim.PyMlSelector(FixedFitness(selection_coef, dominance_coef),
-                loci=selected_locus),
-        ],
-        matingScheme=sim.RandomMating(
-            ops=[
-                id_tagger,
-                sim.Recombinator(rates=recomb_rate, output=rc.collect_recombs,
-                                 infoFields="ind_id"),
-            ] ),
-        postOps= [
-            sim.PyOperator(lambda pop: rc.simplify(pop.indInfo("ind_id")) or True,
-                           step=simplify_interval),
-            sim.Stat(alleleFreq=selected_locus),
-            ##reintroduce if lost (http://simupop.sourceforge.net/manual_svn/build/userGuide_ch5_sec6.html#manually-introduced-mutations-pointmutator)
-            sim.IfElse('gen > {} and alleleNum[{}][1] == 0'.format(generations_before_sweep, selected_locus), ifOps=[
-                sim.PointMutator(inds=0, loci=selected_locus, allele=1),
-                #add this mutation to the ARG being tracked in rc
-                sim.PyOperator(lambda pop: add_mutant_to_RC_ARG(
-                    pop, ind=0, pos=selected_locus, chrom=0, val=1, recomb_collector=rc))
-            ]),
-            ## check frequencies, and output when necessary
-            sim.PyOperator(lambda pop: check_freqs_reached(
-                pop, selected_locus, output_frequency_reached, output_countdown)),
-            sim.PyOperator(lambda pop: output_to_msprime(
-                pop, rc, treefile_prefix, nsamples, mut_rate, output_frequency_reached, output_countdown, 
-                mutations_after_simulation)),
-        ] + report,
-        gen = max_generations
+    eidos_seed_cmd = "" if seed is None else "setSeed({});".format(int(seed))
+    cmd = eidos_cmd.substitute(
+        set_random_seed_cmd = eidos_seed_cmd,
+        treefile_prefix = treefile_prefix,
+        dominance_coefficient = dominance_coef,
+        selection_coefficient = selection_coef,
+        mutant_position = chrom_length//2,
+        popsize = popsize,
+        length = chrom_length,
+        recombination_rate = recomb_rate,
+        freq_strings = comma_separated_list(freq_to_output),
+        output_gens  = comma_separated_list(gens_post_fixation_to_output),
+        max_generations = int(max_generations),
+        equilibration_gens = equilibration_gens
     )
-    
-    logging.info("Done simulating!")
-    logging.info("----------")
-    
-    del pop
-    del rc
-        
-    return output_frequency_reached #these should now contain file names
 
-def main():
-    from argparse import ArgumentParser
-    parser = ArgumentParser(description=description, add_help=False)
-    parser.add_argument('--help', action='help', help='show this help message and exit')
-    parser.add_argument("-N","--popsize", dest="popsize", type=int,
-            help="Size of the population", default=5000)
-    parser.add_argument("-r","--recomb_rate", dest="recomb_rate", type=float,
-            help="Recombination rate", default=1e-7)
-    parser.add_argument("-L","--length", dest="chrom_length", type=int,
-            help="Number of bp in the chromosome", default=1000)
-    parser.add_argument("-U","--neut_mut_rate", dest="neut_mut_rate", type=float,
-            help="Neutral mutation rate", default=1e-7)
-    parser.add_argument("-s","--selection_coefficient", dest="selection_coefficient", type=float,
-            help="Selective advantage, s, of the homozygote (homozygote fitness = 1+s)", default=0.1)
-    parser.add_argument("-h","--dominance_coefficient", dest="dominance_coefficient", type=float, 
-            help="Dominance coefficient, h (heterozygote fitness = 1 + h*s)", default=0.5)
-    parser.add_argument("-k","--nsamples", dest="nsamples", type=int,
-            help="Number of *diploid* samples, total", default=100)
-    parser.add_argument("--treefile_prefix","-t", type=str, dest="treefile_prefix",
-            help="Prefix used when saving treefiles (will have freq+gens .trees appended)", default="sweepfile")
-    parser.add_argument("-B","--generations_before_sweep", dest="generations_before_sweep", type=int, default=0,
-            help="Start introducing the selective variant this many generations into the simulation")
-    parser.add_argument("-M","--max_generations", dest="max_generations", type=int, default=int(1e6),
-            help="Abort the simulation after this many generations if the highest target frequency has not been reached")
-    parser.add_argument("-G", "--gc", dest="simplify_interval", type=int,
-            help="Interval between simplify steps.", default=500)
-    parser.add_argument("-g","--logfile", dest="logfile", type=str,
-            help="Name of log file (or '-' for stdout)", default="-")
-    parser.add_argument("-v","--verbosity", action="count",
-            help="Verbosity level", default=0)
-    parser.add_argument("--track_mutations", dest="track_mutations", action="store_true",
-            help=("If multiple treesequence files are produced, keep track of mutations forwards in time "
-            "rather than adding mutations independently to each sample. This is slower, but produces " 
-            "files which can be treated as successive samples of the same overall population"))
-    parser.add_argument("--seed", "-d", dest="seed", type=int, help="random seed (if None, use simuPOP default)", default=None)
-    requiredNamed = parser.add_argument_group('required named arguments')
-    requiredNamed.add_argument("-of","--output_frequency", dest="output_frequency", 
-            action='append', nargs="+", type=str, required=True, metavar=('FREQ', 'GENS'),
-            help=("Output an msprime tree sequence file once the frequency of the selected variant has reached this value."
-            "A second number may also be given, delaying output for that number of generations after the specified frequency "
-            "is reached. Multiple uses of this parameter are allowed, with files output at each specified step. "
-            "e.g. `-of 0.5 -of 0.8 -of 1.0 200` results in a file saved when the target variant attains frequency=0.5, "
-            "again at freq 0.8, and another 200 generations after fixation (freq = 1.0)."
-            "Once all specified files have been output, the simulation will stop."))        
-    
-    args = parser.parse_args()
-
-    # do we need mutations added in forwards time (slower) or can they be added in retrospect
-    mutations_after_simulation = args.track_mutations == False or len(args.output_frequency) == 1
-
-    log_level = logging.WARNING
-    if args.verbosity == 1:
-        log_level = logging.INFO
-    if args.verbosity >= 2:
-        log_level = logging.DEBUG
-    logging.basicConfig(
-        format='%(asctime)s %(message)s', level=log_level, stream=fileopt(args.logfile, "w"))
-    
-    logging.info("Options:")
-    logging.info(str(args))
-    logging.info("----------")
-        
-    saved_files = simulate_sweep(args.popsize, args.chrom_length, args.recomb_rate, args.neut_mut_rate, 
-        args.selection_coefficient, args.dominance_coefficient, args.output_frequency, args.nsamples, 
-        args.simplify_interval, generations_before_sweep=args.generations_before_sweep,
-        max_generations=args.max_generations,  mutations_after_simulation=mutations_after_simulation,
-        treefile_prefix=args.treefile_prefix, seed=args.seed, verbosity = args.verbosity)
-
-    logging.info("All done, msprime files for specified output timepoints saved in: {}".format(saved_files))
-    if args.verbosity > 1:
-        #check this has all worked
-        for freq,fn in saved_files.items():
-            logging.info("Checking variants in file {}".format(fn))
-            ts = msprime.load(fn)
-            for v in ts.variants():
-                logging.info(" variant pos: {} present in {}/{} samples ({:.2f}%)".format(
-                    v.position, sum(v.genotypes), len(v.genotypes), sum(v.genotypes)/len(v.genotypes)*100))
-
+    process = subprocess.Popen(slimname,
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, 
+        universal_newlines=True)
+    process.stdin.write(cmd)
+    process.stdin.close()
+    suppress_header_line = 3
+    for line in iter(process.stdout.readline, ''):
+        if suppress_header_line:
+            if suppress_header_line != 3:
+                suppress_header_line -= 1 #decrement
+            if line.startswith("// Starting run at generation"):
+                suppress_header_line = 2 #this is the penultimate line of the header
+        else:
+            logging.info(line.rstrip())
+    ret_val = {}
+    for o in output_at_freqs:
+        is_tuple = isinstance(o, tuple)
+        freq = o[0] if is_tuple else o        
+        fn = treefile_prefix + freq
+        if is_tuple and len(o)>1 and o[1]:
+            fn += "+%i" % o[1]
+        #pick a different N samples each time (the recapitation may be different anyway)
+        ts = pyslim.load(fn + ".decap") #no simplify
+        samp = np.random.choice(ts.num_samples, nsamples*2, replace=False)
+        ts = recapitate_mutate_simplify(ts, mut_rate, recomb_rate, popsize, samp, seed)
+        fn += ".trees"
+        ts.dump(fn)
+        ret_val[o] = fn
+        logging.info("Finished recapitating and mutating " + fn)
+    return ret_val
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(description="Make the plots for specific figures.")
+    parser.add_argument("--seed", "-s", type=int, help="run a single simulation with this seed")
+    parser.add_argument("-v", "--verbose", help="increase output verbosity",
+                    action="store_true")
+
+    args = parser.parse_args()
+    if args.verbose:
+        logging.basicConfig(level=logging.DEBUG)
+
+
+    random.seed(123)
+    for i in range(1 if args.seed else 100): #repeat 100 times
+        seed = args.seed or random.randint(1,1000000)
+        simulate_sweep(
+            5000, 100000, 1e-8, 0.000000132288, 0.1, 0.5, 16,  
+            output_at_freqs=['0.2', '0.5', '0.8', '1.0', ('1.0', 200), ('1.0', 1000)], 
+            seed = seed, treefile_prefix="sim{}_".format(seed), slimname="./tools/SLiM/build/slim")
