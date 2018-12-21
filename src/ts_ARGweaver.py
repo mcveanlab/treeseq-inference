@@ -3,7 +3,7 @@
 Various functions to convert a ts file to ARGweaver input format,
 and from .arg files to tree seq input.
 
-When run as a script, takes an msprime simulation in hdf5 format, saves to
+When run as a script, takes an msprime simulation in .trees format, saves to
 ARGweaver input format (haplotype sequences), runs ARGweaver inference on it to
 make .smc files, converts the .smc ARGweaver output files to ts input
 files, reads these in, and checks that the msprime ts is the
@@ -38,19 +38,20 @@ class CyclicalARGError(Exception):
     See https://github.com/mdrasmus/argweaver/issues/20
     """
 
-def ts_hdf5_to_ARGweaver_in(ts_hdf5, ARGweaver_filehandle):
+def tsfile_to_ARGweaver_in(trees, ARGweaver_filehandle):
     """
-    take an hdf5 file, and convert it into an input file suitable for ARGweaver
-    Returns the simulation parameters (Ne, mu, r) used to create the hdf5 file
+    take a .trees file, and convert it into an input file suitable for ARGweaver
+    Returns the simulation parameters (Ne, mu, r) used to create the .trees file
     """
     logging.info("== Saving to ARGweaver input format ==")
     try:
-        ts = msprime.load(ts_hdf5.name) #ts_hdf5 is a fh
+        ts = msprime.load(trees.name) #trees is a fh
     except AttributeError:
-        ts = msprime.load(ts_hdf5)
+        ts = msprime.load(trees)
     ts_to_ARGweaver_in(ts, ARGweaver_filehandle)
-    #here we should extract the /provenance information from the hdf5 file and return {'Ne':XXX, 'mutation_rate':XXX, 'recombination_rate':XXX}
-    #but this information is currently not encoded in the hdf5 file (listed as TODO)
+    #here we should extract the /provenance information from the .trees file and return 
+    # {'Ne':XXX, 'mutation_rate':XXX, 'recombination_rate':XXX}
+    #but this information is currently not encoded in the .trees file (listed as TODO)
 
     return {'Ne':None, 'mutation_rate':None, 'recombination_rate':None}
 
@@ -305,10 +306,10 @@ def main(args):
     from dendropy import TreeList
     from dendropy.calculate import treecompare
     import ts_extras
-    def ts_txts_to_hdf5(ts_nodes, ts_edges, hdf5_outname=None):
+    def ts_txts_to_trees(ts_nodes, ts_edges, trees_outname=None):
         import shutil
         import msprime
-        logging.info("== Converting new ts ARG as hdf5 ===")
+        logging.info("== Converting new ts ARG to .trees ===")
         try:
             ts = msprime.load_text(nodes=ts_nodes, edges=ts_edges)
         except:
@@ -320,18 +321,18 @@ def main(args):
         try:
             simple_ts = ts.simplify()
         except:
-            ts.dump("bad.hdf5")
-            logging.warning("Can't simplify. HDF5 file dumped to 'bad.hdf5'")
+            ts.dump("bad.trees")
+            logging.warning("Can't simplify. .trees file dumped to 'bad.trees'")
             raise
-        if hdf5_outname:
-            simple_ts.dump(hdf5_outname)
+        if trees_outname:
+            simple_ts.dump(trees_outname)
         return(simple_ts)
 
     msprime.TreeSequence.write_nexus_trees = ts_extras.write_nexus_trees
     iterations = 20
-    full_prefix = os.path.join(args.outputdir, os.path.splitext(os.path.basename(args.hdf5file))[0])
+    full_prefix = os.path.join(args.outputdir, os.path.splitext(os.path.basename(args.trees_file))[0])
     with open(full_prefix+".sites", "w+") as aw_in:
-        ts_hdf5_to_ARGweaver_in(args.hdf5file, aw_in)
+        tsfile_to_ARGweaver_in(args.trees_file, aw_in)
         cmd = [os.path.join(args.ARGweaver_executable_dir, args.ARGweaver_sample_executable),
             '--sites', aw_in.name,
             '--popsize', str(args.effective_population_size),
@@ -360,7 +361,7 @@ def main(args):
                 smc.replace(".smc.gz", ""),
                 nodes, edges)
 
-            ts = ts_txts_to_hdf5(nodes, edges)
+            ts = ts_txts_to_trees(nodes, edges)
             ts.write_nexus_trees(ts_nex)
         
         smc_trees = TreeList.get(path=smc_nex, schema="nexus")
@@ -395,18 +396,18 @@ if __name__ == "__main__":
     import filecmp
     import os
     parser = argparse.ArgumentParser(description='Check ARGweaver imports by running an msprime simulation to create an ARGweaver import file, inferring some args from it in smc format, converting the .smc format to .arg format, reading the .arg into msprime, and comparing the nexus output trees with the trees in the .smc file. This testing process requires the dendropy library')
-    parser.add_argument('--hdf5file', type=argparse.FileType('r', encoding='UTF-8'), default=None,
-        help='an msprime hdf5 file. If none, simulate one with defaults')
+    parser.add_argument('--trees_file', type=argparse.FileType('r', encoding='UTF-8'), default=None,
+        help='an msprime .trees file. If none, simulate one with defaults')
     parser.add_argument('--ARGweaver_executable_dir', '-d',
         default=os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','argweaver/bin/'),
         help='the path to the directory containing the ARGweaver executables')
     parser.add_argument('--ARGweaver_sample_executable', '-x', default="arg-sample", help='the name of the ARGweaver executable')
     parser.add_argument('--ARGweaver_smc2arg_executable', '-s', default="smc2arg", help='the name of the ARGweaver executable')
-    parser.add_argument('--sample_size', '-n', type=int, default=5, help='the sample size if an hdf5 file is not given')
-    parser.add_argument('--effective_population_size', '-Ne', type=float, default=5000, help='the effective population size if an hdf5 file is not given')
-    parser.add_argument('--sequence_length', '-l', type=float, default=55000, help='the sequence length if an hdf5 file is not given')
-    parser.add_argument('--recombination_rate', '-rho', type=float, default=2.5e-8, help='the recombination rate if an hdf5 file is not given')
-    parser.add_argument('--mutation_rate', '-mu', type=float, default=5e-8, help='the mutation rate if an hdf5 file is not given')
+    parser.add_argument('--sample_size', '-n', type=int, default=5, help='the sample size if a .trees file is not given')
+    parser.add_argument('--effective_population_size', '-Ne', type=float, default=5000, help='the effective population size if a .trees file is not given')
+    parser.add_argument('--sequence_length', '-l', type=float, default=55000, help='the sequence length if a .trees file is not given')
+    parser.add_argument('--recombination_rate', '-rho', type=float, default=2.5e-8, help='the recombination rate if a. trees file is not given')
+    parser.add_argument('--mutation_rate', '-mu', type=float, default=5e-8, help='the mutation rate if a .trees file is not given')
     parser.add_argument('--random_seed', '-seed', type=int, default=1234, help='a random seed for msprime & AW simulation')
     parser.add_argument('outputdir', nargs="?", default=None, help='the directory in which to store the intermediate files. If None, files are saved under temporary names')
     parser.add_argument('--verbosity', '-v', action='count', default=0)
@@ -419,7 +420,7 @@ if __name__ == "__main__":
     logging.basicConfig(
         format='%(asctime)s %(message)s', level=log_level, stream=sys.stdout)
 
-    if args.hdf5file is None:
+    if args.trees_file is None:
         logging.info("Running a new simulation with n {}, Ne {}, l {}, rho {}, mu {}".format(
         args.sample_size, args.effective_population_size, args.sequence_length,
         args.recombination_rate, args.mutation_rate))
@@ -437,9 +438,9 @@ if __name__ == "__main__":
         with TemporaryDirectory() as aw_out_dir:
             logging.info("Saving everything to temporary files (temporarily stored in {})".format(aw_out_dir))
             args.outputdir = aw_out_dir
-            if args.hdf5file is None:
-                args.hdf5file = os.path.join(aw_out_dir, "sim.hdf5")
-                ts.dump(args.hdf5file, zlib_compression=True)
+            if args.trees_file is None:
+                args.trees_file = os.path.join(aw_out_dir, "sim.trees")
+                ts.dump(args.trees_file, zlib_compression=True)
             main(args)
     else:
         if not os.path.isdir(args.outputdir):
@@ -450,9 +451,9 @@ if __name__ == "__main__":
             import shutil
             shutil.rmtree(args.outputdir)
             os.mkdir(args.outputdir)
-        if args.hdf5file is None:
-            args.hdf5file = os.path.join(args.outputdir, "sim.hdf5")
-            ts.dump(args.hdf5file, zlib_compression=True)
+        if args.trees_file is None:
+            args.trees_file = os.path.join(args.outputdir, "sim.trees")
+            ts.dump(args.trees_file, zlib_compression=True)
         else:
-            args.hdf5file = args.hdf5file.name
+            args.trees_file = args.trees_file.name
         main(args)

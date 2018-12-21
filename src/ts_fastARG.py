@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
-"""Various functions to convert msprime simulation file to run in Heng Li's fastARG program and back again.
+"""
+Various functions to convert msprime simulation file to run in Heng Li's fastARG program 
+and back again.
 
-When run as a script, takes an msprime simulation in hdf5 format, saves to fastARG input format (haplotype sequences), runs fastARG on it, converts fastARG output to msprime input (2 files), reads these into msprime outputs the haplotype sequences again, and checks that the
+When run as a script, takes an msprime simulation in .trees format, saves to fastARG
+input format (haplotype sequences), runs fastARG on it, converts fastARG output to
+msprime input (2 files), reads these into msprime outputs the haplotype sequences again,
+and checks that they agree.
 
-E.g. ./ts_fastARG.py ../test_files/4000.hdf5 -x ../fastARG/fastARG
+E.g. ./ts_fastARG.py ../test_files/4000.trees -x ../fastARG/fastARG
 
 """
 import os
@@ -242,15 +247,15 @@ if __name__ == "__main__":
     import os
     default_sim={'sample_size':20, 'Ne':1e4, 'length':10000, 'mutation_rate':2e-8, 'recombination_rate':2e-8}
     parser = argparse.ArgumentParser(description='Check fastARG imports by running msprime simulation through it and back out')
-    parser.add_argument('--hdf5file', '-hdf5', type=argparse.FileType('r', encoding='UTF-8'), help='an msprime hdf5 file. If none, a simulation is created with {}'.format(default_sim))
+    parser.add_argument('--trees_file', '-f', type=argparse.FileType('r', encoding='UTF-8'), help='an msprime .trees file. If none, a simulation is created with {}'.format(default_sim))
     parser.add_argument('--fastARG_executable', '-x', default="fastARG", help='the path & name of the fastARG executable')
     parser.add_argument('--outputdir', '-o', help='the directory in which to store the intermediate files. If None, files are saved under temporary names')
     args = parser.parse_args()
     logging.basicConfig(
         format='%(asctime)s %(message)s', level=logging.DEBUG, stream=sys.stdout)
-    if args.hdf5file:
-        ts = msprime.load(args.hdf5file)
-        prefix = os.path.splitext(os.path.basename(args.hdf5file.name))[0]
+    if args.trees_file:
+        ts = msprime.load(args.trees_file)
+        prefix = os.path.splitext(os.path.basename(args.trees_file.name))[0]
     else:
         logging.debug("Creating new simulation with {}".format(default_sim))
         ts = msprime.simulate(**default_sim)

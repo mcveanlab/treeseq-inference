@@ -50,6 +50,7 @@ fastARG_executable = os.path.join('tools','fastARG','fastARG')
 ARGweaver_executable = os.path.join('tools','argweaver','bin','arg-sample')
 smc2arg_executable = os.path.join('tools','argweaver','bin','smc2arg')
 RentPlus_executable = os.path.join('tools','RentPlus','RentPlus.jar')
+SLiM_executable = os.path.join('tools','SLiM','build','slim')
 tsinfer_executable = os.path.join('src','run_tsinfer.py')
 
 #monkey-patch nexus saving/writing into msprime/tskit
@@ -110,42 +111,28 @@ def make_errors_genotype_model(g, error_probs):
     Given an empirically estimated error probability matrix, resample for a particular
     variant. Determine variant frequency and true genotype (g0, g1, or g2),
     then return observed genotype based on row in error_probs with nearest
-    frequency. Treat each pair of alleles as a diploid individual. 
+    frequency. Treat each pair of alleles as a diploid individual.
     """
     w = np.copy(g)
     
-    #Make diploid (iterate each pair of alleles)
-    genos=[(w[i],w[i+1]) for i in range(0,w.shape[0],2)]
-    
-    #Record the true genotypes
-    g0 = [i for i, x in enumerate(genos) if x == (0,0)]
-    g1a = [i for i, x in enumerate(genos) if x == (1,0)]
-    g1b = [i for i, x in enumerate(genos) if x == (0,1)]
-    g2 = [i for i, x in enumerate(genos) if x == (1,1)]
-    
+    # Make diploid (iterate each pair of alleles)
+    genos = np.reshape(w,(-1,2))
 
-    for idx in g0:
-        result=[(0,0),(1,0),(1,1)][np.random.choice(3,
-            p=error_probs[['p00','p01','p02']].values[0])]
-        if result == (1,0):
-            genos[idx]=[(0,1),(1,0)][np.random.choice(2)]
-        else:
-            genos[idx] = result
-    for idx in g1a:
-        genos[idx]=[(0,0),(1,0),(1,1)][np.random.choice(3,
-            p=error_probs[['p10','p11','p12']].values[0])]
-    for idx in g1b:
-        genos[idx]=[(0,0),(0,1),(1,1)][np.random.choice(3,
-            p=error_probs[['p10','p11','p12']].values[0])]
-    for idx in g2:
-        result=[(0,0),(1,0),(1,1)][np.random.choice(3,
-            p=error_probs[['p20','p21','p22']].values[0])]
-        if result == (1,0):
-            genos[idx]=[(0,1),(1,0)][np.random.choice(2)]
-        else:
-            genos[idx] = result
-            
-    return(np.array(sum(genos, ())))
+    # Record the true genotypes (0,0=>0; 1,0=>1; 0,1=>2, 1,1=>3)
+    count = np.sum(np.array([1,2]) * genos,axis=1)
+    
+    base_genotypes = np.array([[0, 0], [1, 0], [0, 1], [1, 1]])
+    
+    genos[count==0,:]=base_genotypes[
+        np.random.choice(4,sum(count==0), p=error_probs[['p00', 'p01','p01', 'p02']].values[0]*[1,0.5,0.5,1]),:]
+    genos[count==1,:]=base_genotypes[[0,1,3],:][
+        np.random.choice(3,sum(count==1), p=error_probs[['p10', 'p11', 'p12']].values[0]),:]
+    genos[count==2,:]=base_genotypes[[0,2,3],:][
+        np.random.choice(3,sum(count==2), p=error_probs[['p10', 'p11', 'p12']].values[0]),:]
+    genos[count==3,:]=base_genotypes[
+        np.random.choice(4,sum(count==3), p=error_probs[['p20', 'p21', 'p21', 'p22']].values[0]*[1,0.5,0.5,1]),:]
+
+    return(np.reshape(genos,-1))
 
 
 def mk_sim_name(sample_size, Ne, length, recombination_rate, mutation_rate, seed, 
@@ -169,7 +156,7 @@ def mk_sim_name(sample_size, Ne, length, recombination_rate, mutation_rate, seed
         file += "_h{}".format(h)
     if freq is not None:
         file += "_f{}".format(freq)
-        if post_gens is not None:
+        if post_gens:
             file += "+{}".format(post_gens)
     if directory is None:
         return file
@@ -368,7 +355,7 @@ class InferenceRunner(object):
         #and (if used) the subsample size
         self.sample_fn = mk_sim_name_from_row(row, simulations_dir)
         # This should be set by the run_inference methods. Append ".nex" to
-        # get the nexus files, or ".hdf5" to get the TS files
+        # get the nexus files, or ".trees" to get the TS files
         self.inferred_filenames = None
 
     def run(self, metrics_only):
@@ -439,7 +426,7 @@ class InferenceRunner(object):
             inferred_ts, time, memory = self.run_tsinfer(
                 samples_fn, self.row.length, self.num_threads,
                 #uncomment below to inject real ancestors - will need adjusting for subsampling
-                #inject_real_ancestors_from_ts_fn = self.orig_sim_fn + ".hdf5",
+                #inject_real_ancestors_from_ts_fn = self.orig_sim_fn + ".trees",
                 )
             if restrict_sample_size_comparison is not None:
                 if len(self.metric_params):
@@ -449,8 +436,8 @@ class InferenceRunner(object):
                             out, tree_labels_between_variants=tree_labels_between_variants)
                 inferred_ts = inferred_ts.simplify(list(range(restrict_sample_size_comparison)))
                 
-            inferred_ts.dump(out_fn + ".inferred.hdf5")
-            fs = os.path.getsize(out_fn + ".inferred.hdf5")
+            inferred_ts.dump(out_fn + ".inferred.trees")
+            fs = os.path.getsize(out_fn + ".inferred.trees")
             if len(self.metric_params):
                 with open(self.inferred_filenames[0] + ".nex", "w+") as out:
                     #For subsampled trees, the locations of trees along the
@@ -492,8 +479,8 @@ class InferenceRunner(object):
             inferred_ts, time, memory = self.run_fastarg(infile, self.row.length, inference_seed)
             edges = inferred_ts.num_edges
             self.inferred_filenames = [construct_fastarg_name(self.sample_fn, inference_seed)]
-            inferred_ts.dump(self.inferred_filenames[0] + ".hdf5")
-            fs = os.path.getsize(self.inferred_filenames[0] + ".hdf5")
+            inferred_ts.dump(self.inferred_filenames[0] + ".trees")
+            fs = os.path.getsize(self.inferred_filenames[0] + ".trees")
             if len(self.metric_params):
                 for fn in self.inferred_filenames:
                     with open(fn + ".nex", "w+") as out:
@@ -532,7 +519,7 @@ class InferenceRunner(object):
                     " (https://github.com/SajadMirzaei/RentPlus/issues/5),"\
                     " aborting this replicate.")
             elif "main.Main.makeDistanceMatrices(Main.java:228)":
-                logging.warning("RENTplus bug hit"\
+                logging.warning("RENTplus bug hit for samples with no variable sites"\
                     " (https://github.com/SajadMirzaei/RentPlus/issues/6),"\
                     " aborting this replicate.")
             else:
@@ -597,8 +584,8 @@ class InferenceRunner(object):
                                 smc2arg_executable, base, ts_nodes, ts_edges)
                             inferred_ts = msprime.load_text(
                                 nodes=ts_nodes, edges=ts_edges).simplify()
-                            inferred_ts.dump(base + ".hdf5")
-                            filesizes.append(os.path.getsize(base + ".hdf5"))
+                            inferred_ts.dump(base + ".trees")
+                            filesizes.append(os.path.getsize(base + ".trees"))
                             edges.append(inferred_ts.num_edges)
                     except ts_ARGweaver.CyclicalARGError as e:
                         logging.warning("Cyclical ARG Exception when converting {}: {}".format(
@@ -995,7 +982,7 @@ class Dataset(object):
             "A dataset should implement a single_sim method that runs" \
             " a simulation, e.g. by calling self.single_neutral_simulation")
 
-    def generate_samples(self, ts, filename, error_param=0):
+    def generate_samples(self, ts, fn, error_param=0):
         """
         Generate a samples file from a simulated ts based on the empirically estimated 
         error matrix saved in self.error_matrix.
@@ -1003,10 +990,13 @@ class Dataset(object):
         record_rate = logging.getLogger().isEnabledFor(logging.INFO)
         n_variants = bits_flipped = 0
         assert ts.num_sites != 0
-        sample_data = tsinfer.SampleData(path=filename+".samples", sequence_length=ts.sequence_length)
+        fn += ".samples"
+        sample_data = tsinfer.SampleData(path=fn, sequence_length=ts.sequence_length)
+        if error_param != 0:
+            logging.info("Adding genotyping error: {} used for file {}".format(
+                error_param, fn))
         for v in ts.variants():
-            n_variants += 1
-    
+            n_variants += 1    
             try:
                 error_param = float(error_param)
                 if error_param == 0:
@@ -1034,11 +1024,10 @@ class Dataset(object):
                 position=v.site.position, alleles=v.alleles,
                 genotypes=genotypes)
 
-        if error_param != 0:
-            logging.info("Error: {} used; actual error rate = {} over {} sites".format(
-                error_param, bits_flipped/(n_variants*ts.sample_size), n_variants) 
-                if record_rate else "")
-      
+        if record_rate and (error_param != 0):
+            logging.info(" actual error rate = {} over {} sites".format(
+                bits_flipped/(n_variants*ts.sample_size), n_variants))
+
         sample_data.finalise()
         return sample_data
     
@@ -1142,7 +1131,7 @@ class Dataset(object):
         mut_seed=None, replicate=None, **kwargs):
         """
         The standard way to run one msprime simulation for a set of parameter
-        values. Saves the output to an .hdf5 file, and also saves variant files
+        values. Saves the output to an .trees file, and also saves variant files
         for use in fastARG (a .hap file, in the format specified by
         https://github.com/lh3/fastARG#input-format) ARGweaver (a .sites file:
         http://mdrasmus.github.io/argweaver/doc/#sec-file-sites) tsinfer
@@ -1199,8 +1188,8 @@ class Dataset(object):
         logging.info(
             "Neutral simulation done; {} sites, {} trees".format(ts.num_sites, ts.num_trees))
         sim_fn = mk_sim_name(sample_size, Ne, length, recombination_rate, mutation_rate, seed, mut_seed, self.simulations_dir)
-        logging.debug("writing {}.hdf5".format(sim_fn))
-        ts.dump(sim_fn+".hdf5")
+        logging.debug("writing {}.trees".format(sim_fn))
+        ts.dump(sim_fn+".trees")
 
         # Make sure that there is *some* information in this simulation that can be used
         # to infer a ts, otherwise it's pointless
@@ -1305,24 +1294,26 @@ class Dataset(object):
         return self.single_neutral_simulation(sample_size, sim_name, length,
             recombination_rate, mutation_rate, seed, mut_seed, **kwargs)
 
-    def single_simulation_with_selective_sweep(self, sample_size, Ne, length, recombination_rate, mutation_rate,
-        selection_coefficient, dominance_coefficient, stop_freqs, seed, mut_seed=None, replicate=None):
+    def single_simulation_with_selective_sweep(
+        self, sample_size, Ne, length, recombination_rate, mutation_rate,
+        selection_coefficient, dominance_coefficient, stop_freqs, seed, mut_seed=None,
+        replicate=None):
         """
         Run a forward simulation with a selective sweep for a set of parameter values.
         using simuPOP.
 
-        Forward simulations are slow, especially for large chromosomes & population sizes.
-        So to save time, we can get multiple results from the same simulation, by saving
-        populations at different times
+        Forward simulations are slow, especially for large chromosomes & population
+        sizes. To save time, we can get multiple results from the same simulation, by
+        saving populations at different times
 
 
         if stop is a single number it is taken as a stop frequency, and
-        the simulation is stopped when the selected variant reaches that frequency. If it is a
-        tuple, it is taken as (freq, generations), and the simulation is stopped at the
-        specified number of generations after that frequency has been reached (e.g. if
-        stop = (1.0, 200), the simulation is stopped 200 generations after fixation.
+        the simulation is stopped when the selected variant reaches that frequency. If it
+        is a tuple, it is taken as (freq, generations), and the simulation is stopped at
+        the specified number of generations after that frequency has been reached (e.g.
+        if stop = (1.0, 200), the simulation is stopped 200 generations after fixation.
 
-        Convert the output to multiple .hdf5 files using ftprime. Other
+        Convert the output to multiple .trees files using slim. Other
         details as for single_neutral_simulation()
         Returns an iterator over (treesequence, filename, output_freq) tuples
         (without file type extension)
@@ -1336,9 +1327,9 @@ class Dataset(object):
             "n = {}, Ne = {}, l = {:.2g}, rho = {}, mu = {}, s = {}".format(
                 sample_size, Ne, length, recombination_rate, mutation_rate, selection_coefficient))
         sim_fn = mk_sim_name(sample_size, Ne, length, recombination_rate, mutation_rate, seed, mut_seed, self.simulations_dir,
-            tool="ftprime", s=selection_coefficient, h=dominance_coefficient) + "_f" #freq + post_gens added by simulate_sweep()
+            tool="slim", s=selection_coefficient, h=dominance_coefficient) + "_f" #freq + post_gens added by simulate_sweep()
 
-
+        assert sample_size%2 == 0
         saved_files = simulate_sweep(
             popsize = Ne,
             chrom_length = length,
@@ -1351,9 +1342,10 @@ class Dataset(object):
             max_generations=int(1e8), #bail after ridiculous numbers of generations
             mutations_after_simulation=True,
             treefile_prefix=sim_fn,
-            seed=seed)
+            seed=seed,
+            slimname=SLiM_executable)
 
-        expected_suffix = ".hdf5"
+        expected_suffix = ".trees"
         for outfreq, fn in saved_files.items():
             assert fn.endswith(expected_suffix)
             ts = msprime.load(fn)
@@ -1380,24 +1372,26 @@ class Dataset(object):
             #for infinite sites, assume we have discretised mutations to ints
             if not all(p.is_integer() for p in pos):
                 raise ValueError("Variant positions are not all integers")
-        filename = add_error_param_to_name(filename, error_param)
+        fn = add_error_param_to_name(filename, error_param)
         if ts.num_sites == 0:
-            logging.warning("No sites to save for {}".format(filename))
+            logging.warning("No sites to save for {}".format(fn))
         else:
-            logging.debug("Saving samples to {}".format(filename))
-            s = self.generate_samples(ts, filename, error_param)
+            logging.debug("Saving samples to {}".format(fn))
+            s = self.generate_samples(ts, fn, error_param)
             if FASTARG in self.tools_and_metrics:
-                logging.debug("writing samples to {}.hap for fastARG".format(filename))
-                with open(filename+".hap", "w+") as file_in:
+                logging.debug("writing samples to {}.hap for fastARG".format(fn))
+                with open(fn+".hap", "w+") as file_in:
                     ts_fastARG.samples_to_fastARG_in(s, file_in)
             if ARGWEAVER in self.tools_and_metrics:
-                logging.debug("writing samples to {}.sites for ARGweaver".format(filename))
-                with open(filename+".sites", "w+") as file_in:
-                    ts_ARGweaver.samples_to_ARGweaver_in(s, file_in, infinite_sites=infinite_sites)
+                logging.debug("writing samples to {}.sites for ARGweaver".format(fn))
+                with open(fn+".sites", "w+") as file_in:
+                    ts_ARGweaver.samples_to_ARGweaver_in(
+                        s, file_in, infinite_sites=infinite_sites)
             if RENTPLUS in self.tools_and_metrics:
-                logging.debug("writing samples to {}.dat for RentPlus".format(filename))
-                with open(filename+".dat", "wb+") as file_in:
-                    ts_RentPlus.samples_to_RentPlus_in(s, file_in, infinite_sites=infinite_sites)
+                logging.debug("writing samples to {}.dat for RentPlus".format(fn))
+                with open(fn+".dat", "wb+") as file_in:
+                    ts_RentPlus.samples_to_RentPlus_in(
+                        s, file_in, infinite_sites=infinite_sites)
 
 
 
@@ -1424,13 +1418,13 @@ class AllToolsDataset(Dataset):
         else:
             return np.geomspace(middle**2/bound, bound, **kwargs)
     
-    #params that change BETWEEN simulations. Keys should correspond
+    # Params that change BETWEEN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     between_sim_params = {
         'Ne': [5000],
         'mutation_rate': geomspace_around(1e-8, 5e-7, num=7), #gives upper bound of 5e-7 and lower of 2e-10
         'sample_size':   [16],
-        'length':        [1000000], #1Mb ensures that low mutation rates ~2e-10 still have some variants
+        'length':        [1000000], # 1Mb ensures that low mutation rates ~2e-10 still have some variants
         'recombination_rate': [1e-8],
     }
     #params that change WITHIN simulations. Keys should correspond
@@ -1512,9 +1506,10 @@ class AllToolsPerformanceDataset(AllToolsDataset):
 
     def filter_between_sim_params(self, params):
         """
-        We want to only use cases where the sample_size OR the length are at the fixed values
+        Only use cases where the sample_size OR the length are at the fixed values
         """
-        keyed_params = dict(zip(['replicates']+list(self.between_sim_params.keys()), params))
+        orig_params = ['replicates'] + list(self.between_sim_params.keys())
+        keyed_params = dict(zip(orig_params, params))
         return (keyed_params['sample_size']==self.fixed_sample_size) or \
             (keyed_params['length']==self.fixed_length)
 
@@ -1587,7 +1582,7 @@ class TsinferPerformanceDataset(AllToolsPerformanceDataset):
         row_data = self.save_within_sim_data(row_id, ts, fn, dict(sim_params,
             internal_nodes = ts.num_nodes - ts.num_samples,
             internal_nodes_with_mutations = len(nodes_with_muts - set(ts.samples())),
-            ts_filesize = os.path.getsize(fn + ".hdf5"),
+            ts_filesize = os.path.getsize(fn + ".trees"),
             vcf_filesize = vcf_filesize,
             vcfgz_filesize = vcfgz_filesize
             ))
@@ -1628,17 +1623,18 @@ class FastargTsinferComparisonDataset(AllToolsPerformanceDataset):
 
 class SubsamplingDataset(Dataset):
     """
-    Accuracy of ARG inference of a fixed subset of samples (measured by various statistics)
-    as the population sample size increases.
+    Accuracy of ARG inference of a fixed subset of samples as the sample size increases.
     """
     name = "subsampling"
-    #to make this a fair comparison, we need to calculate only at the specific variant sites
-    #because different sample sizes will be based on different original variant positions
-    #which are then cut down to the subsampled ones.
+    # To make this a fair comparison, we need to calculate only at the specific variant
+    # sites, because different sample sizes will be based on different original variant
+    # positions which are then cut down to the subsampled ones.
     tools_and_metrics = {
-        TSINFER: [METRICS_LOCATION_VARIANTS| METRICS_POLYTOMIES_LEAVE, METRICS_LOCATION_VARIANTS | METRICS_POLYTOMIES_BREAK]
+        TSINFER: [
+            METRICS_LOCATION_VARIANTS| METRICS_POLYTOMIES_LEAVE,
+            METRICS_LOCATION_VARIANTS | METRICS_POLYTOMIES_BREAK]
     }
-    default_replicates = 100
+    default_replicates = 200
     default_seed = 123
 
     #params that change BETWEEN simulations. Keys should correspond
@@ -1655,7 +1651,7 @@ class SubsamplingDataset(Dataset):
 
     within_sim_params = {
         'tsinfer_srb' : [True], #, False], #should we use shared recombinations ("path compression")
-        SUBSAMPLE_COLNAME:  [12, 50, 100, 500, 1000], #we infer based on this many samples
+        SUBSAMPLE_COLNAME:  [12, 50, 100, 500, 1000], # inference based on this # samples
         ERROR_COLNAME: [0, Dataset.error_filename.replace(".csv","")]
     }
 
@@ -1675,9 +1671,9 @@ class SubsamplingDataset(Dataset):
             except ValueError as e: #No non-singleton variants
                 logging.warning(e)
         return_data = {}
-        #it's worth saving the full tree file for other analysis
+        # it's worth saving the full tree file for other analysis
         base_ts.save_nexus_trees(fn + ".nex")
-        #this will loop over the subsamples and errors, saving samples files for inference
+        # loop over the subsamples and errors, saving samples files for inference
         return_data = self.save_within_sim_data(base_row_id, base_ts, fn, sim_params)
         return return_data
 
@@ -1724,8 +1720,8 @@ class AllToolsAccuracyWithDemographyDataset(Dataset):
             except ValueError as e: #No non-singleton variants
                 logging.warning(e)
         row_data = self.save_within_sim_data(row_id, ts, fn, sim_params)
-        #set Ne to store the name 'Gutenkunst.out.of.africa' rather than a meaningless Ne param
-        #this will be used in the filenames etc.
+        # Set Ne to the name 'Gutenkunst.out.of.africa' instead of a meaningless Ne param
+        # This will be used in the filenames etc.
         for row in row_data.values():
             row['Ne'] = row['sim_name']
         return row_data
@@ -1757,8 +1753,9 @@ class AllToolsAccuracyWithSelectiveSweepDataset(Dataset):
     }
 
     within_sim_params = {
-        #NB - these are strings because they are output as part of the filename
-        'stop_freqs': ['0.2', '0.5', '0.8', '1.0', ('1.0', 200), ('1.0', 1000)], #frequencies when file is saved.
+        # Frequencies when file is saved.
+        # NB: these are strings because they are output as part of the filename
+        'stop_freqs': ['0.2', '0.5', '0.8', '1.0', ('1.0', 200), ('1.0', 1000)],
         ERROR_COLNAME : [0, Dataset.error_filename.replace(".csv","")],
     }
 
@@ -1771,30 +1768,35 @@ class AllToolsAccuracyWithSelectiveSweepDataset(Dataset):
             return_data = {}
             sim_params['seed'] = rng.randint(1, 2**31)
             try:
-                #we have multiple rows per simulation for results after different generations post-fixation
-                #these are returned in an iterator by the single_simulation_with_selective_sweep() method
-                #so we pop this set of permutations off the auto-iterated list
+                # We have multiple rows per simulation for results after different
+                # generations post-fixation. These are returned in an iterator by the
+                # single_simulation_with_selective_sweep() method, so we pop this set of
+                # permutations off the auto-iterated list
                 within_sim_params = self.within_sim_params.copy()
                 stop_freqs = within_sim_params.pop('stop_freqs')
                 # Pass stopping freqs into the sim and loop through the returned freqs
-                # Reject this entire set if we got no mutations at any point, or all mutations are fixed
-                for ts, fn, output_info in self.single_simulation_with_selective_sweep(stop_freqs = stop_freqs, **sim_params):
+                # Reject this entire set if we got no mutations at any point, 
+                # or all mutations are fixed
+                for ts, fn, out_info in self.single_simulation_with_selective_sweep(
+                    stop_freqs = stop_freqs, **sim_params):
                     #create new parameters to save to the csv file
-                    params = {SIMTOOL_COLNAME:    'ftprime',
-                        SELECTED_FREQ_COLNAME:    output_info[0],
-                        SELECTED_POSTGEN_COLNAME: output_info[1] if len(output_info)>1 else 0}
+                    params = {SIMTOOL_COLNAME:    'slim',
+                        SELECTED_FREQ_COLNAME:    out_info[0],
+                        SELECTED_POSTGEN_COLNAME: out_info[1] if len(out_info)>1 else 0}
                     params.update(sim_params)
-                    row_data = self.save_within_sim_data(base_row_id, ts, fn, params, iterate_over_dict = within_sim_params)
+                    row_data = self.save_within_sim_data(
+                        base_row_id, ts, fn, params, iterate_over_dict=within_sim_params)
                     base_row_id += len(row_data)
                     assert all(k not in return_data for k in row_data)
                     return_data.update(row_data)
-                break #not rejected, can finish
-            except ValueError as e: #No non-singleton variants
+                break # not rejected, can finish
+            except ValueError as e: # No non-singleton variants
                 logging.warning(e)
             except (_msprime.LibraryError, MemoryError) as e:
-                #we sometimes run out of memory here
-                logging.warning("Error when running `single_sim()`, probably in single_simulation_with_selective_sweep({})"\
-                    .format(",".join(["{}={}".format(k,v) for k,v in sim_params.items()])))
+                # We sometimes run out of memory here
+                logging.warning("Error when running `single_sim()`, probably in"
+                    " single_simulation_with_selective_sweep({})".format(
+                        ",".join(["{}={}".format(k,v) for k,v in sim_params.items()])))
                 raise
         return return_data
 
@@ -1818,15 +1820,17 @@ class ARGweaverParamChangesDataset(Dataset):
     name = "argweaver_param_changes"
     tools = {
         ARGWEAVER:[METRICS_LOCATION_ALL | METRICS_POLYTOMIES_LEAVE], 
-        TSINFER:  [METRICS_LOCATION_ALL | METRICS_POLYTOMIES_LEAVE, METRICS_LOCATION_ALL | METRICS_POLYTOMIES_BREAK]}
+        TSINFER:  [
+            METRICS_LOCATION_ALL | METRICS_POLYTOMIES_LEAVE,
+            METRICS_LOCATION_ALL | METRICS_POLYTOMIES_BREAK]}
     default_replicates = 40
     default_seed = 123
 
     between_sim_params = {
-        'mutation_rate': np.geomspace(1e-6, 1e-3, num=6),
-        'sample_size': [6],
-        'Ne':     [5000],
-        'length': [10**4],
+        'mutation_rate':      np.geomspace(1e-6, 1e-3, num=6),
+        'sample_size':        [6],
+        'Ne':                 [5000],
+        'length':             [10**4],
         'recombination_rate': [1e-8],
     }
 
@@ -1853,11 +1857,12 @@ class ARGweaverParamChangesDataset(Dataset):
         AW_num_timepoints = within_sim_params.pop('AW_num_timepoints')
         for i, burnin in enumerate(AW_burnin_steps):
             for j, n_timesteps in enumerate(AW_num_timepoints):
-                #only run other infers for the first row in this set of AW run parameters
+                # Only run other infers for the first row in this set of AW run params
                 sim_params['only_AW'] = (0 if i==0 and j==0 else 1)
                 sim_params['ARGweaver_burnin'] = burnin
                 sim_params['ARGweaver_ntimes'] = n_timesteps
-                row_data = self.save_within_sim_data(row_id, ts, fn, sim_params, iterate_over_dict = within_sim_params)
+                row_data = self.save_within_sim_data(
+                    row_id, ts, fn, sim_params, iterate_over_dict=within_sim_params)
                 row_id += len(row_data)
                 assert all(k not in return_data for k in row_data)
                 return_data.update(row_data)
