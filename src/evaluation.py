@@ -1634,7 +1634,7 @@ class SubsamplingDataset(Dataset):
             METRICS_LOCATION_VARIANTS| METRICS_POLYTOMIES_LEAVE,
             METRICS_LOCATION_VARIANTS | METRICS_POLYTOMIES_BREAK]
     }
-    default_replicates = 200
+    default_replicates = 500
     default_seed = 123
 
     #params that change BETWEEN simulations. Keys should correspond
