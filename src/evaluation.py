@@ -273,7 +273,7 @@ def mk_sim_name_from_row(
         name = add_subsample_param_to_name(name, row[subsample_col])
     if seq_error_col in row or aa_error_col in row:
         name = add_error_param_to_name(
-            name, row.get(seq_error_col, None), row.get(aa_error_col, None))
+            name, row.get(seq_error_col, ""), row.get(aa_error_col, ""))
     return(name)
 
 def add_subsample_param_to_name(sim_name, subsample_size=None):
@@ -289,19 +289,19 @@ def add_subsample_param_to_name(sim_name, subsample_size=None):
     else:
         return sim_name
 
-def add_error_param_to_name(sim_name, seq_error_param=None, aa_error_param=None):
+def add_error_param_to_name(sim_name, seq_error_param="", aa_error_param=""):
     """
     Append the error param to the simulated tree sequence filename.
     Only relevant for files downstream of the step where sequence error is added
     """
-    if seq_error_param is not None and not pd.isnull(seq_error_param):
+    if seq_error_param != "" and not pd.isnull(seq_error_param):
         if sim_name.endswith("+") or sim_name.endswith("-"):
             #this is the first param
             sim_name += "err{}".format(seq_error_param)
         else:
             #this is not the first param
             sim_name += "_err{}".format(seq_error_param)
-    if aa_error_param is not None and not pd.isnull(aa_error_param):
+    if aa_error_param != "" and not pd.isnull(aa_error_param):
         if sim_name.endswith("+") or sim_name.endswith("-"):
             #this is the first param
             sim_name += "AAerr{}".format(aa_error_param)
@@ -1064,13 +1064,13 @@ class Dataset(object):
                 self.save_variant_matrices(
                     ts.simplify(list(range(subsample))),
                     add_subsample_param_to_name(base_fn, subsample),
-                    keyed_params.get(SEQ_ERROR_COLNAME) or 0,
-                    keyed_params.get(AA_ERROR_COLNAME),
+                    keyed_params.get(SEQ_ERROR_COLNAME) or "",
+                    keyed_params.get(AA_ERROR_COLNAME) or "",
                     inf_sites=False)
             else:
                 self.save_variant_matrices(
                     ts, base_fn, 
-                    keyed_params.get(SEQ_ERROR_COLNAME) or 0,
+                    keyed_params.get(SEQ_ERROR_COLNAME) or "0",
                     keyed_params.get(AA_ERROR_COLNAME),
                     inf_sites=False)
         return return_value
@@ -1419,12 +1419,14 @@ class Dataset(object):
 
 
 
-    def save_variant_matrices(self, ts, filename, seq_err=0, aa_err=0, inf_sites=True):
+    def save_variant_matrices(self, ts, filename, seq_err="", aa_err="", inf_sites=True):
         """
-        Make sample data from a tree sequence. Can include sequencing error (seq_err!=0)
-        and ancestral allele identification error (aa_err != 0). These can be filenames
+        Make sample data from a tree sequence. Can include sequencing error (seq_err!="")
+        and ancestral allele identification error (aa_err != ""). These can be filenames
         for empirical error profiles.
         """
+        assert isinstance(seq_err, str)
+        assert isinstance(aa_err, str)
         if inf_sites:
             #for infinite sites, assume we have discretised mutations to ints
             if not all(p.is_integer() for p in pos):
@@ -1436,10 +1438,11 @@ class Dataset(object):
             logging.debug("Saving samples to {}".format(fn))
             try:
                 s = generate_samples(
-                    ts, fn, seq_error=self.seq_error_names[seq_err],
+                    ts, fn, aa_error = aa_err,
+                    seq_error=self.seq_error_names[seq_err],
                     empirical_seq_err_name = seq_err)
             except KeyError: # seq_err could be a number instead
-                s = generate_samples(ts, fn, seq_error=float(seq_err))
+                s = generate_samples(ts, fn, aa_error = aa_err, seq_error=float(seq_err))
                 
             if FASTARG in self.tools_and_metrics:
                 logging.debug("writing samples to {}.hap for fastARG".format(fn))
@@ -1490,10 +1493,10 @@ class AllToolsDataset(Dataset):
         'length':        [1000000], # 1Mb ensures that low mutation rates ~2e-10 still have some variants
         'recombination_rate': [1e-8],
     }
-    #params that change WITHIN simulations. Keys should correspond
+    # Params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
-        SEQ_ERROR_COLNAME : [0, Dataset.seq_error_filename],
+        SEQ_ERROR_COLNAME : ["0", Dataset.seq_error_filename],
     }
     
     def single_sim(self, row_id, sim_params, rng):
@@ -1532,7 +1535,7 @@ class AllToolsAccuracyDataset(AllToolsDataset):
     #params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
-        SEQ_ERROR_COLNAME : [0, AllToolsDataset.seq_error_filename],
+        SEQ_ERROR_COLNAME : ["0", AllToolsDataset.seq_error_filename],
     }
 
 
@@ -1560,9 +1563,10 @@ class AllToolsAccuracyBadAncestorsDataset(AllToolsDataset):
 
     #params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
+    # since they get saved in the filename, 
     within_sim_params = {
-        SEQ_ERROR_COLNAME : [0, AllToolsDataset.seq_error_filename],
-        AA_ERROR_COLNAME : [0, 0.01, 0.02],
+        SEQ_ERROR_COLNAME : ["0", AllToolsDataset.seq_error_filename],
+        AA_ERROR_COLNAME : ["0", "0.01", "0.02"],
     }
 
 class AllToolsPerformanceDataset(AllToolsDataset):
@@ -1594,7 +1598,7 @@ class AllToolsPerformanceDataset(AllToolsDataset):
     #params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
-        SEQ_ERROR_COLNAME : [0],
+        SEQ_ERROR_COLNAME : ["0"],
     }
 
     def filter_between_sim_params(self, params):
@@ -1639,7 +1643,7 @@ class TsinferPerformanceDataset(AllToolsPerformanceDataset):
     #params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
-        SEQ_ERROR_COLNAME : [0],
+        SEQ_ERROR_COLNAME : ["0"],
     }
 
     extra_sim_cols = ["ts_filesize", "vcf_filesize", "vcfgz_filesize", 
@@ -1707,7 +1711,7 @@ class FastargTsinferComparisonDataset(AllToolsPerformanceDataset):
     #params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
-        SEQ_ERROR_COLNAME : [0],
+        SEQ_ERROR_COLNAME : ["0"],
     }
 
 ### SUPPLEMENTARY MATERIAL
@@ -1745,7 +1749,7 @@ class SubsamplingDataset(Dataset):
     within_sim_params = {
         'tsinfer_srb' : [True], #, False], #should we use shared recombinations ("path compression")
         SUBSAMPLE_COLNAME:  [12, 50, 100, 500, 1000], # inference based on this # samples
-        SEQ_ERROR_COLNAME: [0, Dataset.seq_error_filename]
+        SEQ_ERROR_COLNAME: ["0", Dataset.seq_error_filename]
     }
 
 
@@ -1799,7 +1803,7 @@ class AllToolsAccuracyWithDemographyDataset(Dataset):
     #params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
-        SEQ_ERROR_COLNAME : [0, Dataset.seq_error_filename],
+        SEQ_ERROR_COLNAME : ["0", Dataset.seq_error_filename],
     }
 
     def single_sim(self, row_id, sim_params, rng):
@@ -1849,7 +1853,7 @@ class AllToolsAccuracyWithSelectiveSweepDataset(Dataset):
         # Frequencies when file is saved.
         # NB: these are strings because they are output as part of the filename
         'stop_freqs': ['0.2', '0.5', '0.8', '1.0', ('1.0', 200), ('1.0', 1000)],
-        SEQ_ERROR_COLNAME : [0, Dataset.seq_error_filename],
+        SEQ_ERROR_COLNAME : ["0", Dataset.seq_error_filename],
     }
 
     extra_sim_cols = [SIMTOOL_COLNAME, SELECTION_COEFF_COLNAME,
