@@ -2187,6 +2187,16 @@ class MetricAllToolsSummary(TreeMetricsSummary):
     param_cols = TreeMetricsSummary.standard_param_cols + [SEQ_ERROR_COLNAME]
 
 
+class MetricAllToolsAccuracyBadAncestorsSummary(MetricAllToolsSummary):
+    """
+    Show all metrics tending to 0 as mutation rate increases, but with 
+    error from ancestral allele misidentifications indexed on the y axis
+    """
+    datasetClass = AllToolsAccuracyBadAncestorsDataset
+    name = "metric_all_tools_accuracy_bad_ancestors"
+    param_cols = MetricAllToolsSummary.standard_param_cols + [AA_ERROR_COLNAME]
+
+
 class MetricAllToolsAccuracySweepSummary(MetricAllToolsSummary):
     """
     Superclass of the metric all tools figure for simulations with selection. 
