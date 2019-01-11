@@ -194,6 +194,8 @@ def generate_samples(
     aa_error_by_site = np.zeros(ts.num_sites, dtype=np.bool)
     if aa_error > 0:
         assert aa_error <= 1
+        logging.info("Adding ancestral allele polarity error: {}% used for file {}".format(
+            aa_error * 100, fn))
         # This gives *exactly* a proportion aa_error or bad sites
         # NB - to to this probabilitistically, use np.binomial(1, e, ts.num_sites)
         aa_error_by_site[0:round(aa_error*ts.num_sites)] = True
