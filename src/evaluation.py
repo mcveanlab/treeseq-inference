@@ -63,7 +63,8 @@ RENTPLUS = "RentPlus"
 TSINFER = "tsinfer"
 
 #names for optional columns in the dataset
-ERROR_COLNAME = 'error_param'
+SEQ_ERROR_COLNAME = 'error_param'
+AA_ERROR_COLNAME = 'ancestral_state_error_param'
 SUBSAMPLE_COLNAME = 'subsample_size'
 SUBCOMPARISON_COLNAME = 'restrict_sample_size_comparison'
 SIMTOOL_COLNAME = 'sim_tool' #if column does not exist, default simulation tool = 'msprime'
@@ -94,6 +95,7 @@ def nanblank(val):
     """hack around a horrible pandas syntax, which puts nan instead of blank strings"""
     return "" if pd.isnull(val) else val
 
+
 def ts_has_non_singleton_variants(ts):
     """
     Check if there are any doubletons or higher in a treeseq
@@ -106,13 +108,40 @@ def ts_has_non_singleton_variants(ts):
     return False
 
 
-def make_errors_genotype_model(g, error_probs):
+def make_aa_errors(g, error_prob):
+    """
+    For a given freq variant, what is the probability of a flipping the ancestral 
+    state. We expect this to be of the order of about 1-2% wrong calls, although we
+    do not know if this varies with frequency (it probably does).
+    One way of looking at this is to look at the distribution of high, low, and
+    no confidence ancestral state calls vs frequency
+    """
+    raise NotImplementedError
+
+
+def make_no_errors(g, error_prob):
+    assert error_prob == 0
+    return g
+
+
+def make_seq_errors_simple(g, error_prob):
+    """
+    """
+    raise NotImplementedError
+
+
+def make_seq_errors_genotype_model(g, error_probs):
     """
     Given an empirically estimated error probability matrix, resample for a particular
     variant. Determine variant frequency and true genotype (g0, g1, or g2),
     then return observed genotype based on row in error_probs with nearest
     frequency. Treat each pair of alleles as a diploid individual.
     """
+    m = g.shape[0]
+    frequency = np.sum(g) / m
+    closest_row = (error_probs['freq']-frequency).abs().argsort()[:1]
+    closest_freq = error_probs.iloc[closest_row]
+
     w = np.copy(g)
     
     # Make diploid (iterate each pair of alleles)
@@ -124,15 +153,68 @@ def make_errors_genotype_model(g, error_probs):
     base_genotypes = np.array([[0, 0], [1, 0], [0, 1], [1, 1]])
     
     genos[count==0,:]=base_genotypes[
-        np.random.choice(4,sum(count==0), p=error_probs[['p00', 'p01','p01', 'p02']].values[0]*[1,0.5,0.5,1]),:]
+        np.random.choice(4,sum(count==0), p=closest_freq[['p00', 'p01','p01', 'p02']].values[0]*[1,0.5,0.5,1]),:]
     genos[count==1,:]=base_genotypes[[0,1,3],:][
-        np.random.choice(3,sum(count==1), p=error_probs[['p10', 'p11', 'p12']].values[0]),:]
+        np.random.choice(3,sum(count==1), p=closest_freq[['p10', 'p11', 'p12']].values[0]),:]
     genos[count==2,:]=base_genotypes[[0,2,3],:][
-        np.random.choice(3,sum(count==2), p=error_probs[['p10', 'p11', 'p12']].values[0]),:]
+        np.random.choice(3,sum(count==2), p=closest_freq[['p10', 'p11', 'p12']].values[0]),:]
     genos[count==3,:]=base_genotypes[
-        np.random.choice(4,sum(count==3), p=error_probs[['p20', 'p21', 'p21', 'p22']].values[0]*[1,0.5,0.5,1]),:]
+        np.random.choice(4,sum(count==3), p=closest_freq[['p20', 'p21', 'p21', 'p22']].values[0]*[1,0.5,0.5,1]),:]
 
     return(np.reshape(genos,-1))
+
+def generate_samples(ts, fn, seq_error=0, aa_error=0):
+    """
+    Generate a samples file from a simulated ts. We can pass an integer or a 
+    matrix as the seq_error.
+    """
+    record_rate = logging.getLogger().isEnabledFor(logging.INFO)
+    n_variants = bits_flipped = 0
+    assert ts.num_sites != 0
+    fn += ".samples"
+    sample_data = tsinfer.SampleData(path=fn, sequence_length=ts.sequence_length)
+    
+    # Setup the sort of sequencing error used
+    try:
+        logging.info("Adding empirical genotyping error: {} used for file {}".format(
+            seq_error.description, fn))
+        sequencing_error = make_seq_errors_genotype_model
+    except AttributeError:
+        seq_error = float(seq_error)
+        if seq_error != 0:
+            logging.info("Adding genotyping error: {} used for file {}".format(
+                seq_error, fn))
+            sequencing_error = make_seq_errors_simple
+        else:
+            record_rate = False # no point recording the achieved error rate
+            sequencing_error = make_no_errors
+    # Setup the ancestral state error used
+    aa_error_by_site = np.zeros(ts.num_sites, dtype=np.bool)
+    if aa_error > 0:
+        assert aa_error <= 1
+        # This gives *exactly* a proportion aa_error or bad sites
+        # NB - to to this probabilitistically, use np.binomial(1, e, ts.num_sites)
+        aa_error_by_site[0:round(aa_error*ts.num_sites)] = True
+        np.random.shuffle(aa_error_by_site)
+    for ancestral_allele_error, v in zip(aa_error_by_site, ts.variants()):
+        n_variants += 1    
+        genotypes = sequencing_error(v.genotypes, seq_error)
+        if record_rate:
+            bits_flipped += np.sum(np.logical_xor(genotypes, v.genotypes))
+        if ancestral_allele_error:
+            reversed_alleles = [v.alleles[1],v.alleles[0]]
+            sample_data.add_site(
+                position=v.site.position, alleles=reversed_alleles, genotypes=genotypes)
+        else:
+            sample_data.add_site(
+                position=v.site.position, alleles=v.alleles, genotypes=genotypes)
+
+    if record_rate:
+        logging.info(" actual error rate = {} over {} sites".format(
+            bits_flipped/(n_variants*ts.sample_size), n_variants))
+
+    sample_data.finalise()
+    return sample_data
 
 
 def mk_sim_name(sample_size, Ne, length, recombination_rate, mutation_rate, seed, 
@@ -163,12 +245,15 @@ def mk_sim_name(sample_size, Ne, length, recombination_rate, mutation_rate, seed
     else:
         return os.path.join(directory,file)
 
-def mk_sim_name_from_row(row, directory=None, error_col=ERROR_COLNAME, subsample_col=SUBSAMPLE_COLNAME):
+def mk_sim_name_from_row(
+    row, directory=None, 
+    seq_error_col=SEQ_ERROR_COLNAME, aa_error_col=AA_ERROR_COLNAME,
+    subsample_col=SUBSAMPLE_COLNAME):
     """
-    If error_col and subsample_col are None, this is the same as mk_sim_name()
-    but filled out using data from a row. If error_col is a string which exists as
-    a column name in the row then add_error_param_to_name() is also called, using
-    the error rate specified in that column.
+    If seq_error_col, aa_error_col, and subsample_col are None, this is the same as
+    mk_sim_name() but filled out using data from a row. If seq_error_col or aa_error_col
+    exist, and correspond to a column of that name, then add_error_param_to_name() is
+    also called, using the error rates specified in that column.
     """
     #fill out optional colnames (these might not exist)
     tool = row.get(SIMTOOL_COLNAME, 'msprime') #default to 'msprime' if tool not specified in row
@@ -185,8 +270,9 @@ def mk_sim_name_from_row(row, directory=None, error_col=ERROR_COLNAME, subsample
     # modified and we need a name that reflects that modification
     if subsample_col and subsample_col in row:
         name = add_subsample_param_to_name(name, row[subsample_col])
-    if error_col and error_col in row:
-        name = add_error_param_to_name(name, row[error_col])
+    if seq_error_col in row or aa_error_col in row:
+        name = add_error_param_to_name(
+            name, row.get(seq_error_col, None), row.get(aa_error_col, None))
     return(name)
 
 def add_subsample_param_to_name(sim_name, subsample_size=None):
@@ -202,20 +288,26 @@ def add_subsample_param_to_name(sim_name, subsample_size=None):
     else:
         return sim_name
 
-def add_error_param_to_name(sim_name, error_param=None):
+def add_error_param_to_name(sim_name, seq_error_param=None, aa_error_param=None):
     """
     Append the error param to the simulated tree sequence filename.
     Only relevant for files downstream of the step where sequence error is added
     """
-    if error_param is not None and not pd.isnull(error_param):
+    if seq_error_param is not None and not pd.isnull(seq_error_param):
         if sim_name.endswith("+") or sim_name.endswith("-"):
-            #this is the first param
-            return sim_name + "_err{}".format(error_param)
+            #this is not the first param
+            sim_name += "_err{}".format(seq_error_param)
         else:
             #this is the first param
-            return sim_name + "err{}".format(error_param)
-    else:
-        return sim_name
+            sim_name += "err{}".format(seq_error_param)
+    if aa_error_param is not None and not pd.isnull(aa_error_param):
+        if sim_name.endswith("+") or sim_name.endswith("-"):
+            #this is not the first param
+            sim_name += "_AAerr{}".format(aa_error_param)
+        else:
+            #this is the first param
+            sim_name += "AAerr{}".format(aa_error_param)
+    return sim_name
 
 def construct_fastarg_name(sim_name, seed, directory=None):
     """
@@ -271,15 +363,17 @@ def rentplus_name_from_ts_row(row, sim_dir):
     """
     return construct_rentplus_name(mk_sim_name_from_row(row, sim_dir))
 
-def construct_tsinfer_name(sim_name, subsample_size, error_param=None):
+def construct_tsinfer_name(sim_name, subsample_size, input_seq_error=None):
     """
-    Returns a TSinfer filename.
+    Returns a TSinfer filename. In the future we may have a tweakable error parameter
+    for tsinfer, which may be different from the actual error injected into the
+    simulated samples, so we allow for this here.
     If the file is a subset of the original, this can be added to the
     basename in this function, or later using the
     add_subsample_param_to_name() routine.
     """
     d,f = os.path.split(sim_name)
-    suffix = "" if error_param is None else "err{}".format(error_param)
+    suffix = "" if input_seq_error is None else "SQerr{}".format(input_seq_error)
     name = os.path.join(d,'+'.join(['tsinfer', f, suffix]))
     if subsample_size is not None and not pd.isnull(subsample_size):
         name = add_subsample_param_to_name(name, subsample_size)
@@ -347,10 +441,13 @@ class InferenceRunner(object):
         self.metric_params = metric_params
         self.polytomy_reps = polytomy_reps
         #the original simulation file does not include error or subsampling
-        self.orig_sim_fn = mk_sim_name_from_row(row, simulations_dir, subsample_col=None, error_col=None)
+        self.orig_sim_fn = mk_sim_name_from_row(
+            row, simulations_dir,
+            subsample_col=None, seq_error_col=None, aa_error_col=None)
         #the known tree file to compare inference against: is subset but no err
         self.cmp_fn = mk_sim_name_from_row(
-            row, simulations_dir, subsample_col=SUBCOMPARISON_COLNAME, error_col=None)
+            row, simulations_dir, 
+            subsample_col=SUBCOMPARISON_COLNAME, seq_error_col=None, aa_error_col=None)
         #sample_fn is used for sample data from the simulation, so must include error,
         #and (if used) the subsample size
         self.sample_fn = mk_sim_name_from_row(row, simulations_dir)
@@ -788,7 +885,7 @@ class Dataset(object):
     """
     sim_cols = [
         "replicate", "sample_size", "Ne", "length", "recombination_rate", "mutation_rate",
-        ERROR_COLNAME, "edges", "n_trees", "n_sites", "seed"]
+        SEQ_ERROR_COLNAME, "edges", "n_trees", "n_sites", "seed"]
 
     extra_sim_cols = []
 
@@ -801,9 +898,10 @@ class Dataset(object):
     """
     We store empirically determined error stats (e.g. from 1000 genomes platinum analysis
     in a separate csv file in the data_dir. We can use this filename as the label in the
-    ERROR_COLNAME column in the results file, so we know which error matrix we have used
+    SEQ_ERROR_COLNAME column in the results file, so we know which error matrix we used
     """
-    error_filename = "EmpiricalErrorPlatinum1000G.csv"
+    full_seq_error_filename = "EmpiricalErrorPlatinum1000G.csv"
+    seq_error_filename = full_seq_error_filename.replace(".csv","")
 
     def __init__(self):
         self.data_file = os.path.abspath(os.path.join(self.data_dir, self.name)) + ".csv"
@@ -840,11 +938,14 @@ class Dataset(object):
             shutil.rmtree(self.simulations_dir)
             logging.info("Deleting dir {}".format(self.simulations_dir))
         os.makedirs(self.simulations_dir)
+        # Make a buffer of the named error matrices
         try:
-            self.error_matrix = pd.read_csv(
-                os.path.join(self.data_dir, self.error_filename))
+            m = pd.read_csv(os.path.join(self.data_dir, self.full_seq_error_filename))
+            m.description = self.seq_error_filename
+            self.seq_error_names = {m.description: m}
         except FileNotFoundError:
-            pass # Allow no error file in case we are not using error: catch issues later
+            self.seq_error_names = {}
+            
         self.verbosity = args.verbosity
         logging.info("Creating dir {}".format(self.simulations_dir))
         self.data = self.run_simulations(
@@ -942,7 +1043,7 @@ class Dataset(object):
                 #have an advantage in getting more information to locate breakpoints
                 #Note that we might accidentally create a TS with no valid sites here
                 if small_ts.num_sites:
-                    self.generate_samples(small_ts, cmp_fn)
+                    generate_samples(small_ts, cmp_fn) # no error
             else:
                 ts.save_nexus_trees(base_fn +".nex")
         return_value = {}
@@ -963,13 +1064,15 @@ class Dataset(object):
                 self.save_variant_matrices(
                     ts.simplify(list(range(subsample))),
                     add_subsample_param_to_name(base_fn, subsample),
-                    keyed_params.get(ERROR_COLNAME) or 0,
-                    infinite_sites=False)
+                    keyed_params.get(SEQ_ERROR_COLNAME) or 0,
+                    keyed_params.get(AA_ERROR_COLNAME),
+                    inf_sites=False)
             else:
                 self.save_variant_matrices(
                     ts, base_fn, 
-                    keyed_params.get(ERROR_COLNAME) or 0,
-                    infinite_sites=False)
+                    keyed_params.get(SEQ_ERROR_COLNAME) or 0,
+                    keyed_params.get(AA_ERROR_COLNAME),
+                    inf_sites=False)
         return return_value
 
     def single_sim(self, row_id, sim_params, rng):
@@ -982,54 +1085,6 @@ class Dataset(object):
             "A dataset should implement a single_sim method that runs" \
             " a simulation, e.g. by calling self.single_neutral_simulation")
 
-    def generate_samples(self, ts, fn, error_param=0):
-        """
-        Generate a samples file from a simulated ts based on the empirically estimated 
-        error matrix saved in self.error_matrix.
-        """
-        record_rate = logging.getLogger().isEnabledFor(logging.INFO)
-        n_variants = bits_flipped = 0
-        assert ts.num_sites != 0
-        fn += ".samples"
-        sample_data = tsinfer.SampleData(path=fn, sequence_length=ts.sequence_length)
-        if error_param != 0:
-            logging.info("Adding genotyping error: {} used for file {}".format(
-                error_param, fn))
-        for v in ts.variants():
-            n_variants += 1    
-            try:
-                error_param = float(error_param)
-                if error_param == 0:
-                    genotypes=v.genotypes
-                else:
-                    raise NotImplementedError
-            except ValueError:
-                # Error_param is not a number => is a error file
-                # First record the allele frequency
-                m = v.genotypes.shape[0]
-                frequency = np.sum(v.genotypes) / m
-                try:
-                    #Find closest row in error matrix file
-                    closest_row = (self.error_matrix['freq']-frequency).abs().argsort()[:1]
-                    closest_freq = self.error_matrix.iloc[closest_row]
-                except AttributeError:
-                    logging.warning("Empirical error matrix not available at: {}".format(
-                        self.error_filename))
-                    raise
-                genotypes = make_errors_genotype_model(v.genotypes,closest_freq)
-                if record_rate:
-                    bits_flipped += np.sum(np.logical_xor(genotypes, v.genotypes))
-
-            sample_data.add_site(
-                position=v.site.position, alleles=v.alleles,
-                genotypes=genotypes)
-
-        if record_rate and (error_param != 0):
-            logging.info(" actual error rate = {} over {} sites".format(
-                bits_flipped/(n_variants*ts.sample_size), n_variants))
-
-        sample_data.finalise()
-        return sample_data
     
     def infer(
             self, num_processes, num_threads, force=False, metrics_only=False,
@@ -1364,20 +1419,26 @@ class Dataset(object):
 
 
 
-    def save_variant_matrices(self, ts, filename, error_param=0, infinite_sites=True):
+    def save_variant_matrices(self, ts, filename, seq_err=0, aa_err=0, inf_sites=True):
         """
-        Make sample data from a tree sequence
+        Make sample data from a tree sequence. Can include sequencing error (seq_err!=0)
+        and ancestral allele identification error (aa_err != 0). These can be filenames
+        for empirical error profiles.
         """
-        if infinite_sites:
+        if inf_sites:
             #for infinite sites, assume we have discretised mutations to ints
             if not all(p.is_integer() for p in pos):
                 raise ValueError("Variant positions are not all integers")
-        fn = add_error_param_to_name(filename, error_param)
+        fn = add_error_param_to_name(filename, seq_err, aa_err)
         if ts.num_sites == 0:
             logging.warning("No sites to save for {}".format(fn))
         else:
             logging.debug("Saving samples to {}".format(fn))
-            s = self.generate_samples(ts, fn, error_param)
+            try:
+                s = generate_samples(ts, fn, self.seq_error_names[seq_err])
+            except KeyError: # seq_err could be a number instead
+                s = generate_samples(ts, fn, float(seq_err))
+                
             if FASTARG in self.tools_and_metrics:
                 logging.debug("writing samples to {}.hap for fastARG".format(fn))
                 with open(fn+".hap", "w+") as file_in:
@@ -1386,12 +1447,12 @@ class Dataset(object):
                 logging.debug("writing samples to {}.sites for ARGweaver".format(fn))
                 with open(fn+".sites", "w+") as file_in:
                     ts_ARGweaver.samples_to_ARGweaver_in(
-                        s, file_in, infinite_sites=infinite_sites)
+                        s, file_in, infinite_sites=inf_sites)
             if RENTPLUS in self.tools_and_metrics:
                 logging.debug("writing samples to {}.dat for RentPlus".format(fn))
                 with open(fn+".dat", "wb+") as file_in:
                     ts_RentPlus.samples_to_RentPlus_in(
-                        s, file_in, infinite_sites=infinite_sites)
+                        s, file_in, infinite_sites=inf_sites)
 
 
 
@@ -1430,7 +1491,7 @@ class AllToolsDataset(Dataset):
     #params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
-        ERROR_COLNAME : [0, Dataset.error_filename.replace(".csv","")],
+        SEQ_ERROR_COLNAME : [0, Dataset.seq_error_filename],
     }
     
     def single_sim(self, row_id, sim_params, rng):
@@ -1469,7 +1530,37 @@ class AllToolsAccuracyDataset(AllToolsDataset):
     #params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
-        ERROR_COLNAME : [0, AllToolsDataset.error_filename.replace(".csv","")],
+        SEQ_ERROR_COLNAME : [0, AllToolsDataset.seq_error_filename],
+    }
+
+
+class AllToolsAccuracyBadAncestorsDataset(AllToolsDataset):
+    """
+    ARG inference using all tools, with mutation rate increasing 
+    to very high levels (relative to recombination). We expect accuracy
+    (measured by tree metrics) to increase (metrics to decrease to 0)
+    as mutation rate increases (and more data exists for inference).
+    """
+    name = "all_tools_accuracy"
+
+
+    #params that change BETWEEN simulations. Keys should correspond
+    # to column names in the csv file. Values should all be arrays.
+    between_sim_params = {
+        'Ne': [5000],
+        'mutation_rate': np.geomspace(0.5e-8, 3.5e-6, num=7),
+        'sample_size':   [16],
+        'length':        [100000],  #should be enough for ~ 50 trees
+        'recombination_rate': [1e-8],
+    }
+
+    extra_sim_cols = [AA_ERROR_COLNAME]
+
+    #params that change WITHIN simulations. Keys should correspond
+    # to column names in the csv file. Values should all be arrays.
+    within_sim_params = {
+        SEQ_ERROR_COLNAME : [0, AllToolsDataset.seq_error_filename],
+        AA_ERROR_COLNAME : [0, 0.1, 0.2],
     }
 
 class AllToolsPerformanceDataset(AllToolsDataset):
@@ -1501,7 +1592,7 @@ class AllToolsPerformanceDataset(AllToolsDataset):
     #params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
-        ERROR_COLNAME : [0],
+        SEQ_ERROR_COLNAME : [0],
     }
 
     def filter_between_sim_params(self, params):
@@ -1546,7 +1637,7 @@ class TsinferPerformanceDataset(AllToolsPerformanceDataset):
     #params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
-        ERROR_COLNAME : [0],
+        SEQ_ERROR_COLNAME : [0],
     }
 
     extra_sim_cols = ["ts_filesize", "vcf_filesize", "vcfgz_filesize", 
@@ -1614,7 +1705,7 @@ class FastargTsinferComparisonDataset(AllToolsPerformanceDataset):
     #params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
-        ERROR_COLNAME : [0],
+        SEQ_ERROR_COLNAME : [0],
     }
 
 ### SUPPLEMENTARY MATERIAL
@@ -1652,7 +1743,7 @@ class SubsamplingDataset(Dataset):
     within_sim_params = {
         'tsinfer_srb' : [True], #, False], #should we use shared recombinations ("path compression")
         SUBSAMPLE_COLNAME:  [12, 50, 100, 500, 1000], # inference based on this # samples
-        ERROR_COLNAME: [0, Dataset.error_filename.replace(".csv","")]
+        SEQ_ERROR_COLNAME: [0, Dataset.seq_error_filename]
     }
 
 
@@ -1706,7 +1797,7 @@ class AllToolsAccuracyWithDemographyDataset(Dataset):
     #params that change WITHIN simulations. Keys should correspond
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
-        ERROR_COLNAME : [0, Dataset.error_filename.replace(".csv","")],
+        SEQ_ERROR_COLNAME : [0, Dataset.seq_error_filename],
     }
 
     def single_sim(self, row_id, sim_params, rng):
@@ -1756,7 +1847,7 @@ class AllToolsAccuracyWithSelectiveSweepDataset(Dataset):
         # Frequencies when file is saved.
         # NB: these are strings because they are output as part of the filename
         'stop_freqs': ['0.2', '0.5', '0.8', '1.0', ('1.0', 200), ('1.0', 1000)],
-        ERROR_COLNAME : [0, Dataset.error_filename.replace(".csv","")],
+        SEQ_ERROR_COLNAME : [0, Dataset.seq_error_filename],
     }
 
     extra_sim_cols = [SIMTOOL_COLNAME, SELECTION_COEFF_COLNAME,
@@ -1837,7 +1928,6 @@ class ARGweaverParamChangesDataset(Dataset):
     within_sim_params = {
         'AW_burnin_steps': [1000,2000,5000], #by default, bin/arg-sim has no burnin time
         'AW_num_timepoints': [20,60,200], #by default, bin/arg-sim has n=20
-        ERROR_COLNAME : [0],
     }
 
     extra_sim_cols = ["only_AW", "ARGweaver_burnin", "ARGweaver_ntimes"]
@@ -1962,9 +2052,9 @@ class Summary(object):
         summary_df = self.dataset.data
         param_cols = getattr(self, 'param_cols', self.standard_param_cols)
         # check these are without error
-        if ERROR_COLNAME in self.dataset.data.columns:
-            assert len(self.dataset.data[ERROR_COLNAME].unique()) == 1
-            assert int(self.dataset.data[ERROR_COLNAME].unique()[0]) == 0
+        if SEQ_ERROR_COLNAME in self.dataset.data.columns:
+            assert len(self.dataset.data[SEQ_ERROR_COLNAME].unique()) == 1
+            assert int(self.dataset.data[SEQ_ERROR_COLNAME].unique()[0]) == 0
         # Remove unused columns (any not in param_cols, or target reponse columns)
         response_cols = [cn for cn in summary_df.columns if cn.endswith(colname_ending)]
         summary_df = summary_df.filter(items=param_cols+response_cols)
@@ -2072,7 +2162,7 @@ class MetricsAllToolsSummary(TreeMetricsSummary):
     """
     datasetClass = AllToolsDataset
     name = "metrics_all_tools"
-    param_cols = TreeMetricsSummary.standard_param_cols + [ERROR_COLNAME]
+    param_cols = TreeMetricsSummary.standard_param_cols + [SEQ_ERROR_COLNAME]
     
 
 class MetricsAllToolsAccuracySummary(MetricsAllToolsSummary):
@@ -2092,7 +2182,7 @@ class MetricAllToolsSummary(TreeMetricsSummary):
     """
     datasetClass = AllToolsDataset
     name = "metric_all_tools"
-    param_cols = TreeMetricsSummary.standard_param_cols + [ERROR_COLNAME]
+    param_cols = TreeMetricsSummary.standard_param_cols + [SEQ_ERROR_COLNAME]
 
 
 class MetricAllToolsAccuracySweepSummary(MetricAllToolsSummary):
@@ -2103,7 +2193,7 @@ class MetricAllToolsAccuracySweepSummary(MetricAllToolsSummary):
     datasetClass = AllToolsAccuracyWithSelectiveSweepDataset
     name = "metric_all_tools_accuracy_sweep"
     param_cols = MetricAllToolsSummary.standard_param_cols + \
-        [SELECTED_FREQ_COLNAME, SELECTED_POSTGEN_COLNAME, ERROR_COLNAME]
+        [SELECTED_FREQ_COLNAME, SELECTED_POSTGEN_COLNAME, SEQ_ERROR_COLNAME]
 
 
 class MetricAllToolsAccuracyDemographySummary(MetricAllToolsSummary):
@@ -2124,7 +2214,7 @@ class MetricSubsamplingSummary(MetricAllToolsSummary):
     datasetClass = SubsamplingDataset
     name = "metric_subsampling"
     param_cols = MetricAllToolsSummary.standard_param_cols + \
-        [ERROR_COLNAME, SUBSAMPLE_COLNAME, SUBCOMPARISON_COLNAME]
+        [SEQ_ERROR_COLNAME, SUBSAMPLE_COLNAME, SUBCOMPARISON_COLNAME]
 
 
 class PerformanceLengthSamplesSummary(Summary):
