@@ -163,10 +163,11 @@ def make_seq_errors_genotype_model(g, error_probs):
 
     return(np.reshape(genos,-1))
 
-def generate_samples(ts, fn, aa_error=0, seq_error=0, seq_error_name="empirical matrix"):
+def generate_samples(
+    ts, fn, aa_error=0, seq_error=0, empirical_seq_err_name=""):
     """
     Generate a samples file from a simulated ts. We can pass an integer or a 
-    matrix as the seq_error. If a matrix, it's nice to have a name for debugging
+    matrix as the seq_error. If a matrix, specify a name for it in empirical_seq_err
     """
     record_rate = logging.getLogger().isEnabledFor(logging.INFO)
     n_variants = bits_flipped = 0
@@ -175,7 +176,7 @@ def generate_samples(ts, fn, aa_error=0, seq_error=0, seq_error_name="empirical 
     sample_data = tsinfer.SampleData(path=fn, sequence_length=ts.sequence_length)
     
     # Setup the sequencing error used. Empirical error should be a matrix not a float
-    try:
+    if not empirical_seq_err_name:
         seq_error = float(seq_error)
         if seq_error == 0:
             record_rate = False # no point recording the achieved error rate
@@ -184,9 +185,9 @@ def generate_samples(ts, fn, aa_error=0, seq_error=0, seq_error_name="empirical 
             logging.info("Adding genotyping error: {} used for file {}".format(
                 seq_error, fn))
             sequencing_error = make_seq_errors_simple
-    except TypeError:
+    else:
         logging.info("Adding empirical genotyping error: {} used for file {}".format(
-            seq_error_name, fn))
+            empirical_seq_err_name, fn))
         sequencing_error = make_seq_errors_genotype_model
     # Setup the ancestral state error used
     aa_error_by_site = np.zeros(ts.num_sites, dtype=np.bool)
@@ -1434,9 +1435,11 @@ class Dataset(object):
         else:
             logging.debug("Saving samples to {}".format(fn))
             try:
-                s = generate_samples(ts, fn, self.seq_error_names[seq_err], seq_err)
+                s = generate_samples(
+                    ts, fn, seq_error=self.seq_error_names[seq_err],
+                    empirical_seq_err_name = seq_err)
             except KeyError: # seq_err could be a number instead
-                s = generate_samples(ts, fn, float(seq_err))
+                s = generate_samples(ts, fn, seq_error=float(seq_err))
                 
             if FASTARG in self.tools_and_metrics:
                 logging.debug("writing samples to {}.hap for fastARG".format(fn))
