@@ -164,7 +164,7 @@ def make_seq_errors_genotype_model(g, error_probs):
     return(np.reshape(genos,-1))
 
 def generate_samples(
-    ts, fn, aa_error=0, seq_error=0, empirical_seq_err_name=""):
+    ts, fn, aa_error="0", seq_error="0", empirical_seq_err_name=""):
     """
     Generate a samples file from a simulated ts. We can pass an integer or a 
     matrix as the seq_error. If a matrix, specify a name for it in empirical_seq_err
@@ -190,6 +190,7 @@ def generate_samples(
             empirical_seq_err_name, fn))
         sequencing_error = make_seq_errors_genotype_model
     # Setup the ancestral state error used
+    aa_error = float(aa_error)
     aa_error_by_site = np.zeros(ts.num_sites, dtype=np.bool)
     if aa_error > 0:
         assert aa_error <= 1
