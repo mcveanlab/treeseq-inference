@@ -174,12 +174,13 @@ def generate_samples(ts, fn, seq_error=0, aa_error=0):
     fn += ".samples"
     sample_data = tsinfer.SampleData(path=fn, sequence_length=ts.sequence_length)
     
-    # Setup the sort of sequencing error used
-    try:
+    # Setup the sort of sequencing error used. Empirical error should be a matrix with a
+    #  description attribute, for error reporting
+    if hasattr(seq_error, "description"):
         logging.info("Adding empirical genotyping error: {} used for file {}".format(
             seq_error.description, fn))
         sequencing_error = make_seq_errors_genotype_model
-    except AttributeError:
+    else:
         seq_error = float(seq_error)
         if seq_error != 0:
             logging.info("Adding genotyping error: {} used for file {}".format(
