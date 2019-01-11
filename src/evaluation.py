@@ -163,7 +163,7 @@ def make_seq_errors_genotype_model(g, error_probs):
 
     return(np.reshape(genos,-1))
 
-def generate_samples(ts, fn, seq_error=0, aa_error=0):
+def generate_samples(ts, fn, aa_error=0, seq_error=0, seq_error_debug_name=""):
     """
     Generate a samples file from a simulated ts. We can pass an integer or a 
     matrix as the seq_error.
@@ -176,19 +176,19 @@ def generate_samples(ts, fn, seq_error=0, aa_error=0):
     
     # Setup the sort of sequencing error used. Empirical error should be a matrix with a
     #  description attribute, for error reporting
-    if hasattr(seq_error, "description"):
-        logging.info("Adding empirical genotyping error: {} used for file {}".format(
-            seq_error.description, fn))
-        sequencing_error = make_seq_errors_genotype_model
-    else:
+    try:
         seq_error = float(seq_error)
-        if seq_error != 0:
+        if seq_error == 0:
+            record_rate = False # no point recording the achieved error rate
+            sequencing_error = make_no_errors
+        else:
             logging.info("Adding genotyping error: {} used for file {}".format(
                 seq_error, fn))
             sequencing_error = make_seq_errors_simple
-        else:
-            record_rate = False # no point recording the achieved error rate
-            sequencing_error = make_no_errors
+    except TypeError:
+        logging.info("Adding empirical genotyping error: {} used for file {}".format(
+            seq_error_debug_name, fn))
+        sequencing_error = make_seq_errors_genotype_model
     # Setup the ancestral state error used
     aa_error_by_site = np.zeros(ts.num_sites, dtype=np.bool)
     if aa_error > 0:
@@ -942,12 +942,11 @@ class Dataset(object):
         # Make a buffer of the named error matrices
         try:
             m = pd.read_csv(os.path.join(self.data_dir, self.full_seq_error_filename))
-            m.description = self.seq_error_filename
             self.seq_error_names = {m.description: m}
         except FileNotFoundError:
             self.seq_error_names = {}
             
-        self.verbosity = args.verbosity
+        #self.verbosity = args.verbosity
         logging.info("Creating dir {}".format(self.simulations_dir))
         self.data = self.run_simulations(
             args.replicates, args.seed, args.progress, args.processes)
@@ -1436,7 +1435,7 @@ class Dataset(object):
         else:
             logging.debug("Saving samples to {}".format(fn))
             try:
-                s = generate_samples(ts, fn, self.seq_error_names[seq_err])
+                s = generate_samples(ts, fn, self.seq_error_names[seq_err], seq_error)
             except KeyError: # seq_err could be a number instead
                 s = generate_samples(ts, fn, float(seq_err))
                 
