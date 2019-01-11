@@ -1541,7 +1541,7 @@ class AllToolsAccuracyBadAncestorsDataset(AllToolsDataset):
     (measured by tree metrics) to increase (metrics to decrease to 0)
     as mutation rate increases (and more data exists for inference).
     """
-    name = "all_tools_accuracy"
+    name = "all_tools_accuracy_bad_ancestors"
 
 
     #params that change BETWEEN simulations. Keys should correspond
@@ -1560,7 +1560,7 @@ class AllToolsAccuracyBadAncestorsDataset(AllToolsDataset):
     # to column names in the csv file. Values should all be arrays.
     within_sim_params = {
         SEQ_ERROR_COLNAME : [0, AllToolsDataset.seq_error_filename],
-        AA_ERROR_COLNAME : [0, 0.1, 0.2],
+        AA_ERROR_COLNAME : [0, 0.01, 0.02],
     }
 
 class AllToolsPerformanceDataset(AllToolsDataset):
