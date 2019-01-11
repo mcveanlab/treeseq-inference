@@ -96,6 +96,9 @@ if __name__ == '__main__':
     parser.add_argument(
         "--seed", "-s", type=int, default=None, 
         help="run a single simulation with this seed")
+    parser.add_argument(
+        "--slim_binary", "-S", type=str, default="slim", 
+        help="Path to the slim binary")
     parser.add_argument("-v", "--verbose", help="increase output verbosity",
                     action="store_true")
     args = parser.parse_args()
@@ -105,5 +108,5 @@ if __name__ == '__main__':
 
     ts = WF_GC_simulation(
         popsize=args.popsize, chrom_length=100000, recomb_rate=1e-8, mut_rate=1e-8, gc_rate=1e-7,
-        gc_mean_len = 500, nsamples=16, file_prefix = args.output, seed = args.seed)
+        gc_mean_len = 500, nsamples=16, file_prefix = args.output, seed = args.seed, slimname=args.slim_binary)
     ts.dump(args.output + ".trees")
