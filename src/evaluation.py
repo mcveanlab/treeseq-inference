@@ -296,11 +296,11 @@ def add_error_param_to_name(sim_name, seq_error_param=None, aa_error_param=None)
     """
     if seq_error_param is not None and not pd.isnull(seq_error_param):
         if sim_name.endswith("+") or sim_name.endswith("-"):
-            #this is not the first param
-            sim_name += "_err{}".format(seq_error_param)
-        else:
             #this is the first param
             sim_name += "err{}".format(seq_error_param)
+        else:
+            #this is not the first param
+            sim_name += "_err{}".format(seq_error_param)
     if aa_error_param is not None and not pd.isnull(aa_error_param):
         if sim_name.endswith("+") or sim_name.endswith("-"):
             #this is not the first param
