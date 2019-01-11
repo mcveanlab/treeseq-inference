@@ -163,10 +163,10 @@ def make_seq_errors_genotype_model(g, error_probs):
 
     return(np.reshape(genos,-1))
 
-def generate_samples(ts, fn, aa_error=0, seq_error=0, seq_error_debug_name=""):
+def generate_samples(ts, fn, aa_error=0, seq_error=0, seq_error_name="empirical matrix"):
     """
     Generate a samples file from a simulated ts. We can pass an integer or a 
-    matrix as the seq_error.
+    matrix as the seq_error. If a matrix, it's nice to have a name for debugging
     """
     record_rate = logging.getLogger().isEnabledFor(logging.INFO)
     n_variants = bits_flipped = 0
@@ -174,8 +174,7 @@ def generate_samples(ts, fn, aa_error=0, seq_error=0, seq_error_debug_name=""):
     fn += ".samples"
     sample_data = tsinfer.SampleData(path=fn, sequence_length=ts.sequence_length)
     
-    # Setup the sort of sequencing error used. Empirical error should be a matrix with a
-    #  description attribute, for error reporting
+    # Setup the sequencing error used. Empirical error should be a matrix not a float
     try:
         seq_error = float(seq_error)
         if seq_error == 0:
@@ -187,7 +186,7 @@ def generate_samples(ts, fn, aa_error=0, seq_error=0, seq_error_debug_name=""):
             sequencing_error = make_seq_errors_simple
     except TypeError:
         logging.info("Adding empirical genotyping error: {} used for file {}".format(
-            seq_error_debug_name, fn))
+            seq_error_name, fn))
         sequencing_error = make_seq_errors_genotype_model
     # Setup the ancestral state error used
     aa_error_by_site = np.zeros(ts.num_sites, dtype=np.bool)
@@ -942,7 +941,7 @@ class Dataset(object):
         # Make a buffer of the named error matrices
         try:
             m = pd.read_csv(os.path.join(self.data_dir, self.full_seq_error_filename))
-            self.seq_error_names = {m.description: m}
+            self.seq_error_names = {self.seq_error_filename: m}
         except FileNotFoundError:
             self.seq_error_names = {}
             
