@@ -782,9 +782,9 @@ class MetricAllToolsFigure(TreeMetricsFigure):
     """
     plot_height = 4.5
     name = "metric_all_tools"
-    y_axis_label="Average distance from true trees"
+    #y_axis_label="Average distance from true trees"
     hide_polytomy_breaking = True
-    output_metrics = [("KC","rooted")] #can add extras in here if necessary
+    output_metrics = [("KC","rooted"), ("RF", "rooted")] #can add extras in here if necessary
 
     def plot(self):
         if getattr(self,"hide_polytomy_breaking", None):
@@ -802,9 +802,16 @@ class MetricAllToolsFigure(TreeMetricsFigure):
             method = averaging_method[0]
 
             # x-direction is different sequencing error rates
-            seq_error_params = df.error_param.unique()
-            # y-direction (if present) is different ancestral allele error rates            
-            aa_error_params = self.data.ancestral_state_error_param.unique()
+            try:
+                seq_error_params = df.error_param.unique()
+            except AttributeError:
+                seq_error_params = [0]
+                
+            # y-direction is different ancestral allele error rates (if present)
+            try:
+                aa_error_params = self.data.ancestral_state_error_param.unique()
+            except AttributeError:
+                aa_error_params = [0]
 
             fig, axes = plt.subplots(len(aa_error_params), len(seq_error_params),
                 squeeze=False, sharey=True,
@@ -813,8 +820,10 @@ class MetricAllToolsFigure(TreeMetricsFigure):
                 for k, seq_error in enumerate(seq_error_params):
                     ax = axes[j][k]
                     subquery = query
-                    subquery.append("error_param == @seq_error")
-                    subquery.append("ancestral_state_error_param == @aa_error")
+                    if len(seq_error_params) > 1:
+                        subquery.append("error_param == @seq_error")
+                    if len(aa_error_params) > 1:
+                        subquery.append("ancestral_state_error_param == @aa_error")
                     display_order = self.single_metric_plot(
                         df.query("(" + ") and (".join(subquery) + ")"),
                         "mutation_rate", ax, method, rho)
@@ -826,7 +835,7 @@ class MetricAllToolsFigure(TreeMetricsFigure):
                         rooting_suffix = " (unrooted)" if rooting=="unrooted" else ""
                         ylab = getattr(self, 'y_axis_label', None)
                         if ylab is None:
-                            ylab = self.metric_titles[metric] + rooting_suffix)
+                            ylab = self.metric_titles[metric] + rooting_suffix
                         if len(aa_error_params)>1 or aa_error != 0:
                             ylab += "with aa err = {}".format(aa_error)
                         ax.set_ylabel(ylab)
@@ -840,7 +849,7 @@ class MetricAllToolsFigure(TreeMetricsFigure):
                 for d in display_order[['tool', 'polytomies']].drop_duplicates().itertuples()]
             tool_labels = [d.tool + ("" if d.polytomies == "retained" else (" (polytomies " + d.polytomies + ")"))
                 for d in display_order[['tool', 'polytomies']].drop_duplicates().itertuples()]
-            first_legend = axes[0].legend(
+            first_legend = axes[0][0].legend(
                 artists, tool_labels, numpoints=1, labelspacing=0.1, loc="upper right")
             fig.tight_layout()
             if len(self.output_metrics)==1:
@@ -988,7 +997,7 @@ class MetricSubsamplingFigure(TreeMetricsFigure):
                     for d in display_order[['length', 'tool', 'polytomies']].drop_duplicates().itertuples()]
                 labels = ["{} kb".format(d.length//1000)
                     for d in display_order[['length']].drop_duplicates().itertuples()]
-                first_legend = axes[0].legend(
+                first_legend = axes[0][0].legend(
                     artists, labels, numpoints=1, labelspacing=0.1, loc="upper right")
             fig.tight_layout()
             if len(self.output_metrics)==1:
