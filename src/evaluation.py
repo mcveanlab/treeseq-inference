@@ -1434,7 +1434,7 @@ class Dataset(object):
         else:
             logging.debug("Saving samples to {}".format(fn))
             try:
-                s = generate_samples(ts, fn, self.seq_error_names[seq_err], seq_error)
+                s = generate_samples(ts, fn, self.seq_error_names[seq_err], seq_err)
             except KeyError: # seq_err could be a number instead
                 s = generate_samples(ts, fn, float(seq_err))
                 
