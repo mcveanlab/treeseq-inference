@@ -917,7 +917,9 @@ class Dataset(object):
                 for bits in metrics]
 
     def load_data(self):
-        self.data = pd.read_csv(self.data_file)
+        # Error columns can contain filenames etc so are strings
+        self.data = pd.read_csv(
+            self.data_file, dtype={SEQ_ERROR_COLNAME: str, AA_ERROR_COLNAME: str})
 
     def dump_data(self, write_index=False, force_flush=True):
         """
