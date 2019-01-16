@@ -862,7 +862,8 @@ class MetricAllToolsAccuracyBadAncestorsSummary(MetricAllToolsFigure):
     name = "metric_all_tools_accuracy_bad_ancestors"
     output_metrics = [("KC","rooted"), ("RF", "rooted")]
     y_axis_label = None
-
+    hide_polytomy_breaking = False
+    plot_height = 10.5
 
 
 class MetricAllToolsAccuracyDemographyFigure(MetricAllToolsFigure):

@@ -108,16 +108,6 @@ def ts_has_non_singleton_variants(ts):
     return False
 
 
-def make_aa_errors(g, error_prob):
-    """
-    For a given freq variant, what is the probability of a flipping the ancestral 
-    state. We expect this to be of the order of about 1-2% wrong calls, although we
-    do not know if this varies with frequency (it probably does).
-    One way of looking at this is to look at the distribution of high, low, and
-    no confidence ancestral state calls vs frequency
-    """
-    raise NotImplementedError
-
 
 def make_no_errors(g, error_prob):
     assert error_prob == 0
@@ -170,7 +160,7 @@ def generate_samples(
     matrix as the seq_error. If a matrix, specify a name for it in empirical_seq_err
     """
     record_rate = logging.getLogger().isEnabledFor(logging.INFO)
-    n_variants = bits_flipped = 0
+    n_variants = bits_flipped = bad_ancestors = 0
     assert ts.num_sites != 0
     fn += ".samples"
     sample_data = tsinfer.SampleData(path=fn, sequence_length=ts.sequence_length)
@@ -182,11 +172,11 @@ def generate_samples(
             record_rate = False # no point recording the achieved error rate
             sequencing_error = make_no_errors
         else:
-            logging.info("Adding genotyping error: {} used for file {}".format(
+            logging.info("Adding genotyping error: {} used in file {}".format(
                 seq_error, fn))
             sequencing_error = make_seq_errors_simple
     else:
-        logging.info("Adding empirical genotyping error: {} used for file {}".format(
+        logging.info("Adding empirical genotyping error: {} used in file {}".format(
             empirical_seq_err_name, fn))
         sequencing_error = make_seq_errors_genotype_model
     # Setup the ancestral state error used
@@ -194,28 +184,29 @@ def generate_samples(
     aa_error_by_site = np.zeros(ts.num_sites, dtype=np.bool)
     if aa_error > 0:
         assert aa_error <= 1
-        logging.info("Adding ancestral allele polarity error: {}% used for file {}".format(
-            aa_error * 100, fn))
+        n_bad_sites = round(aa_error*ts.num_sites)
+        logging.info("Adding ancestral allele polarity error: {}% ({}/{} sites) used in file {}"
+            .format(aa_error * 100, n_bad_sites, ts.num_sites, fn))
         # This gives *exactly* a proportion aa_error or bad sites
         # NB - to to this probabilitistically, use np.binomial(1, e, ts.num_sites)
-        aa_error_by_site[0:round(aa_error*ts.num_sites)] = True
+        aa_error_by_site[0:n_bad_sites] = True
         np.random.shuffle(aa_error_by_site)
+        assert sum(aa_error_by_site) == n_bad_sites
     for ancestral_allele_error, v in zip(aa_error_by_site, ts.variants()):
         n_variants += 1    
         genotypes = sequencing_error(v.genotypes, seq_error)
         if record_rate:
             bits_flipped += np.sum(np.logical_xor(genotypes, v.genotypes))
+            bad_ancestors += ancestral_allele_error
         if ancestral_allele_error:
-            reversed_alleles = [v.alleles[1],v.alleles[0]]
             sample_data.add_site(
-                position=v.site.position, alleles=reversed_alleles, genotypes=genotypes)
+                position=v.site.position, alleles=v.alleles, genotypes=1-genotypes)
         else:
             sample_data.add_site(
                 position=v.site.position, alleles=v.alleles, genotypes=genotypes)
-
     if record_rate:
-        logging.info(" actual error rate = {} over {} sites".format(
-            bits_flipped/(n_variants*ts.sample_size), n_variants))
+        logging.info(" actual error rate = {} over {} sites before {} ancestors flipped"
+            .format(bits_flipped/(n_variants*ts.sample_size), n_variants, bad_ancestors))
 
     sample_data.finalise()
     return sample_data
@@ -2193,7 +2184,7 @@ class MetricAllToolsSummary(TreeMetricsSummary):
     """
     datasetClass = AllToolsDataset
     name = "metric_all_tools"
-    param_cols = TreeMetricsSummary.standard_param_cols + [SEQ_ERROR_COLNAME]
+    param_cols = TreeMetricsSummary.param_cols + [SEQ_ERROR_COLNAME]
 
 
 class MetricAllToolsAccuracyBadAncestorsSummary(MetricAllToolsSummary):
@@ -2203,7 +2194,7 @@ class MetricAllToolsAccuracyBadAncestorsSummary(MetricAllToolsSummary):
     """
     datasetClass = AllToolsAccuracyBadAncestorsDataset
     name = "metric_all_tools_accuracy_bad_ancestors"
-    param_cols = MetricAllToolsSummary.standard_param_cols + [AA_ERROR_COLNAME]
+    param_cols = MetricAllToolsSummary.param_cols + [AA_ERROR_COLNAME]
 
 
 class MetricAllToolsAccuracySweepSummary(MetricAllToolsSummary):
@@ -2213,8 +2204,8 @@ class MetricAllToolsAccuracySweepSummary(MetricAllToolsSummary):
     """
     datasetClass = AllToolsAccuracyWithSelectiveSweepDataset
     name = "metric_all_tools_accuracy_sweep"
-    param_cols = MetricAllToolsSummary.standard_param_cols + \
-        [SELECTED_FREQ_COLNAME, SELECTED_POSTGEN_COLNAME, SEQ_ERROR_COLNAME]
+    param_cols = MetricAllToolsSummary.param_cols + \
+        [SELECTED_FREQ_COLNAME, SELECTED_POSTGEN_COLNAME]
 
 
 class MetricAllToolsAccuracyDemographySummary(MetricAllToolsSummary):
