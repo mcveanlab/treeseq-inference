@@ -35,7 +35,7 @@ class CyclicalARGError(Exception):
     ARGWeaver, so there's nothing we can do about it other than catch the
     error and abort the conversion.
 
-    See https://github.com/mdrasmus/argweaver/issues/20
+    See https://github.com/mdrasmus/argweaver/issues/19
     """
 
 def tsfile_to_ARGweaver_in(trees, ARGweaver_filehandle):
