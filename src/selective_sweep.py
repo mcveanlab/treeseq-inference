@@ -180,7 +180,7 @@ def simulate_sweep(popsize, chrom_length, recomb_rate, mut_rate,
     return ret_val
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Make the plots for specific figures.")
+    parser = argparse.ArgumentParser(description="Run a simulation with a selective sweep.")
     parser.add_argument("--seed", "-s", type=int, help="run a single simulation with this seed")
     parser.add_argument("-v", "--verbose", help="increase output verbosity",
                     action="store_true")
