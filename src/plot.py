@@ -837,7 +837,7 @@ class MetricAllToolsFigure(TreeMetricsFigure):
                         if ylab is None:
                             ylab = self.metric_titles[metric] + rooting_suffix
                         if len(aa_error_params)>1 or aa_error != 0:
-                            ylab += "with aa err = {}".format(aa_error)
+                            ylab += " with aa err = {}".format(aa_error)
                         ax.set_ylabel(ylab)
 
             # Create legends from custom artists
