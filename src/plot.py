@@ -837,7 +837,7 @@ class MetricAllToolsFigure(TreeMetricsFigure):
                         if ylab is None:
                             ylab = self.metric_titles[metric] + rooting_suffix
                         if len(aa_error_params)>1 or aa_error != 0:
-                            ylab += "with aa err = {}".format(aa_error)
+                            ylab += " with aa err = {}".format(aa_error)
                         ax.set_ylabel(ylab)
 
             # Create legends from custom artists
@@ -862,7 +862,8 @@ class MetricAllToolsAccuracyBadAncestorsSummary(MetricAllToolsFigure):
     name = "metric_all_tools_accuracy_bad_ancestors"
     output_metrics = [("KC","rooted"), ("RF", "rooted")]
     y_axis_label = None
-
+    hide_polytomy_breaking = False
+    plot_height = 10.5
 
 
 class MetricAllToolsAccuracyDemographyFigure(MetricAllToolsFigure):
