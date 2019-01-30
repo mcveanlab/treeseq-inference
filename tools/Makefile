@@ -1,5 +1,5 @@
 all: | fastARG argweaver RentPlus SLiM
-	#the following two tools require stand-alone compilation
+	#the following tools require stand-alone compilation
 	make -C fastARG
 	make -C argweaver
 	make -C SLiM/build
@@ -20,7 +20,7 @@ RentPlus:
 	cd RentPlus && git checkout 788287300e269921c37bd8e59d3c624f23806ace
 
 SLiM:
-	#this is used for the file selective_sweep.py
-	git clone https://github.com/MesserLab/SLiM
-	cd SLiM && git checkout 58d41bef3d4363ca3c9e571ae1f34a5540e89eaa && mkdir build && cd build && cmake ../
+	#this is used for the file selective_sweep.py. We need at least 3.2.1
+	git clone https://github.com/MesserLab/SLiM -b v3.2.1
+	cd SLiM && mkdir build && cd build && cmake ../
 
