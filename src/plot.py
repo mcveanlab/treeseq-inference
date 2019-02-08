@@ -725,16 +725,16 @@ class MetricsAllToolsFigure(TreeMetricsFigure):
 
         sample_sizes = self.data.sample_size.unique()
         # x-direction is different error rates
-        error_params = self.data.error_param.unique()
+        seq_error_params = self.data.error_param.unique()
         # y-direction is the permutations of metric + whether it is rooted
         metric_and_rooting = self.data.groupby(["metric", "rooting"]).groups
         # sort this so that metrics come out in a set order (TO DO)
-        fig, axes = plt.subplots(len(metric_and_rooting),
-            len(error_params), figsize=(6*len(error_params), 15), sharey='row')
+        fig, axes = plt.subplots(len(metric_and_rooting), len(seq_error_params),
+            squeeze=False, sharey='row', figsize=(6*len(seq_error_params), 15))
         for j, ((metric, root), rows) in enumerate(metric_and_rooting.items()):
-            for k, error in enumerate(error_params):
+            for k, error in enumerate(seq_error_params):
                 # we are in the j,k th subplot
-                ax = axes[j][k] if len(error_params)>1 else axes[j]
+                ax = axes[j][k]
                 ax.set_xscale('log')
                 display_order = self.single_metric_plot(
                     self.data.loc[rows].query("error_param == @error"), "mutation_rate",
@@ -782,9 +782,9 @@ class MetricAllToolsFigure(TreeMetricsFigure):
     """
     plot_height = 4.5
     name = "metric_all_tools"
-    y_axis_label="Average distance from true trees"
+    #y_axis_label="Average distance from true trees"
     hide_polytomy_breaking = True
-    output_metrics = [("KC","rooted")] #can add extras in here if necessary
+    output_metrics = [("KC","rooted"), ("RF", "rooted")] #can add extras in here if necessary
 
     def plot(self):
         if getattr(self,"hide_polytomy_breaking", None):
@@ -801,24 +801,44 @@ class MetricAllToolsFigure(TreeMetricsFigure):
             rho = rhos[0]
             method = averaging_method[0]
 
-            # x-direction is different error rates
-            error_params = df.error_param.unique()
+            # x-direction is different sequencing error rates
+            try:
+                seq_error_params = df.error_param.unique()
+            except AttributeError:
+                seq_error_params = [0]
+                
+            # y-direction is different ancestral allele error rates (if present)
+            try:
+                aa_error_params = self.data.ancestral_state_error_param.unique()
+            except AttributeError:
+                aa_error_params = [0]
 
-            fig, axes = plt.subplots(1, len(error_params), sharey=True,
-                figsize=getattr(self,'figsize',(6*len(error_params), self.plot_height)))
-            for k, error in enumerate(error_params):
-                ax = axes[k] if len(error_params)>1 else axes
-                display_order = self.single_metric_plot(
-                    df.query("(" + ") and (".join(query + ["error_param == @error"]) + ")"),
-                    "mutation_rate", ax, method, rho)
-                ax.set_title(self.error_label(error))
-                ax.set_xlabel("Mutation rate")
-                ax.set_xscale('log')
-                if k == 0:
-                    ax.set_ylim(getattr(self,'ylim', 0))
-                    rooting_suffix = " (unrooted)" if rooting=="unrooted" else ""
-                    ylab = getattr(self, 'y_axis_label', self.metric_titles[metric] + rooting_suffix)
-                    ax.set_ylabel(ylab)
+            fig, axes = plt.subplots(len(aa_error_params), len(seq_error_params),
+                squeeze=False, sharey=True,
+                figsize=getattr(self,'figsize',(6*len(seq_error_params), self.plot_height)))
+            for j, aa_error in enumerate(aa_error_params):
+                for k, seq_error in enumerate(seq_error_params):
+                    ax = axes[j][k]
+                    subquery = query
+                    if len(seq_error_params) > 1:
+                        subquery.append("error_param == @seq_error")
+                    if len(aa_error_params) > 1:
+                        subquery.append("ancestral_state_error_param == @aa_error")
+                    display_order = self.single_metric_plot(
+                        df.query("(" + ") and (".join(subquery) + ")"),
+                        "mutation_rate", ax, method, rho)
+                    ax.set_title(self.error_label(seq_error))
+                    ax.set_xlabel("Mutation rate")
+                    ax.set_xscale('log')
+                    if k == 0:
+                        ax.set_ylim(getattr(self,'ylim', 0))
+                        rooting_suffix = " (unrooted)" if rooting=="unrooted" else ""
+                        ylab = getattr(self, 'y_axis_label', None)
+                        if ylab is None:
+                            ylab = self.metric_titles[metric] + rooting_suffix
+                        if len(aa_error_params)>1 or aa_error != 0:
+                            ylab += " with aa err = {}".format(aa_error)
+                        ax.set_ylabel(ylab)
 
             # Create legends from custom artists
             artists = [
@@ -829,13 +849,21 @@ class MetricAllToolsFigure(TreeMetricsFigure):
                 for d in display_order[['tool', 'polytomies']].drop_duplicates().itertuples()]
             tool_labels = [d.tool + ("" if d.polytomies == "retained" else (" (polytomies " + d.polytomies + ")"))
                 for d in display_order[['tool', 'polytomies']].drop_duplicates().itertuples()]
-            first_legend = axes[0].legend(
+            first_legend = axes[0][0].legend(
                 artists, tool_labels, numpoints=1, labelspacing=0.1, loc="upper right")
             fig.tight_layout()
             if len(self.output_metrics)==1:
                 self.save()
             else:
                 self.save("_".join([self.name, metric, rooting]))
+
+
+class MetricAllToolsAccuracyBadAncestorsSummary(MetricAllToolsFigure):
+    name = "metric_all_tools_accuracy_bad_ancestors"
+    output_metrics = [("KC","rooted"), ("RF", "rooted")]
+    y_axis_label = None
+    hide_polytomy_breaking = False
+    plot_height = 10.5
 
 
 class MetricAllToolsAccuracyDemographyFigure(MetricAllToolsFigure):
@@ -874,13 +902,13 @@ class MetricAllToolsAccuracySweepFigure(TreeMetricsFigure):
             rho = rhos[0]
             method = averaging_method[0]
             # x-direction is different error rates
-            error_params = df.error_param.unique()
-            fig, axes = plt.subplots(len(output_freqs), len(error_params),
-                figsize=getattr(self,'figsize',(6*len(error_params), 2.5*len(output_freqs))),
-                sharey=True)
+            seq_error_params = df.error_param.unique()
+            fig, axes = plt.subplots(len(output_freqs), len(seq_error_params),
+                figsize=getattr(self,'figsize',(6*len(seq_error_params), 2.5*len(output_freqs))),
+                squeeze=False, sharey=True)
             for j, output_data in enumerate(output_freqs.itertuples()):
-                for k, error in enumerate(error_params):
-                    ax = axes[j][k] if len(error_params)>1 else axes[j]
+                for k, error in enumerate(seq_error_params):
+                    ax = axes[j][k]
                     freq = output_data.output_frequency
                     gens = output_data.output_after_generations
                     query = ["error_param == @error"]
@@ -946,11 +974,11 @@ class MetricSubsamplingFigure(TreeMetricsFigure):
             tree_tips = all_tree_tips[0]
             method = averaging_method[0]
             lengths = df.length.unique()
-            error_params = df.error_param.unique()
-            fig, axes = plt.subplots(1, len(error_params),
-                figsize=(12, 6), sharey=True)
-            for k, error in enumerate(error_params):
-                ax = axes[k]
+            seq_error_params = df.error_param.unique()
+            fig, axes = plt.subplots(1, len(seq_error_params),
+                figsize=(12, 6), squeeze=False, sharey=True)
+            for k, error in enumerate(seq_error_params):
+                ax = axes[0][k]
                 display_order = self.single_metric_plot(
                     df.query("error_param == @error"), "subsample_size",
                     ax, method, rho = None, markers = False, x_jitter = 'log')
@@ -970,7 +998,7 @@ class MetricSubsamplingFigure(TreeMetricsFigure):
                     for d in display_order[['length', 'tool', 'polytomies']].drop_duplicates().itertuples()]
                 labels = ["{} kb".format(d.length//1000)
                     for d in display_order[['length']].drop_duplicates().itertuples()]
-                first_legend = axes[0].legend(
+                first_legend = axes[0][0].legend(
                     artists, labels, numpoints=1, labelspacing=0.1, loc="upper right")
             fig.tight_layout()
             if len(self.output_metrics)==1:
