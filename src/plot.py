@@ -380,10 +380,10 @@ class ToolsFigure(Figure):
     # Colours taken from Matplotlib default color wheel.
     # https://matplotlib.org/users/dflt_style_changes.html
     tools_format = collections.OrderedDict([
-        ("ARGweaver", {"mark":"o", "col":"#d62728"}),
-        ("RentPlus",  {"mark":"^", "col":"#2ca02c"}),
-        ("fastARG",   {"mark":"s", "col":"#ff7f0e"}),
-        ("tsinfer",   {"mark":"*", "col":"#1f77b4"}),
+        ("ARGweaver", {"mark":"*", "col":"#d62728"}),
+        ("RentPlus",  {"mark":"d", "col":"#2ca02c"}),
+        ("fastARG",   {"mark":"^", "col":"#ff7f0e"}),
+        ("tsinfer",   {"mark":"o", "col":"#1f77b4"}),
     ])
 
     error_bars = True
@@ -1036,6 +1036,10 @@ class UkbbStructureFigure(Figure):
 
         cg = sns.clustermap(df[x_pop], row_linkage=row_linkage, col_cluster=False, rasterized=True)
         cg.ax_heatmap.set_ylabel("")
+        for tick in cg.ax_heatmap.get_xticklabels():
+            tick.set_rotation(-45)
+            tick.set_ha('left')
+            tick.set_rotation_mode("anchor")
         self.save("ukbb_ukbb_clustermap_british")
 
     def plot_1kg_ukbb_clustermap(self):
