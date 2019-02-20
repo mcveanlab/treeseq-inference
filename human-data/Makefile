@@ -126,11 +126,10 @@ GENOTYPES_BASE=http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/suppor
 sgdp_samples.txt:
 	curl https://sharehost.hms.harvard.edu/genetics/reich_lab/sgdp/SGDP_metadata.279public.21signedLetter.samples.txt -o $@
 	 
-# TODO download the full tarball for the cteam_extended files?
+cteam_extended.v4.PS2_phase.public.chr20.vcf.gz: 
+	curl https://sharehost.hms.harvard.edu/genetics/reich_lab/sgdp/phased_data/PS2_multisample_public/cteam_extended.v4.PS2_phase.public.chr20.vcf.gz.csi -O
+	curl https://sharehost.hms.harvard.edu/genetics/reich_lab/sgdp/phased_data/PS2_multisample_public/cteam_extended.v4.PS2_phase.public.chr20.vcf.gz -O
 
-# TODO we need to make sure that the source VCF is indexed here or the sample
-# removal will fail.
-#
 sgdp_chr20_genotypes.bcf: cteam_extended.v4.PS2_phase.public.chr20.vcf.gz 
 	# Remove the S_Naxi-2 individual because (a) it doesn't have any metadata in the 
 	# file we're using and (b) it has a massively elevated sample edge count if we 

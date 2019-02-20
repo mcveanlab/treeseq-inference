@@ -10,9 +10,8 @@ data pipeline, everything is intended to be run from the repository root.
 
 ## Human data
 
-Please see the [README](human-data/README.md) for details on running the 
-human data pipelines.
-
+Please see the [README](human-data/README.md) in the ``human-data`` directory 
+for details on running the human data pipelines.
 
 ## Benchmarking using simulations
 

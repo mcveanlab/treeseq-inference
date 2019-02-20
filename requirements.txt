@@ -7,3 +7,6 @@ tqdm
 daiquiri
 BioPython
 rpy2
+cyvcf2
+attrs
+pysam
