@@ -23,8 +23,6 @@
 #' genome.trees.dist()
 
 genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FALSE, acceptable.length.diff.pct = 0.1, variant.positions=NULL, randomly.resolve.a=FALSE, randomly.resolve.b=FALSE, force.rooted=TRUE) { 
-    require(phangorn)
-    has.KC.metric=require(treespace)
     results=data.frame(unchanged.tree=numeric(), lft=numeric(), rgt=numeric(), RFrooted=numeric(), RFunrooted=numeric(),
         wRFrooted=numeric(), wRFunrooted=numeric(), SPRunrooted=numeric(), pathunrooted=numeric(), KCrooted=numeric())
     
@@ -120,9 +118,8 @@ genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FA
                 'subtree prune & regraft')
             catchTreeDistErrors({pathunrooted <- path.dist(a[[tree.index.ctr[1]]], b[[tree.index.ctr[2]]])},
                 'path distance')
-            if (has.KC.metric)
-                catchTreeDistErrors({KCrooted <- treeDist(a[[tree.index.ctr[1]]], b[[tree.index.ctr[2]]])},
-                    'Kendall-Colijn', rooted=TRUE)
+            catchTreeDistErrors({KCrooted <- treeDist(a[[tree.index.ctr[1]]], b[[tree.index.ctr[2]]])},
+                'Kendall-Colijn', rooted=TRUE)
             results[nrow(results)+1,] <- c(ifelse(length(brk$ind)>1,NA,setdiff(1:2,brk$ind)),lft,rgt,RFrooted, RFunrooted, wRFrooted, wRFunrooted, SPRunrooted, pathunrooted, KCrooted)
             lft <- rgt
             tree.index.ctr[brk$ind] <- tree.index.ctr[brk$ind] + 1 #NB, brk$ind is a factor with levels (m1,m2), so we hope that m1==1 and m2==2
