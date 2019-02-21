@@ -3,5 +3,4 @@
 export(genome.trees.dist)
 export(genome.trees.dist.forcebin.b)
 export(genome.trees.dist.multi)
-export(kc.dist)
 useDynLib(ARGmetrics)
