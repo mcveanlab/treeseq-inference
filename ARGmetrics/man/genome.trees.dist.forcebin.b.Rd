@@ -18,7 +18,7 @@ to compare to treeseq.a.}
 
 \item{seed}{The random seed to give to set.seed before starting random polytomy breaking}
 
-\item{acceptable.length.diff.pct}{How much difference in sequence length is allows between the 2 trees? (Default: 0.1 percent)}
+\item{acceptable.length.diff.pct}{How much difference in sequence length is allowed between the 2 trees? (Default: 0.1 percent)}
 
 \item{variant.positions}{A list of positions of each variant (not implemented)}
 }

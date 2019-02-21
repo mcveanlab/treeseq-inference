@@ -118,7 +118,7 @@ genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FA
                 'subtree prune & regraft')
             catchTreeDistErrors({pathunrooted <- path.dist(a[[tree.index.ctr[1]]], b[[tree.index.ctr[2]]])},
                 'path distance')
-            catchTreeDistErrors({KCrooted <- treeDist(a[[tree.index.ctr[1]]], b[[tree.index.ctr[2]]])},
+            catchTreeDistErrors({KCrooted <- kc.dist(a[[tree.index.ctr[1]]], b[[tree.index.ctr[2]]])},
                 'Kendall-Colijn', rooted=TRUE)
             results[nrow(results)+1,] <- c(ifelse(length(brk$ind)>1,NA,setdiff(1:2,brk$ind)),lft,rgt,RFrooted, RFunrooted, wRFrooted, wRFunrooted, SPRunrooted, pathunrooted, KCrooted)
             lft <- rgt

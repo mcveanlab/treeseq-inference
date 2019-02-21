@@ -5,7 +5,8 @@
 \title{Use tree metrics to compare multiple inferred ancestries (ARGs) over a genomic region}
 \usage{
 genome.trees.dist.multi(treeseq.base, treeseq.multi, weights = NULL,
-  acceptable.length.diff.pct = 0.1, variant.positions = NULL)
+  acceptable.length.diff.pct = 0.1, variant.positions = NULL,
+  randomly.resolve.multi = FALSE)
 }
 \arguments{
 \item{treeseq.base}{The base multiPhylo object, or a path to a .nex file}
@@ -16,9 +17,11 @@ genome.trees.dist.multi(treeseq.base, treeseq.multi, weights = NULL,
 with columns for each measure, and n rows, a single row is returned giving the distance
 measures averaged over all the different tree sequences. Set to 1 for a "standard" unweighted average}
 
-\item{acceptable.length.diff.pct}{How much difference in sequence length is allows between the 2 trees? (Default: 0.1 percent)}
+\item{acceptable.length.diff.pct}{How much difference in sequence length is allowed between the 2 trees? (Default: 0.1 percent)}
 
 \item{variant.positions}{A list of positions of each variant (not implemented)}
+
+\item{randomly.resolve.multi}{Should we randomly break polytomies in the list of multiPhylo objects passed in to treeseq.multi?}
 }
 \description{
 Runs genome.trees.dist to compare multiple ancestry estimates against a known original
