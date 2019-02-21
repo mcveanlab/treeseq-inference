@@ -835,9 +835,9 @@ class MetricAllToolsFigure(TreeMetricsFigure):
                         rooting_suffix = " (unrooted)" if rooting=="unrooted" else ""
                         ylab = getattr(self, 'y_axis_label', None)
                         if ylab is None:
-                            ylab = self.metric_titles[metric] + rooting_suffix
+                            ylab = metric + rooting_suffix + " metric"
                         if len(aa_error_params)>1 or aa_error != 0:
-                            ylab += " with aa err = {}".format(aa_error)
+                            ylab += ", {:g}% ancestral state error".format(aa_error*100)
                         ax.set_ylabel(ylab)
 
             # Create legends from custom artists
