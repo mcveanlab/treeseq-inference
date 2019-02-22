@@ -6,7 +6,11 @@ import rpy2.rinterface as rinterface
 from rpy2.robjects.packages import importr
 
 # Suppress noisy warnings from R.
-warnings.simplefilter("ignore", rinterface.RRuntimeWarning)
+if hasattr(rinterface, "RRuntimeWarning"):
+    warnings.simplefilter("ignore", rinterface.RRuntimeWarning)
+else:
+    # older versions of rpy2 don't have RRuntimeWarning, they use UserWarning instead
+    warnings.simplefilter("ignore", UserWarning)
 
 try:
 	ape=importr("ape")
