@@ -20,7 +20,7 @@ cd treeseq-inference
 
 Code is primarily written in Python and requires Python >= 3.4. For benchmarking,
 we  use an R package via [rpy2](https://rpy2.readthedocs.io/) and so a working 
-R installation is also required. Some external software requires other software too
+R installation is also required. Some external software requires other libraries too
 (e.g. cmake for SLiM, the GNU scientific library for msprime/tsinfer). 
 These are detailed below.
 
