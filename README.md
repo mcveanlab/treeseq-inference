@@ -26,7 +26,7 @@ To install msprime & tsinfer you need to have the GNU scientific library (`gsl`)
 To calculate tree distance metrics, you will need to have `R` installed, with packages
 as described below, and the `rpy2` python-to-R library. To install SLiM for simulating
 selection you will need to install cmake, and to install the `cyvcf` library to read VCF
-files, you will need  `curl` libraries too. These can be installed e.g. on Ubuntu by:
+files, you will need  `curl` libraries too. These can all be installed e.g. on Ubuntu by:
 
 ```
 # Install GNU scientific library, R and python2r interface, cmake for SLiM, cython & curl libs for cyvcf2
