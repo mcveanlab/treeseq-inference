@@ -4,11 +4,10 @@ Version: 0.0.2.0
 Authors@R: person("Yan", "Wong", email = "yan@yanwong.me", role = c("aut", "cre"))
 Description: Routines to compare ARGs (represented by sequential tree sequences) by averaging tree comparison metrics over a genomic region
 Depends:
-    R (>= 3.3.2)
+    R (>= 3.2.3)
 Imports:
     ape (>= 4.1),
-    phangorn,
-    Rcpp
+    phangorn
 Suggests:
     treespace
 License: CC-0
