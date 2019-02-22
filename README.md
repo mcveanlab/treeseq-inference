@@ -70,8 +70,8 @@ Assuming this repository is in `treeseq-inference`, simply do
 sudo R CMD INSTALL treeseq-inference/ARGmetrics
 ```
 
-If you don't have superuser (root) access to your machine, you should be able to [set a local R library folder]() 
-local folder
+If you don't have superuser (root) access to your machine, you should be able to [set a local R library folder]
+local folder by running the `install.packages(...)` command above from within an R session, where you will be prompted for a local folder.
 
 #### Installing alternative evaluation tools
 
