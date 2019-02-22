@@ -103,24 +103,43 @@ which has several subcommands. For help, run
 $ python3 src/evaluation.py --help
 ```
 
-**TODO** Give desription of the various commands and give an example of 
-running one of the evaluations from start to finish.
+#### An example evaluation
+
+All evaluations have 3 steps: setup, inference, and summarizing. The final summarised data can then be plotted using the script in `src/plots.py`. The example below uses the additional switches
+
+* `-P` to show a progress monitor
+* `-r 2` to only run 2 replicates (rather than hundreds), for speed
+
+##### Setup
+```
+python3 src/evaluation.py setup -P -r 2 all_tools
+```
+
+##### Infer
+```
+python3 src/evaluation.py infer -P all_tools
+```
+
+##### Create a summary csv file for plotting
+```
+python3 src/evaluation.py summarize metrics_all_tools
+```
 
 #### Running all evaluations
 
-Do the following, in order
+To produce all the data in our paper, run the following, in order
 
 ```
-python3 src/evaluation.py setup all # will take many hours/days
-python3 src/evaluation.py infer all # will take many days/weeks
+python3 src/evaluation.py setup -P all # will take many hours/days
+python3 src/evaluation.py infer -P all # will take many days/weeks
 python3 src/evaluation.py summarize all #will take a few minutes
 ```
 
-You can show the progress of the first two commands by using the `-P` flag. You can speed up the evaluations 
-by using multiple processors, specified using the `-p` flag. For instance, on a 64 core machine, using all cores:
+You can speed up the evaluations by using multiple processors, specified using the `-p` flag.
+For instance, on a 64 core machine, using all cores:
 
 ```
-python3 src/evaluation.py setup -p 64 all # will take many a few hours
+python3 src/evaluation.py setup -p 64 all # will take a few hours
 python3 src/evaluation.py infer -p 64 all # will take a few days (mostly to run ARGweaver)
 python3 src/evaluation.py summarize all #will take a few minutes
 ```
