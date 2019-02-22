@@ -106,3 +106,22 @@ $ python3 src/evaluation.py --help
 **TODO** Give desription of the various commands and give an example of 
 running one of the evaluations from start to finish.
 
+#### Running all evaluations
+
+Do the following, in order
+
+```
+python3 src/evaluation.py setup all # will take many hours/days
+python3 src/evaluation.py infer all # will take many days/weeks
+python3 src/evaluation.py summarize all #will take a few minutes
+```
+
+You can show the progress of the first two commands by using the `-P` flag. You can speed up the evaluations 
+by using multiple processors, specified using the `-p` flag. For instance, on a 64 core machine, using all cores:
+
+```
+python3 src/evaluation.py setup -p 64 all # will take many a few hours
+python3 src/evaluation.py infer -p 64 all # will take a few days (mostly to run ARGweaver)
+python3 src/evaluation.py summarize all #will take a few minutes
+```
+
