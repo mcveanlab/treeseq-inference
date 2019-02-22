@@ -17,25 +17,23 @@ for details on running the human data pipelines.
 
 ### Requirements
 
-The tools that we compare against are kept in the ``tools`` directory and can be 
-downloaded and built using 
-
-```
-$ make -C tools
-```
-
 The benchmarking code is primarily written in Python and requires Python >= 3.4. We
 also use an R package via [rpy2](https://rpy2.readthedocs.io/) and so a working 
-R installation is also required. First, install the local R package by running:
+R installation is also required. 
+
+#### Installing system prerequisites 
+To install msprime & tsinfer you need to have the GNU scientific library (`gsl`) installed.
+To calculate tree distance metrics, you will need to have `R` installed, with packages
+as described below, and the `rpy2` python-to-R library. To install SLiM for simulating
+selection you will need to install cmake, and to install the `cyvcf` library to read VCF
+files, you will need  `curl` libraries too. These can be installed e.g. on Ubuntu by:
 
 ```
-$ R
-> library(devtools)
-> install("ARGmetrics")
+# Install GNU scientific library, R and python2r interface, cmake for SLiM, cython & curl libs for cyvcf2
+sudo apt-get install libgsl-dev r-base-core python3-rpy2 cython3 cmake libssl-dev libcurl4-openssl-dev
 ```
 
-We have assumed that the ``devtools`` package is installed---you will need to 
-install this first if it is not present.
+#### Installing required python modules
 
 The Python packages required are listed in the ``requirements.txt`` file. These can be 
 installed with
@@ -46,12 +44,38 @@ $ python3 -m pip install -r requirements.txt
 
 if your are using pip. Conda may also be used to install these dependencies.
 
-Once all the packages requirements have been installed, you can test it out 
-by running 
+#### Installing R requirements
+
+For calculating ARG distance metrics, we require the `ape`, `phangorn`, and `Rcpp` packages.
+To get the latest versions of these, if you don't have them installed already in your local
+R installation, you should be able to do something like the following
 
 ```
-$ python3 src/evaluation.py
+# Install latest required packages within R - this recompiles stuff so may take a few mins
+sudo R -e 'install.packages(c("ape", "phangorn", "Rcpp"), repos="https://cran.r-project.org", INSTALL_opts="--byte-compile")'
 ```
+
+You can then install our local `ARGmetrics` package, bundled in this github repository.
+Assuming this repository is in `treeseq-inference`, simply do
+
+```
+# Install ARGmetrics into R
+sudo R CMD INSTALL treeseq-inference/ARGmetrics
+```
+
+If you don't have superuser (root) access to your machine, you should be able to [set a local R library folder]() 
+local folder
+
+#### Installing alternative evaluation tools
+
+The tools that we compare against are kept in the ``tools`` directory and can be 
+downloaded and built using 
+
+```
+$ make -C tools
+```
+
+
 
 ### Running evaluations
 
