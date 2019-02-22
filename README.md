@@ -53,7 +53,7 @@ if you are using pip. Conda may also be used to install these dependencies.
 Please see the [README](human-data/README.md) in the ``human-data`` directory 
 for details on running the human data pipelines.
 
-## Benchmarking using simulations
+## Simulation benchmarks
 
 ### Requirements
 
