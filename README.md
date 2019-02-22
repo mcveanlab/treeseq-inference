@@ -8,11 +8,12 @@ tree sequences from human data. Because of the complexity of downloading and pre
 real data, this code is kept isolated in the ``human-data`` directory. Except for the human 
 data pipeline, everything is intended to be run from the repository root.
 
-We assume from here on that you have cloned this github repository into a directory called 
-`treeseq-inference`, e.g. using
+We assume from here on that you have cloned this github repository into a directory called e.g. 
+`treeseq-inference`, and are running commands from within it, e.g. using
 
 ```
 git clone https://github.com/mcveanlab/treeseq-inference
+cd treeseq-inference
 ```
 
 ## Human data
@@ -46,7 +47,7 @@ The Python packages required are listed in the ``requirements.txt`` file. These 
 installed with
 
 ```
-$ python3 -m pip install -r treeseq-inference/requirements.txt
+$ python3 -m pip install -r requirements.txt
 ```
 
 if your are using pip. Conda may also be used to install these dependencies.
@@ -62,16 +63,16 @@ R installation, you should be able to do something like the following
 sudo R -e 'install.packages(c("ape", "phangorn", "Rcpp"), repos="https://cran.r-project.org", INSTALL_opts="--byte-compile")'
 ```
 
-You can then install our local `ARGmetrics` package, bundled in this github repository.
-Assuming this repository is in `treeseq-inference`, simply do
+You can then install our local `ARGmetrics` package, bundled in this github repository, by running `R CMD INSTALL` from within the github directory, as follows:
 
 ```
 # Install ARGmetrics into R
-sudo R CMD INSTALL treeseq-inference/ARGmetrics
+sudo R CMD INSTALL ARGmetrics
 ```
 
-If you don't have superuser (root) access to your machine, you should be able to [set a local R library folder]
-local folder by running the `install.packages(...)` command above from within an R session, where you will be prompted for a local folder.
+If can't run sudo, because you do not have superuser (root) access to your machine, you should be able to 
+download pakages into a local R library folder by running the `install.packages(...)` command above 
+from within an R session, where you will be prompted for a local folder.
 
 #### Installing alternative evaluation tools
 
