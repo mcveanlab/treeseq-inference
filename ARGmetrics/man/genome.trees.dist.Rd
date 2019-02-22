@@ -16,7 +16,7 @@ genome.trees.dist(treeseq.a = NA, treeseq.b = NA,
 
 \item{output.full.table}{Output tree metrics for each overlapping region, rather than simply a weighted summary.}
 
-\item{acceptable.length.diff.pct}{How much difference in sequence length is allows between the 2 trees? (Default: 0.1 percent)}
+\item{acceptable.length.diff.pct}{How much difference in sequence length is allowed between the 2 trees? (Default: 0.1 percent)}
 
 \item{variant.positions}{A vector of genome positions of each variant. If given the metric will be 
 calculated for each variant site and averaged over all sites, rather than averaged over every point on the genome}

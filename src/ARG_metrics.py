@@ -11,15 +11,12 @@ warnings.simplefilter("ignore", rinterface.RRuntimeWarning)
 try:
 	ape=importr("ape")
 	ARGmetrics = importr("ARGmetrics")
-	if not robjects.r('packageVersion("ARGmetrics") >= "0.0.1.0"')[0]:
+	if not robjects.r('packageVersion("ARGmetrics") >= "0.0.2.0"')[0]:
 		raise ImportError
 except (ImportError, rinterface.RRuntimeError):
-    logging.warning("ARGmetrics in R not installed or too old (requires >= 0.0.1.0). "
-    'Install the latest version from within R by syncing with git and typing e.g.\n'
-    '> library(devtools)\n'
-    '> setwd("{}")\n'
-    '> install("ARGmetrics")\n'
-    .format(os.path.join(os.path.dirname(__file__),'..')))
+    logging.warning("ARGmetrics in R not installed or too old (requires >= 0.0.2.0). "
+    'Install the latest version from source by syncing with git and doing e.g.\n'
+    '> R CMD INSTALL ARGmetrics')
     raise
 
 
@@ -100,6 +97,6 @@ if __name__ == "__main__":
             print("END;", file = fh)
             fh.flush()
         #Genome average should be (2*3 + 0*1) /4 = 6/4 = 1.5
-        print(get_ARG_metrics(nex1.name, test={'nexus':nex2.name}))
+        print(get_metrics(nex1.name, nex2.name))
         #Positional average for should be (2*2 + 0*2) /5 = 4/5 = 0.8
-        print(get_ARG_metrics(nex1.name, variant_positions=[0, 2.9999,3,3.5, 4],test={'nexus':nex2.name}))
+        print(get_metrics(nex1.name, nex2.name, variant_positions=[0, 2.9999,3,3.5, 4]))

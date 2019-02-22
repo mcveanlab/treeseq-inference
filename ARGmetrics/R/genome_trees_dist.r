@@ -23,8 +23,6 @@
 #' genome.trees.dist()
 
 genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FALSE, acceptable.length.diff.pct = 0.1, variant.positions=NULL, randomly.resolve.a=FALSE, randomly.resolve.b=FALSE, force.rooted=TRUE) { 
-    require(phangorn)
-    has.KC.metric=require(treespace)
     results=data.frame(unchanged.tree=numeric(), lft=numeric(), rgt=numeric(), RFrooted=numeric(), RFunrooted=numeric(),
         wRFrooted=numeric(), wRFunrooted=numeric(), SPRunrooted=numeric(), pathunrooted=numeric(), KCrooted=numeric())
     
@@ -35,9 +33,6 @@ genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FA
         else
             return(results[-1:-2])
     } else {
-        require(ape)
-        require(phangorn) #to use the various treedist metrics
-    
         if (identical(randomly.resolve.a,FALSE)) {
             process.a = identity
         } else {
@@ -108,21 +103,20 @@ genome.trees.dist <- function(treeseq.a=NA, treeseq.b=NA, output.full.table = FA
             }
             rgt <- brk$values[0:1];
             RFrooted <- RFunrooted <- wRFrooted <- wRFunrooted <- SPRunrooted  <- pathunrooted <- KCrooted  <- NA
-            catchTreeDistErrors({RFrooted <- RF.dist(a[[tree.index.ctr[1]]], b[[tree.index.ctr[2]]], rooted=TRUE)},
+            catchTreeDistErrors({RFrooted <- phangorn::RF.dist(a[[tree.index.ctr[1]]], b[[tree.index.ctr[2]]], rooted=TRUE)},
                 'RF', rooted=TRUE)
-            catchTreeDistErrors({RFunrooted <- RF.dist(a[[tree.index.ctr[1]]], b[[tree.index.ctr[2]]], rooted=FALSE)},
+            catchTreeDistErrors({RFunrooted <- phangorn::RF.dist(a[[tree.index.ctr[1]]], b[[tree.index.ctr[2]]], rooted=FALSE)},
                 'RF')
-            catchTreeDistErrors({wRFrooted <- wRF.dist(a[[tree.index.ctr[1]]], b[[tree.index.ctr[2]]], rooted=TRUE)},
+            catchTreeDistErrors({wRFrooted <- phangorn::wRF.dist(a[[tree.index.ctr[1]]], b[[tree.index.ctr[2]]], rooted=TRUE)},
                 'weighted RF', rooted=TRUE)
-            catchTreeDistErrors({wRFunrooted <- wRF.dist(a[[tree.index.ctr[1]]], b[[tree.index.ctr[2]]], rooted=FALSE)},
+            catchTreeDistErrors({wRFunrooted <- phangorn::wRF.dist(a[[tree.index.ctr[1]]], b[[tree.index.ctr[2]]], rooted=FALSE)},
                 'weighted RF')
-            catchTreeDistErrors({SPRunrooted <- SPR.dist(a[[tree.index.ctr[1]]], b[[tree.index.ctr[2]]])},
+            catchTreeDistErrors({SPRunrooted <- phangorn::SPR.dist(a[[tree.index.ctr[1]]], b[[tree.index.ctr[2]]])},
                 'subtree prune & regraft')
-            catchTreeDistErrors({pathunrooted <- path.dist(a[[tree.index.ctr[1]]], b[[tree.index.ctr[2]]])},
+            catchTreeDistErrors({pathunrooted <- phangorn::path.dist(a[[tree.index.ctr[1]]], b[[tree.index.ctr[2]]])},
                 'path distance')
-            if (has.KC.metric)
-                catchTreeDistErrors({KCrooted <- treeDist(a[[tree.index.ctr[1]]], b[[tree.index.ctr[2]]])},
-                    'Kendall-Colijn', rooted=TRUE)
+            catchTreeDistErrors({KCrooted <- kc.dist(a[[tree.index.ctr[1]]], b[[tree.index.ctr[2]]])},
+                'Kendall-Colijn', rooted=TRUE)
             results[nrow(results)+1,] <- c(ifelse(length(brk$ind)>1,NA,setdiff(1:2,brk$ind)),lft,rgt,RFrooted, RFunrooted, wRFrooted, wRFunrooted, SPRunrooted, pathunrooted, KCrooted)
             lft <- rgt
             tree.index.ctr[brk$ind] <- tree.index.ctr[brk$ind] + 1 #NB, brk$ind is a factor with levels (m1,m2), so we hope that m1==1 and m2==2
