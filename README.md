@@ -72,7 +72,8 @@ sudo R CMD INSTALL ARGmetrics
 
 If can't run sudo, because you do not have superuser (root) access to your machine, you should be able to 
 download pakages into a local R library folder by running the `install.packages(...)` command above 
-from within an R session, where you will be prompted for a local folder.
+from within an R session, which will prompt you to create a local folder. Any further installation can then be
+done without `sudo`.
 
 #### Installing alternative evaluation tools
 
