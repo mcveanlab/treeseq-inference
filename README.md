@@ -27,18 +27,17 @@ for details on running the human data pipelines.
 
 The benchmarking code is primarily written in Python and requires Python >= 3.4. We
 also use an R package via [rpy2](https://rpy2.readthedocs.io/) and so a working 
-R installation is also required. 
+R installation is also required. Some external software requires other software too
+(e.g. cmake for SLiM, the GNU scientific library for msprime/tsinfer). 
+These are detailed below.
 
 #### Installing system prerequisites 
-To install msprime & tsinfer you need to have the GNU scientific library (`gsl`) installed.
-To calculate tree distance metrics, you will need to have `R` installed, with packages
-as described below, and the `rpy2` python-to-R library. To install SLiM for simulating
-selection you will need to install cmake, and to install the `cyvcf` library to read VCF
-files, you will need  `curl` libraries too. These can all be installed e.g. on Ubuntu by:
+You will need to install install python (3) with pip, the GNU scientific library (`gsl`),
+R, cmake, cython, and the curl libraries. For example, on Ubuntu:
 
 ```
-# Install GNU scientific library, R and python2r interface, cmake for SLiM, cython & curl libs for cyvcf2
-sudo apt-get install libgsl-dev r-base-core python3-pip cython3 cmake libssl-dev libcurl4-openssl-dev
+# Install pip, GNU scientific library, R, cmake for SLiM, cython & curl libs for cyvcf2
+sudo apt-get install python3-pip libgsl-dev r-base-core cmake cython3 libssl-dev libcurl4-openssl-dev
 ```
 
 #### Installing required python modules
