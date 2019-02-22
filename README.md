@@ -91,7 +91,7 @@ We also use [SLiM](https://github.com/MesserLab/SLiM) to run forwards simulation
 are kept in the ``tools`` directory and can be downloaded and built using 
 
 ```
-# Download and compile other ARG inference tools for testing
+# Download and compile other simulation and inference tools for testing
 $ make -C tools
 ```
 
