@@ -32,7 +32,7 @@ human analyses, you will need cython and the curl libraries.
 For example, to install all these on Ubuntu:
 
 ```
-# Install pip, GNU scientific library, R, cmake for SLiM, cython & curl libs for cyvcf2
+# Ubuntu-only: install pip, GNU scientific library, R, cmake for SLiM, cython & curl libs for cyvcf2
 sudo apt-get install python3-pip libgsl-dev r-base-core cmake cython3 libssl-dev libcurl4-openssl-dev
 ```
 
@@ -61,7 +61,7 @@ For calculating ARG distance metrics, we require an `R` installation with certai
 our own `ARGmetrics` package. To test other ARG inference software packages, we require them to be
 available in the ``tools`` directory. Simple installation instructions for setting this up are below.
 
-#### Installing R requirements
+#### Installing necessary R packages
 
 We require the `ape`, `phangorn`, and `Rcpp` packages. If you don't already have these installed
 in your local R installation, you should be able to install them using:
@@ -84,16 +84,15 @@ download pakages into a local R library folder by running the `install.packages(
 from within an R session, which will prompt you to create a local folder. Any further installation can then be
 done without `sudo`.
 
-#### Installing alternative evaluation tools
+#### Installing alternative ARG inference software
 
-The tools that we compare against are kept in the ``tools`` directory and can be 
+The software tools that we compare against are kept in the ``tools`` directory and can be 
 downloaded and built using 
 
 ```
+# Download and compile other ARG inference tools for testing
 $ make -C tools
 ```
-
-
 
 ### Running evaluations
 
