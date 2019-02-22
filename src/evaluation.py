@@ -167,7 +167,7 @@ def generate_samples(
     
     # Setup the sequencing error used. Empirical error should be a matrix not a float
     if not empirical_seq_err_name:
-        seq_error = float(seq_error)
+        seq_error = float(seq_error) if seq_error else 0
         if seq_error == 0:
             record_rate = False # no point recording the achieved error rate
             sequencing_error = make_no_errors
@@ -180,7 +180,7 @@ def generate_samples(
             empirical_seq_err_name, fn))
         sequencing_error = make_seq_errors_genotype_model
     # Setup the ancestral state error used
-    aa_error = float(aa_error)
+    aa_error = float(aa_error) if aa_error else 0
     aa_error_by_site = np.zeros(ts.num_sites, dtype=np.bool)
     if aa_error > 0:
         assert aa_error <= 1
