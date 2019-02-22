@@ -8,6 +8,13 @@ tree sequences from human data. Because of the complexity of downloading and pre
 real data, this code is kept isolated in the ``human-data`` directory. Except for the human 
 data pipeline, everything is intended to be run from the repository root.
 
+We assume from here on that you have cloned this github repository into a directory called 
+`treeseq-inference`, e.g. using
+
+```
+git clone https://github.com/mcveanlab/treeseq-inference
+```
+
 ## Human data
 
 Please see the [README](human-data/README.md) in the ``human-data`` directory 
@@ -30,7 +37,7 @@ files, you will need  `curl` libraries too. These can all be installed e.g. on U
 
 ```
 # Install GNU scientific library, R and python2r interface, cmake for SLiM, cython & curl libs for cyvcf2
-sudo apt-get install libgsl-dev r-base-core python3-rpy2 cython3 cmake libssl-dev libcurl4-openssl-dev
+sudo apt-get install libgsl-dev r-base-core python3-pip cython3 cmake libssl-dev libcurl4-openssl-dev
 ```
 
 #### Installing required python modules
@@ -39,7 +46,7 @@ The Python packages required are listed in the ``requirements.txt`` file. These 
 installed with
 
 ```
-$ python3 -m pip install -r requirements.txt
+$ python3 -m pip install -r treeseq-inference/requirements.txt
 ```
 
 if your are using pip. Conda may also be used to install these dependencies.
