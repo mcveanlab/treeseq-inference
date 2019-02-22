@@ -1067,7 +1067,7 @@ class Dataset(object):
                 self.save_variant_matrices(
                     ts, base_fn, 
                     keyed_params.get(SEQ_ERROR_COLNAME) or "0",
-                    keyed_params.get(AA_ERROR_COLNAME),
+                    keyed_params.get(AA_ERROR_COLNAME) or "",
                     inf_sites=False)
         return return_value
 
