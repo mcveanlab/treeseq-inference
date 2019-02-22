@@ -16,24 +16,20 @@ git clone https://github.com/mcveanlab/treeseq-inference
 cd treeseq-inference
 ```
 
-## Human data
-
-Please see the [README](human-data/README.md) in the ``human-data`` directory 
-for details on running the human data pipelines.
-
-## Benchmarking using simulations
-
 ### Requirements
 
-The benchmarking code is primarily written in Python and requires Python >= 3.4. We
-also use an R package via [rpy2](https://rpy2.readthedocs.io/) and so a working 
+Code is primarily written in Python and requires Python >= 3.4. For benchmarking,
+we  use an R package via [rpy2](https://rpy2.readthedocs.io/) and so a working 
 R installation is also required. Some external software requires other software too
 (e.g. cmake for SLiM, the GNU scientific library for msprime/tsinfer). 
 These are detailed below.
 
 #### Installing system prerequisites 
-You will need to install install python (3) with pip, the GNU scientific library (`gsl`),
-R, cmake, cython, and the curl libraries. For example, on Ubuntu:
+You will need to install install python (3) with pip and the GNU scientific library (`gsl`).
+For benchmarking, you will need R and cmake. For testing in real-world data such as the 
+human analyses, you will need cython and the curl libraries.
+
+For example, to install all these on Ubuntu:
 
 ```
 # Install pip, GNU scientific library, R, cmake for SLiM, cython & curl libs for cyvcf2
@@ -52,18 +48,31 @@ $ python3 -m pip install cyvcf2 # only for human data analysis: needs to be inst
 
 if your are using pip. Conda may also be used to install these dependencies.
 
+## Human data
+
+Please see the [README](human-data/README.md) in the ``human-data`` directory 
+for details on running the human data pipelines.
+
+## Benchmarking using simulations
+
+### Requirements
+
+For calculating ARG distance metrics, we require an `R` installation with certain packages, as well as
+our own `ARGmetrics` package. To test other ARG inference software packages, we require them to be
+available in the ``tools`` directory. Simple installation instructions for setting this up are below.
+
 #### Installing R requirements
 
-For calculating ARG distance metrics, we require the `ape`, `phangorn`, and `Rcpp` packages.
-To get the latest versions of these, if you don't have them installed already in your local
-R installation, you should be able to do something like the following
+We require the `ape`, `phangorn`, and `Rcpp` packages. If you don't already have these installed
+in your local R installation, you should be able to install them using:
 
 ```
 # Install latest required packages within R - this recompiles stuff so may take a few mins
 sudo R -e 'install.packages(c("ape", "phangorn", "Rcpp"), repos="https://cran.r-project.org", INSTALL_opts="--byte-compile")'
 ```
 
-You can then install our local `ARGmetrics` package, bundled in this github repository, by running `R CMD INSTALL` from within the github directory, as follows:
+You can then install our local `ARGmetrics` package, bundled in this github repository, by running `R CMD INSTALL` 
+from within the github directory, as follows:
 
 ```
 # Install ARGmetrics into R
