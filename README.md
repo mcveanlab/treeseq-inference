@@ -16,7 +16,7 @@ git clone https://github.com/mcveanlab/treeseq-inference
 cd treeseq-inference
 ```
 
-### Requirements
+### General requirements
 
 Code is primarily written in Python and requires Python >= 3.4. For benchmarking,
 we  use an R package via [rpy2](https://rpy2.readthedocs.io/) and so a working 
