@@ -46,7 +46,7 @@ $ python3 -m pip install -r requirements.txt
 $ python3 -m pip install cyvcf2 # only for human data analysis: needs to be installed *after* numpy
 ```
 
-if your are using pip. Conda may also be used to install these dependencies.
+if you are using pip. Conda may also be used to install these dependencies.
 
 ## Human data
 
