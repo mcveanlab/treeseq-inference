@@ -70,7 +70,11 @@ available in the ``tools`` directory. Simple installation instructions for setti
 #### Installing necessary R packages
 
 We require the `ape`, `phangorn`, and `Rcpp` packages. If you don't already have these installed
-in your local R installation, you should be able to install them using:
+in your local R installation, you should be able to install them in the standard way. For example,
+from within R you can issue the command 
+`install.packages(c("ape", "phangorn", "Rcpp"), INSTALL_opts="--byte-compile")`, which may prompt
+you for various bits of information, if they are not already known, e.g. your choice of CRAN repository.
+If you have superuser (root) access to your machine, you can install packages without requiring any user interaction by
 
 ```
 # Install latest required packages within R - this recompiles stuff so may take a few mins
@@ -81,14 +85,9 @@ You can then install our local `ARGmetrics` package, bundled in this github repo
 from within the github directory, as follows:
 
 ```
-# Install ARGmetrics into R
+# Install ARGmetrics into R (you can omit `sudo` if installing locally)
 sudo R CMD INSTALL ARGmetrics
 ```
-
-If can't run sudo, because you do not have superuser (root) access to your machine, you should be able to 
-download pakages into a local R library folder by running the `install.packages(...)` command above 
-from within an R session, which will prompt you to create a local folder. Any further installation can then be
-done without `sudo`.
 
 #### Installing alternative ARG inference software
 
