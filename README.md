@@ -126,10 +126,17 @@ python3 src/evaluation.py setup -P -r 2 all_tools
 python3 src/evaluation.py infer -P all_tools
 ```
 
-##### Create a summary csv file for plotting
+##### Put generated data into a summary csv file for plotting
 ```
 python3 src/evaluation.py summarize metrics_all_tools
 ```
+
+##### Plot using the csv file
+```
+python3 src/plot.py metrics_all_tools
+```
+
+The result should be an appropriately named pdf or png file in the `figures` directory (e.g. `figures/metrics_all_tools.pdf`)
 
 #### Running all evaluations
 
@@ -150,3 +157,8 @@ python3 src/evaluation.py infer -p 64 all # will take a few days (mostly to run 
 python3 src/evaluation.py summarize all #will take a few minutes
 ```
 
+The final figures can then be plotted using
+
+```
+python3 src/plot.py all
+```
