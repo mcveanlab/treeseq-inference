@@ -936,12 +936,8 @@ class Dataset(object):
             logging.info("Deleting dir {}".format(self.simulations_dir))
         os.makedirs(self.simulations_dir)
         # Make a buffer of the named error matrices
-        try:
-            m = pd.read_csv(os.path.join(self.data_dir, self.full_seq_error_filename))
-            self.seq_error_names = {self.seq_error_filename: m}
-        except FileNotFoundError:
-            self.seq_error_names = {}
-            
+        m = pd.read_csv(os.path.join(self.data_dir, self.full_seq_error_filename))
+        self.seq_error_names = {self.seq_error_filename: m}
         #self.verbosity = args.verbosity
         logging.info("Creating dir {}".format(self.simulations_dir))
         self.data = self.run_simulations(
@@ -2316,10 +2312,11 @@ def main():
 
     subparser = subparsers.add_parser('setup',
         help="Run simulations, outputting true histories & genome sequences for analysis" +
-            "(created files will overwrite previous runs of the same name)")
+            " (created files will overwrite previous runs of the same name)")
     subparser.add_argument(
         'name', metavar='NAME', type=str, nargs=1,
-        help='the dataset identifier',
+        help='the dataset identifier, choose from: ' +
+            ", ".join(sorted([d.name for d in datasets] + ['all'])),
         choices=sorted([d.name for d in datasets] + ['all']))
     subparser.add_argument(
         "--processes", '-p', type=int, default=1,
