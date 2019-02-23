@@ -1,9 +1,9 @@
 # Evaluating tsinfer
 
 This repository contains all code used for evaluating [tsinfer](https://tsinfer.readthedocs.io/en/latest/)
-and producing the figures in the 
-[Inferring the ancestry of everyone](https://www.biorxiv.org/content/10.1101/458067v1) preprint. This 
-includes code for comparing tsinfer with other tools on simulated data, as well as building 
+and producing the figures in the preprint:
+[Inferring the ancestry of everyone](https://www.biorxiv.org/content/10.1101/458067v1). This 
+includes code for comparing tsinfer with other tools using simulated data, as well as building 
 tree sequences from human data. Because of the complexity of downloading and preparing 
 real data, this code is kept isolated in the ``human-data`` directory. Except for the human 
 data pipeline, everything is intended to be run from the repository root.
@@ -25,9 +25,10 @@ R installation is also required. Some external software requires other libraries
 These are detailed below.
 
 #### Installing system prerequisites 
-You will need to install install python (3) with pip and the GNU scientific library (`gsl`).
-For benchmarking, you will need R and cmake. For testing in real-world data such as the 
-human analyses, you will need cython and the curl libraries.
+You will need to install install Python (version 3) with pip and the GNU scientific library (`gsl`).
+For benchmarking, you will need R and cmake. Testing real-world data (e.g. for the
+human analyses) uses the `cyvcf2` Python module, which requires pre-installation of 
+cython and the curl libraries.
 
 For example, to install all these on Ubuntu:
 
@@ -43,15 +44,20 @@ installed with
 
 ```
 $ python3 -m pip install -r requirements.txt
-$ python3 -m pip install cyvcf2 # only for human data analysis: needs to be installed *after* numpy
 ```
 
 if you are using pip. Conda may also be used to install these dependencies.
 
 ## Human data
 
+You will need the `cyvcf2` Python module to read VCF files. Once the requirements above have been installed you should simply be able to do:
+
+```
+$ python3 -m pip install cyvcf2 # only for human data analysis: needs to be installed *after* numpy
+```
+
 Please see the [README](human-data/README.md) in the ``human-data`` directory 
-for details on running the human data pipelines.
+for further details on running the human data pipelines.
 
 ## Simulation benchmarks
 
