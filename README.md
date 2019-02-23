@@ -128,7 +128,7 @@ python3 src/evaluation.py setup -P -r 2 all_tools
 ##### Infer
 Run inference tools. In this case `tsinfer` plus 3 other inference tools are used.
 While `tsinfer` takes only a few seconds or minutes to run, others (especially ARGweaver)
-may may take a number of hours. The estimates time should be output along with the
+may may take a number of hours. The estimated time remaining is output as part of the
 progress monitor.
 ```
 python3 src/evaluation.py infer -P all_tools
@@ -146,7 +146,8 @@ python3 src/evaluation.py summarize metrics_all_tools
 python3 src/plot.py metrics_all_tools
 ```
 
-The result should be an appropriately named pdf or png file in the `figures` directory (e.g. `figures/metrics_all_tools.pdf`)
+The result should be an appropriately named pdf or png file in the `figures` directory 
+(e.g. `figures/metrics_all_tools.pdf`)
 
 #### Running all evaluations
 
