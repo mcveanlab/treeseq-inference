@@ -92,8 +92,8 @@ sudo R CMD INSTALL ARGmetrics
 #### Installing alternative ARG inference software
 
 We compare our results against [ARGweaver](https://github.com/CshlSiepelLab/argweaver), [RentPlus](https://github.com/SajadMirzaei/RentPlus), and [fastARG](https://github.com/lh3/fastARG). 
-We also use [SLiM](https://github.com/MesserLab/SLiM) to run forwards simulations. These stand-alone software
-are kept in the ``tools`` directory and can be downloaded and built using 
+We also use [SLiM](https://github.com/MesserLab/SLiM) to run forwards simulations. These stand-alone
+software tools are kept in the ``tools`` directory and can be downloaded and built using 
 
 ```
 # Download and compile other simulation and inference tools for testing
