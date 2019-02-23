@@ -126,13 +126,17 @@ python3 src/evaluation.py setup -P -r 2 all_tools
 ```
 
 ##### Infer
-Run inference tools. In this case `tsinfer` plus 3 other inference tools are used.
+Run inferences for various combinations of parameters / inference tools.
+For the "all_tools" dataset, `tsinfer` plus 3 other inference tools are run.
 While `tsinfer` takes only a few seconds or minutes to run, others (especially ARGweaver)
 may may take a number of hours. The estimated time remaining is output as part of the
 progress monitor.
 ```
 python3 src/evaluation.py infer -P all_tools
 ```
+In general, the inference step takes the most time. This script can be killed then rerun:
+it will resume any not-yet-completed inference tasks.
+
 ##### Summarize
 Data from inference is stored in a large csv file. Running the `summarize` command
 takes this generated data and slims it down into single summary csv file corresponding
