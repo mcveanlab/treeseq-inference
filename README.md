@@ -111,22 +111,32 @@ $ python3 src/evaluation.py --help
 
 #### An example evaluation
 
-All evaluations have 3 steps: setup, inference, and summarizing. The final summarised data can then be plotted using the script in `src/plots.py`. The example below uses the additional switches
+All evaluations have 3 steps: setup, inference, and summarizing. The final summarised data can then be plotted using the script in `src/plots.py`. 
+
+##### Setup
+Run simulations to generate known ancestries, and sample haplotype files for ancestral 
+inference. To see the various evaluation datasets that can be generated, run 
+`python3 src/evaluation.py setup -h` (the special dataset "all" will generate all datasets,
+see below). Here we show an example with the "all_tools" dataset, using the additional switches
 
 * `-P` to show a progress monitor
 * `-r 2` to only run 2 replicates (rather than hundreds), for speed
-
-##### Setup
 ```
 python3 src/evaluation.py setup -P -r 2 all_tools
 ```
 
 ##### Infer
+Run inference tools. In this case `tsinfer` plus 3 other inference tools are used.
+While `tsinfer` takes only a few seconds or minutes to run, others (especially ARGweaver)
+may may take a number of hours. The estimates time should be output along with the
+progress monitor.
 ```
 python3 src/evaluation.py infer -P all_tools
 ```
-
-##### Put generated data into a summary csv file for plotting
+##### Summarize
+Data from inference is stored in a large csv file. Running the `summarize` command
+takes this generated data and slims it down into single summary csv file corresponding
+to a single evaluation plot.
 ```
 python3 src/evaluation.py summarize metrics_all_tools
 ```
