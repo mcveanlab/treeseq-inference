@@ -1,9 +1,9 @@
 # Evaluating tsinfer
 
 This repository contains all code used for evaluating [tsinfer](https://tsinfer.readthedocs.io/en/latest/)
-and producing the figures in the 
-[Inferring the ancestry of everyone](https://www.biorxiv.org/content/10.1101/458067v1) preprint. This 
-includes code for comparing tsinfer with other tools on simulated data, as well as building 
+and producing the figures in the preprint:
+[Inferring the ancestry of everyone](https://www.biorxiv.org/content/10.1101/458067v1). This 
+includes code for comparing tsinfer with other tools using simulated data, as well as building 
 tree sequences from human data. Because of the complexity of downloading and preparing 
 real data, this code is kept isolated in the ``human-data`` directory. Except for the human 
 data pipeline, everything is intended to be run from the repository root.
@@ -25,9 +25,10 @@ R installation is also required. Some external software requires other libraries
 These are detailed below.
 
 #### Installing system prerequisites 
-You will need to install install python (3) with pip and the GNU scientific library (`gsl`).
-For benchmarking, you will need R and cmake. For testing in real-world data such as the 
-human analyses, you will need cython and the curl libraries.
+You will need to install install Python (version 3) with pip and the GNU scientific library (`gsl`).
+For benchmarking, you will need R and cmake. Testing real-world data (e.g. for the
+human analyses) uses the `cyvcf2` Python module, which requires pre-installation of 
+cython and the curl libraries.
 
 For example, to install all these on Ubuntu:
 
@@ -43,15 +44,20 @@ installed with
 
 ```
 $ python3 -m pip install -r requirements.txt
-$ python3 -m pip install cyvcf2 # only for human data analysis: needs to be installed *after* numpy
 ```
 
 if you are using pip. Conda may also be used to install these dependencies.
 
 ## Human data
 
+You will need the `cyvcf2` Python module to read VCF files. Once the requirements above have been installed you should simply be able to do:
+
+```
+$ python3 -m pip install cyvcf2 # only for human data analysis: needs to be installed *after* numpy
+```
+
 Please see the [README](human-data/README.md) in the ``human-data`` directory 
-for details on running the human data pipelines.
+for further details on running the human data pipelines.
 
 ## Simulation benchmarks
 
@@ -64,7 +70,11 @@ available in the ``tools`` directory. Simple installation instructions for setti
 #### Installing necessary R packages
 
 We require the `ape`, `phangorn`, and `Rcpp` packages. If you don't already have these installed
-in your local R installation, you should be able to install them using:
+in your local R installation, you should be able to install them in the standard way. For example,
+from within R you can issue the command 
+`install.packages(c("ape", "phangorn", "Rcpp"), INSTALL_opts="--byte-compile")`, which may prompt
+you for various bits of information, if they are not already known, e.g. your choice of CRAN repository.
+If you have superuser (root) access to your machine, you can install packages without requiring any user interaction by
 
 ```
 # Install latest required packages within R - this recompiles stuff so may take a few mins
@@ -75,20 +85,15 @@ You can then install our local `ARGmetrics` package, bundled in this github repo
 from within the github directory, as follows:
 
 ```
-# Install ARGmetrics into R
+# Install ARGmetrics into R (you can omit `sudo` if installing locally)
 sudo R CMD INSTALL ARGmetrics
 ```
-
-If can't run sudo, because you do not have superuser (root) access to your machine, you should be able to 
-download pakages into a local R library folder by running the `install.packages(...)` command above 
-from within an R session, which will prompt you to create a local folder. Any further installation can then be
-done without `sudo`.
 
 #### Installing alternative ARG inference software
 
 We compare our results against [ARGweaver](https://github.com/CshlSiepelLab/argweaver), [RentPlus](https://github.com/SajadMirzaei/RentPlus), and [fastARG](https://github.com/lh3/fastARG). 
-We also use [SLiM](https://github.com/MesserLab/SLiM) to run forwards simulations. These stand-alone software
-are kept in the ``tools`` directory and can be downloaded and built using 
+We also use [SLiM](https://github.com/MesserLab/SLiM) to run forwards simulations. These stand-alone
+software tools are kept in the ``tools`` directory and can be downloaded and built using 
 
 ```
 # Download and compile other simulation and inference tools for testing
@@ -121,10 +126,17 @@ python3 src/evaluation.py setup -P -r 2 all_tools
 python3 src/evaluation.py infer -P all_tools
 ```
 
-##### Create a summary csv file for plotting
+##### Put generated data into a summary csv file for plotting
 ```
 python3 src/evaluation.py summarize metrics_all_tools
 ```
+
+##### Plot using the csv file
+```
+python3 src/plot.py metrics_all_tools
+```
+
+The result should be an appropriately named pdf or png file in the `figures` directory (e.g. `figures/metrics_all_tools.pdf`)
 
 #### Running all evaluations
 
@@ -145,3 +157,8 @@ python3 src/evaluation.py infer -p 64 all # will take a few days (mostly to run 
 python3 src/evaluation.py summarize all #will take a few minutes
 ```
 
+The final figures can then be plotted using
+
+```
+python3 src/plot.py all
+```
