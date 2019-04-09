@@ -1,4 +1,4 @@
-all: | fastARG argweaver RentPlus SLiM
+all: | fastARG argweaver RentPlus SLiM pbwt
 	#the following tools require stand-alone compilation
 	make -C fastARG
 	make -C argweaver
@@ -24,3 +24,13 @@ SLiM:
 	git clone https://github.com/MesserLab/SLiM -b v3.2.1
 	cd SLiM && mkdir build && cd build && cmake ../
 
+pbwt: htslib
+	# We need this for the 'storing everyone' figure.
+	git clone git@github.com:richarddurbin/pbwt.git
+	cd pbwt && make
+
+htslib:
+	wget https://github.com/samtools/htslib/releases/download/1.9/htslib-1.9.tar.bz2
+	tar -jxf htslib-1.9.tar.bz2
+	mv htslib-1.9 htslib
+	cd htslib && ./configure --enable-libcurl=no && make -j 8
