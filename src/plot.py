@@ -152,6 +152,9 @@ class StoringEveryone(Figure):
             textcoords="offset points", xytext=xytext,
             xy=(largest_n, largest_value), xycoords="data")
 
+        line, = ax1.loglog(
+            df.sample_size, df.pbwt, "o", label="pbwt")
+
         ax1.set_xlabel("Number of chromosomes")
         ax1.set_ylabel("File size (GiB)")
         plt.legend()
@@ -806,7 +809,7 @@ class MetricAllToolsFigure(TreeMetricsFigure):
                 seq_error_params = df.error_param.unique()
             except AttributeError:
                 seq_error_params = [0]
-                
+
             # y-direction is different ancestral allele error rates (if present)
             try:
                 aa_error_params = self.data.ancestral_state_error_param.unique()
@@ -1032,14 +1035,14 @@ class UkbbStructureFigure(Figure):
             df[col] = scipy.stats.zscore(df[col])
 
         row_linkage = scipy.cluster.hierarchy.linkage(df, method="average", optimal_ordering=True)
-        
+
         # Tweaks to the clade rotation order
         # Flip the north vs north-west cities
         rotate_linkage(row_linkage, -3)
-        
+
         # Put Welsh towns next to Birmingham
         rotate_linkage(row_linkage, -8)
-        
+
         # Do Leeds - Sheffield - Nottingham, not Nottingham - Sheffield - Leeds
         # (this simply helps the top-to-bottom labelling scheme
         rotate_linkage(row_linkage, -9)
@@ -1050,7 +1053,7 @@ class UkbbStructureFigure(Figure):
 
         # Swansea then Cardiff (highlights association between Cardiff & Bristol)
         rotate_linkage(row_linkage, -15)
-        
+
         # The south/south-east centres are a bit visually messy - try putting east at end
         # Oxford near Bristol
         rotate_linkage(row_linkage, -16)

@@ -8,6 +8,7 @@ import os.path
 import argparse
 import subprocess
 import io
+import concurrent.futures
 
 import numpy as np
 import msprime
@@ -153,22 +154,37 @@ def run_benchmark():
     benchmark_bcf(ts)
 
 
+def convert_file_worker(k):
+    n = 10**k
+    filename = os.path.join(data_prefix, "{}.trees".format(n))
+    if not os.path.exists(filename):
+        raise ValueError("Missing simulation")
+    ts = msprime.load(filename)
+    gz_filename = filename + ".gz"
+    subprocess.check_call("gzip -c {} > {}".format(filename, gz_filename), shell=True)
+    if k < 7:
+        vcf_filename = os.path.join(data_prefix, "{}.vcf".format(n))
+        with open(vcf_filename, "w") as vcf_file:
+            ts.write_vcf(vcf_file, 2)
+        print("Wrote ", vcf_filename)
+        # Convert to PBWT
+        pbwt_filename = os.path.join(data_prefix, "{}.pbwt".format(n))
+        sites_filename = os.path.join(data_prefix, "{}.sites".format(n))
+        cmd = "./tools/pbwt/pbwt -readVcfGT {} -write {} -writeSites {}".format(
+            vcf_filename, pbwt_filename, sites_filename)
+        subprocess.check_call(cmd, shell=True)
+        gz_filename = vcf_filename + ".gz"
+        subprocess.check_call("gzip -c {} > {}".format(vcf_filename, gz_filename), shell=True)
+        print("Wrote ", gz_filename)
+    return k
+
+
 def run_convert_files():
-    for k in range(1, 8):
-        n = 10**k
-        filename = os.path.join(data_prefix, "{}.trees".format(n))
-        if not os.path.exists(filename):
-            break
-        ts = msprime.load(filename)
-        filename += ".gz"
-        if k < 7:
-            filename = os.path.join(data_prefix, "{}.vcf".format(n))
-            with open(filename, "w") as vcf_file:
-                ts.write_vcf(vcf_file, 2)
-            print("Wrote ", filename)
-            gz_filename = filename + ".gz"
-            subprocess.check_call("gzip -c {} > {}".format(filename, gz_filename), shell=True)
-            print("Wrote ", gz_filename)
+    work = range(1, 8)
+    with concurrent.futures.ProcessPoolExecutor(max_workers=8) as executor:
+        futures = [executor.submit(convert_file_worker, k) for k in work]
+        for future in futures:
+            print(future.result(), "done!")
 
 
 def run_make_data():
@@ -177,6 +193,7 @@ def run_make_data():
     compressed = np.zeros(sample_size.shape)
     vcf = np.zeros(sample_size.shape)
     vcfz = np.zeros(sample_size.shape)
+    pbwt = np.zeros(sample_size.shape)
 
     GB = 1024**3
     for j, n in enumerate(sample_size):
@@ -184,7 +201,8 @@ def run_make_data():
             (uncompressed, os.path.join(data_prefix, "{}.trees".format(n))),
             (compressed, os.path.join(data_prefix, "{}.trees.gz".format(n))),
             (vcf, os.path.join(data_prefix, "{}.vcf".format(n))),
-            (vcfz, os.path.join(data_prefix, "{}.vcf.gz".format(n)))]
+            (vcfz, os.path.join(data_prefix, "{}.vcf.gz".format(n))),
+            (pbwt, os.path.join(data_prefix, "{}.pbwt".format(n)))]
         for array, filename in files:
             if os.path.exists(filename):
                 array[j] = os.path.getsize(filename) / GB
@@ -232,7 +250,8 @@ def run_make_data():
         "vcf_fit": vcf_fit,
         "vcfz_fit": vcfz_fit,
         "tsk_fit": tsk_fit,
-        "tskz_fit": tskz_fit})
+        "tskz_fit": tskz_fit,
+        "pbwt": pbwt})
     df.to_csv(datafile)
 
 
