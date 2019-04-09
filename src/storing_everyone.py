@@ -160,6 +160,23 @@ def convert_file_worker(k):
     if not os.path.exists(filename):
         raise ValueError("Missing simulation")
     ts = msprime.load(filename)
+
+    # Convert to PBWT by piping in VCF. This avoids having the write the
+    # ~10TB VCF to disk.
+    pbwt_filename = os.path.join(data_prefix, "{}.pbwt".format(n))
+    sites_filename = os.path.join(data_prefix, "{}.sites".format(n))
+    cmd = "./tools/pbwt/pbwt -readVcfGT - -write {} -writeSites {}".format(
+        pbwt_filename, sites_filename)
+    read_fd, write_fd = os.pipe()
+    write_pipe = os.fdopen(write_fd, "w")
+    proc = subprocess.Popen(cmd, shell=True, stdin=read_fd)
+    ts.write_vcf(write_pipe, ploidy=2)
+    write_pipe.close()
+    os.close(read_fd)
+    proc.wait()
+    if proc.returncode != 0:
+        raise RuntimeError("pbwt failed with status:", proc.returncode)
+
     gz_filename = filename + ".gz"
     subprocess.check_call("gzip -c {} > {}".format(filename, gz_filename), shell=True)
     if k < 7:
@@ -167,12 +184,6 @@ def convert_file_worker(k):
         with open(vcf_filename, "w") as vcf_file:
             ts.write_vcf(vcf_file, 2)
         print("Wrote ", vcf_filename)
-        # Convert to PBWT
-        pbwt_filename = os.path.join(data_prefix, "{}.pbwt".format(n))
-        sites_filename = os.path.join(data_prefix, "{}.sites".format(n))
-        cmd = "./tools/pbwt/pbwt -readVcfGT {} -write {} -writeSites {}".format(
-            vcf_filename, pbwt_filename, sites_filename)
-        subprocess.check_call(cmd, shell=True)
         gz_filename = vcf_filename + ".gz"
         subprocess.check_call("gzip -c {} > {}".format(vcf_filename, gz_filename), shell=True)
         print("Wrote ", gz_filename)
@@ -181,6 +192,8 @@ def convert_file_worker(k):
 
 def run_convert_files():
     work = range(1, 8)
+    # for k in work:
+    #     convert_file_worker(k)
     with concurrent.futures.ProcessPoolExecutor(max_workers=8) as executor:
         futures = [executor.submit(convert_file_worker, k) for k in work]
         for future in futures:
