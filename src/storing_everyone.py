@@ -9,13 +9,17 @@ import argparse
 import subprocess
 import io
 import concurrent.futures
+import sys
 
 import numpy as np
 import msprime
+import tskit
 import scipy.optimize as optimize
 import pandas as pd
 import humanize
 import cyvcf2
+import zarr
+import numcodecs
 # Used for newick
 from Bio import Phylo
 
@@ -42,7 +46,7 @@ def run_simulation(sample_size):
     subprocess.check_call(["gzip", "-k", trees_file])
 
 
-def run_simulate():
+def run_simulate(args):
     for k in range(1, 8):
         run_simulation(10**k)
 
@@ -118,7 +122,7 @@ def run_benchmark_newick(ts, num_trees):
         (mean_time * ts.num_trees) / 3600, mean_time))
 
 
-def run_benchmark():
+def run_benchmark(args):
     print("msprime version:", msprime.__version__)
 
     before = time.perf_counter()
@@ -161,6 +165,9 @@ def convert_file_worker(k):
         raise ValueError("Missing simulation")
     ts = msprime.load(filename)
 
+    zarr_filename = filename + ".zarr"
+    ts_to_minified(ts, zarr_filename)
+
     # Convert to PBWT by piping in VCF. This avoids having the write the
     # ~10TB VCF to disk.
     pbwt_filename = os.path.join(data_prefix, "{}.pbwt".format(n))
@@ -177,8 +184,6 @@ def convert_file_worker(k):
     if proc.returncode != 0:
         raise RuntimeError("pbwt failed with status:", proc.returncode)
 
-    gz_filename = filename + ".gz"
-    subprocess.check_call("gzip -c {} > {}".format(filename, gz_filename), shell=True)
     if k < 7:
         vcf_filename = os.path.join(data_prefix, "{}.vcf".format(n))
         with open(vcf_filename, "w") as vcf_file:
@@ -190,7 +195,7 @@ def convert_file_worker(k):
     return k
 
 
-def run_convert_files():
+def run_convert_files(args):
     work = range(1, 8)
     # for k in work:
     #     convert_file_worker(k)
@@ -200,7 +205,7 @@ def run_convert_files():
             print(future.result(), "done!")
 
 
-def run_make_data():
+def run_make_data(args):
     sample_size = 10**np.arange(1, 11)
     uncompressed = np.zeros(sample_size.shape)
     compressed = np.zeros(sample_size.shape)
@@ -212,7 +217,7 @@ def run_make_data():
     for j, n in enumerate(sample_size):
         files = [
             (uncompressed, os.path.join(data_prefix, "{}.trees".format(n))),
-            (compressed, os.path.join(data_prefix, "{}.trees.gz".format(n))),
+            (compressed, os.path.join(data_prefix, "{}.trees.zarr".format(n))),
             (vcf, os.path.join(data_prefix, "{}.vcf".format(n))),
             (vcfz, os.path.join(data_prefix, "{}.vcf.gz".format(n))),
             (pbwt, os.path.join(data_prefix, "{}.pbwt".format(n)))]
@@ -268,7 +273,118 @@ def run_make_data():
     df.to_csv(datafile)
 
 
+def ts_to_minified(ts, filename):
+    """
+    Returns a representation of the specified tree sequence that's optimised
+    to use the minimal amount of storage space. No metadata is stored,
+    and ancestal and derived states must be single characters.
+    """
+    # First reduce to site topology
+    ts = ts.simplify(reduce_to_site_topology=True)
+    tables = ts.tables
+
+    store = zarr.ZipStore(filename, mode='w')
+    root = zarr.group(store=store)
+    nodes = root.create_group("nodes")
+    flags = nodes.empty("flags", shape=ts.num_nodes, dtype=np.uint8)
+    flags[:] = tables.nodes.flags
+    # print(flags.info)
+
+    # Get the indexes into the position array.
+    pos_map = np.hstack([tables.sites.position, [tables.sequence_length]])
+    pos_map[0] = 0
+    left_mapped = np.searchsorted(pos_map, tables.edges.left)
+    if np.any(pos_map[left_mapped] != tables.edges.left):
+        raise ValueError("Invalid left coordinates")
+    right_mapped = np.searchsorted(pos_map, tables.edges.right)
+    if np.any(pos_map[right_mapped] != tables.edges.right):
+        raise ValueError("Invalid right coordinates")
+
+    filters = [numcodecs.Delta(dtype=np.int32, astype=np.int32)]
+    compressor = numcodecs.Blosc(cname='zstd', clevel=9, shuffle=numcodecs.Blosc.SHUFFLE)
+    edges = root.create_group("edges")
+    parent = edges.empty(
+        "parent", shape=ts.num_edges, dtype=np.int32, filters=filters, compressor=compressor)
+    child = edges.empty(
+        "child", shape=ts.num_edges, dtype=np.int32, filters=filters, compressor=compressor)
+    left = edges.empty(
+        "left", shape=ts.num_edges, dtype=np.uint32,filters=filters, compressor=compressor)
+    right = edges.empty(
+        "right", shape=ts.num_edges, dtype=np.uint32,filters=filters, compressor=compressor)
+    parent[:] = tables.edges.parent
+    child[:] = tables.edges.child
+    left[:] = left_mapped
+    right[:] = right_mapped
+    # print(left.info)
+    # print(right.info)
+    # print(parent.info)
+    # print(child.info)
+
+    mutations = root.create_group("mutations")
+    site = mutations.empty(
+        "site", shape=ts.num_mutations, dtype=np.int32, compressor=compressor)
+    node = mutations.empty(
+        "node", shape=ts.num_mutations, dtype=np.int32, compressor=compressor)
+    site[:] = tables.mutations.site
+    node[:] = tables.mutations.node
+    # print(site.info)
+    # print(node.info)
+
+    store.close()
+    store = zarr.ZipStore(filename, mode='r')
+    root = zarr.group(store=store)
+    return root
+
+def minified_to_ts(root):
+    """
+    Returns the tree sequence corresponding to the specified zarr array.
+    """
+
+    site = root["mutations/site"][:]
+    num_sites = site[-1] + 1
+    n = site.shape[0]
+    tables = tskit.TableCollection(num_sites)
+    tables.mutations.set_columns(
+        node=root["mutations/node"],
+        site=site,
+        derived_state=np.zeros(n, dtype=np.int8) + ord("1"),
+        derived_state_offset=np.arange(n + 1, dtype=np.uint32))
+    tables.sites.set_columns(
+        position=np.arange(num_sites),
+        ancestral_state=np.zeros(num_sites, dtype=np.int8) + ord("0"),
+        ancestral_state_offset=np.arange(num_sites + 1, dtype=np.uint32))
+    flags = root["nodes/flags"][:]
+    n = flags.shape[0]
+    tables.nodes.set_columns(
+        flags=flags.astype(np.uint32),
+        time=np.arange(n))
+    tables.edges.set_columns(
+        left=root["edges/left"],
+        right=root["edges/right"],
+        parent=root["edges/parent"],
+        child=root["edges/child"])
+    return tables.tree_sequence()
+
+def run_mini_ts(args):
+    # Minimise the argument tree sequence and check it's the same as the input.
+    ts = tskit.load(args.ts)
+    # ts = msprime.simulate(10, mutation_rate=2, recombination_rate=2)
+    zarr_file = "tmp.zarr"
+    minified = ts_to_minified(ts, zarr_file)
+    ts2 = minified_to_ts(minified)
+    G1 = ts.genotype_matrix()
+    G2 = ts2.genotype_matrix()
+    assert np.array_equal(G1, G2)
+    del minified
+
+    store = zarr.ZipStore(zarr_file, mode='r')
+    root = zarr.group(store=store)
+    ts2 = minified_to_ts(root)
+    G2 = ts2.genotype_matrix()
+    assert np.array_equal(G1, G2)
+
 if __name__ == "__main__":
+
 
     parser = argparse.ArgumentParser(
         description="Run the plot showing the files size storing everyone")
@@ -288,5 +404,9 @@ if __name__ == "__main__":
     subparser = subparsers.add_parser("benchmark")
     subparser.set_defaults(func=run_benchmark)
 
+    subparser = subparsers.add_parser("mini-ts")
+    subparser.add_argument("ts")
+    subparser.set_defaults(func=run_mini_ts)
+
     args = parser.parse_args()
-    args.func()
+    args.func(args)
