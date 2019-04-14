@@ -144,7 +144,7 @@ class StoringEveryone(Figure):
             xy=(largest_n, largest_value), xycoords="data")
 
         line, = ax1.loglog(
-            df.sample_size, df.compressed, "*", label="trees.gz")
+            df.sample_size, df.compressed, "*", label="minimised trees")
         ax1.loglog(df.sample_size, df.tskz_fit, "--", color=line.get_color(), label="")
         largest_value = np.array(df.tskz_fit)[-1]
         ax1.annotate(
@@ -153,7 +153,13 @@ class StoringEveryone(Figure):
             xy=(largest_n, largest_value), xycoords="data")
 
         line, = ax1.loglog(
-            df.sample_size, df.pbwt, "o", label="pbwt")
+            df.sample_size, df.pbwt, "P", label="pbwt")
+        ax1.loglog(df.sample_size, df.pbwt_fit, "--", color=line.get_color(), label="")
+        largest_value = np.array(df.pbwt_fit)[-1]
+        ax1.annotate(
+            humanize.naturalsize(largest_value * GB, binary=True, format="%d"),
+            textcoords="offset points", xytext=xytext,
+            xy=(largest_n, largest_value), xycoords="data")
 
         ax1.set_xlabel("Number of chromosomes")
         ax1.set_ylabel("File size (GiB)")

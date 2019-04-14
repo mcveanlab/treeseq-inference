@@ -259,6 +259,12 @@ def run_make_data(args):
         mulplicative_model, sample_size[index][:-1], vcfz[index][:-1])
     vcfz_fit = mulplicative_model(sample_size, *vcfz_fit_params)
 
+    # The fit for this model isn't great, but it's far better than a
+    # simple exponential. Should try to do better here.
+    pbwt_fit_params, _ = optimize.curve_fit(
+        additive_model, sample_size[index][:-1], pbwt[index][:-1])
+    pbwt_fit = additive_model(sample_size, *pbwt_fit_params)
+
     df = pd.DataFrame({
         "sample_size": sample_size,
         "compressed": compressed,
@@ -269,7 +275,8 @@ def run_make_data(args):
         "vcfz_fit": vcfz_fit,
         "tsk_fit": tsk_fit,
         "tskz_fit": tskz_fit,
-        "pbwt": pbwt})
+        "pbwt": pbwt,
+        "pbwt_fit": pbwt_fit})
     df.to_csv(datafile)
 
 
