@@ -50,6 +50,9 @@ simplebgen: setup.py simplebgenmodule.c
 %.trees.bcf: %.trees
 	msp vcf -P 2 $^ | bcftools view - -O b -o $@
 
+%.snipped.trees: %.trees ${CENTROMERES_CSV}
+	python3 tsutil.py snip-centromere $< $@ $* ${CENTROMERES_CSV}
+
 #############################################
 # Centromere locations for GRCh37 (aka hg19) from UCSC
 # See https://www.biostars.org/p/2349/
@@ -112,9 +115,6 @@ GENOTYPES_BASE=http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/suppor
 		--reference-name=${REFERENCE_NAME}\
 		$@  > $@.report
 
-1kg_chr20.snipped.trees: 1kg_chr20.trees ${CENTROMERES_CSV}
-	python3 tsutil.py snip-centromere $< $@ chr20 ${CENTROMERES_CSV}
-
 1kg_chr20.snipped.trees.gnn.csv: 1kg_chr20.snipped.trees
 	python3 tsutil.py compute-1kg-gnn $^ $@ --num-threads=16
 
@@ -123,33 +123,32 @@ GENOTYPES_BASE=http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/suppor
 # SGDP data.
 #############################################
 
+
+SGDP_GENOTYPES_BASE=https://sharehost.hms.harvard.edu/genetics/reich_lab/sgdp/phased_data/PS2_multisample_public
+
 sgdp_samples.txt:
 	curl https://sharehost.hms.harvard.edu/genetics/reich_lab/sgdp/SGDP_metadata.279public.21signedLetter.samples.txt -o $@
-	 
-cteam_extended.v4.PS2_phase.public.chr20.vcf.gz: 
-	curl https://sharehost.hms.harvard.edu/genetics/reich_lab/sgdp/phased_data/PS2_multisample_public/cteam_extended.v4.PS2_phase.public.chr20.vcf.gz.csi -O
-	curl https://sharehost.hms.harvard.edu/genetics/reich_lab/sgdp/phased_data/PS2_multisample_public/cteam_extended.v4.PS2_phase.public.chr20.vcf.gz -O
 
-sgdp_chr20_genotypes.bcf: cteam_extended.v4.PS2_phase.public.chr20.vcf.gz 
+sgdp_%_genotypes.vcf.gz:
+	curl ${SGDP_GENOTYPES_BASE}/cteam_extended.v4.PS2_phase.public.$*.vcf.gz -o $@
+	curl ${SGDP_GENOTYPES_BASE}/cteam_extended.v4.PS2_phase.public.$*.vcf.gz.csi -o $@.csi
+
+sgdp_%_genotypes.bcf: sgdp_%_genotypes.vcf.gz
 	# Remove the S_Naxi-2 individual because (a) it doesn't have any metadata in the 
 	# file we're using and (b) it has a massively elevated sample edge count if we 
 	# leave it in.
 	bcftools view -s '^S_Naxi-2' $^ -O b -o $@
 
-sgdp_chr20.samples: sgdp_chr20_genotypes.bcf.csi chr20_ancestral_states.fa sgdp_samples.txt
+sgdp_%.samples: sgdp_%_genotypes.bcf.csi %_ancestral_states.fa sgdp_samples.txt
 	python3 convert.py sgdp -p \
-		sgdp_chr20_genotypes.bcf \
-		chr20_ancestral_states.fa \
+		sgdp_$*_genotypes.bcf \
+		$*_ancestral_states.fa \
 		-m sgdp_samples.txt \
 		--ancestral-states-url=${ANCESTRAL_STATES_URL}\
 		--reference-name=${REFERENCE_NAME}\
 		$@  > $@.report
 
-
-sgdp_chr20.snipped.trees: sgdp_chr20.trees ${CENTROMERES_CSV}
-	python3 tsutil.py snip-centromere $< $@ chr20 ${CENTROMERES_CSV}
-
-sgdp_chr20.snipped.trees.gnn.csv: sgdp_chr20.snipped.trees
+sgdp_%.snipped.trees.gnn.csv: sgdp_%.snipped.trees
 	python3 tsutil.py compute-sgdp-gnn $^ $@ --num-threads=16
 
 #############################################
