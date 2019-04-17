@@ -44,6 +44,7 @@ import ts_extras
 import ts_fastARG
 import ts_ARGweaver
 import ts_RentPlus
+import ts_argentum
 import ARG_metrics
 
 fastARG_executable = os.path.join('tools','fastARG','fastARG')
@@ -51,6 +52,7 @@ ARGweaver_executable = os.path.join('tools','argweaver','bin','arg-sample')
 smc2arg_executable = os.path.join('tools','argweaver','bin','smc2arg')
 RentPlus_executable = os.path.join('tools','RentPlus','RentPlus.jar')
 SLiM_executable = os.path.join('tools','SLiM','build','slim')
+argentum_executable = os.path.join('tools','tcPBWT', 'argentum')
 tsinfer_executable = os.path.join('src','run_tsinfer.py')
 
 #monkey-patch nexus saving/writing into msprime/tskit
@@ -61,6 +63,7 @@ FASTARG = "fastARG"
 ARGWEAVER = "ARGweaver"
 RENTPLUS = "RentPlus"
 TSINFER = "tsinfer"
+ARGENTUM = "argentum"
 
 #names for optional columns in the dataset
 SEQ_ERROR_COLNAME = 'error_param'
@@ -319,6 +322,19 @@ def fastarg_name_from_row(row, sim_dir):
     return construct_fastarg_name(mk_sim_name_from_row(row, sim_dir),
                                   seed=row.seed)
 
+def construct_argentum_name(sim_name, directory=None):
+    """
+    Returns an argentum inference filename (without file extension),
+    based on a simulation name
+    """
+    d,f = os.path.split(sim_name)
+    return os.path.join(d,'+'.join(['argentum', f, ""]))
+
+def argentum_name_from_row(row, sim_dir):
+    """
+    return the fa name based on an sim specified by row
+    """
+    return construct_argentum_name(mk_sim_name_from_row(row, sim_dir))
 
 def construct_argweaver_name(sim_name, burnin, ntimes, seed, iteration_number=None):
     """
@@ -404,6 +420,7 @@ def time_cmd(cmd, stdout=sys.stdout):
         max_memory = int(split[0]) * 1024
         system_time = float(split[1])
         user_time = float(split[2])
+        stdout.flush()
     return user_time + system_time, max_memory
 
 def ARGmetric_params_from_row(row):
@@ -460,6 +477,8 @@ class InferenceRunner(object):
             ret = self.__run_ARGweaver(skip_infer = metrics_only)
         elif self.tool == RENTPLUS:
             ret = self.__run_RentPlus(skip_infer = metrics_only)
+        elif self.tool == ARGENTUM:
+            ret = self.__run_argentum(skip_infer = metrics_only)
         else:
             raise ValueError("unknown tool {}".format(self.tool))
         if self.inferred_filenames is None:
@@ -590,6 +609,30 @@ class InferenceRunner(object):
             save_stats['ts_filesize']: fs,
         }
 
+    def __run_argentum(self, skip_infer=False):
+        self.inferred_filenames = [construct_argentum_name(self.sample_fn)]
+        if skip_infer:
+            return {}
+        infile = self.sample_fn + ".bin"
+        time = memory = None
+        logging.debug("reading: {} for argentum (tcPBWT) inference".format(infile))
+        try:
+            outfile, time, memory = self.run_argentum(infile, self.row.length)
+            if len(self.metric_params):
+                variant_positions = ts_argentum.variant_positions_from_argentum_in(infile)
+                for fn in self.inferred_filenames:
+                    with open(fn + ".nex", "w+") as out:
+                        ts_argentum.argentum_out_to_nexus(
+                            outfile, variant_positions, self.row.length, out)
+        except ValueError as e:
+            self.inferred_filenames = None
+            #catch argentum errors here
+            raise
+        return {
+            save_stats['cpu']: time,
+            save_stats['mem']: memory,
+        }
+
     def __run_RentPlus(self, skip_infer=False):
         self.inferred_filenames = [construct_rentplus_name(self.sample_fn)]
         if skip_infer:
@@ -718,15 +761,22 @@ class InferenceRunner(object):
 
     @staticmethod
     def run_fastarg(file_name, seq_length, seed):
-        with tempfile.NamedTemporaryFile("w+") as fa_out, \
-                tempfile.NamedTemporaryFile("w+") as tree, \
-                tempfile.NamedTemporaryFile("w+") as muts:
+        with tempfile.NamedTemporaryFile("w+") as fa_out:
             cmd = ts_fastARG.get_cmd(fastARG_executable, file_name, seed)
             cpu_time, memory_use = time_cmd(cmd, fa_out)
             logging.debug("ran fastarg for seq length {} [{} s]: '{}'".format(seq_length, cpu_time, cmd))
             var_pos = ts_fastARG.variant_positions_from_fastARGin_name(file_name)
             inferred_ts = ts_fastARG.fastARG_out_to_ts(fa_out, var_pos, seq_len=seq_length)
             return inferred_ts, cpu_time, memory_use
+
+    @staticmethod
+    def run_argentum(file_name, seq_length):
+        outfile = file_name + '.out'
+        with open(outfile, "w+") as ag_out:
+            cmd = [argentum_executable, '-r', file_name]
+            cpu_time, memory_use = time_cmd(cmd, ag_out)
+            logging.debug("ran argentum for seq length {} [{} s]: '{}'".format(seq_length, cpu_time, cmd))
+        return outfile, cpu_time, memory_use
 
     @staticmethod
     def run_rentplus(file_name, seq_length):
@@ -864,6 +914,7 @@ class Dataset(object):
         FASTARG:    [METRICS_LOCATION_ALL | METRICS_POLYTOMIES_LEAVE],
         RENTPLUS:   [METRICS_LOCATION_ALL | METRICS_POLYTOMIES_LEAVE],
         #tsinfer regularly produces polytomies, so need to check both methods here
+        ARGENTUM:   [METRICS_LOCATION_ALL | METRICS_POLYTOMIES_LEAVE, METRICS_LOCATION_ALL | METRICS_POLYTOMIES_BREAK],
         TSINFER:    [METRICS_LOCATION_ALL | METRICS_POLYTOMIES_LEAVE, METRICS_LOCATION_ALL | METRICS_POLYTOMIES_BREAK],
     }
     
@@ -1151,7 +1202,7 @@ class Dataset(object):
                 if any([re.search(regexp, k) for regexp in self.exclude_colnames_matching]):
                     pass
                 else:
-                    self.data.ix[row_id, k] = v
+                    self.data.loc[self.data.index[row_id], k] = v
             self.dump_data(force_flush=flush_all)
             # Update the progress meters
             if show_progress:
@@ -1440,6 +1491,10 @@ class Dataset(object):
                 logging.debug("writing samples to {}.hap for fastARG".format(fn))
                 with open(fn+".hap", "w+") as file_in:
                     ts_fastARG.samples_to_fastARG_in(s, file_in)
+            if ARGENTUM in self.tools_and_metrics:
+                logging.debug("writing samples to {}.bin for argentum (tcPBWT)".format(fn))
+                with open(fn+".bin", "w+") as file_in:
+                    ts_argentum.samples_to_argentum_in(s, file_in)
             if ARGWEAVER in self.tools_and_metrics:
                 logging.debug("writing samples to {}.sites for ARGweaver".format(fn))
                 with open(fn+".sites", "w+") as file_in:
@@ -1480,7 +1535,7 @@ class AllToolsDataset(Dataset):
     # to column names in the csv file. Values should all be arrays.
     between_sim_params = {
         'Ne': [5000],
-        'mutation_rate': geomspace_around(1e-8, 5e-7, num=7), #gives upper bound of 5e-7 and lower of 2e-10
+        'mutation_rate': geomspace_around(1e-8, 5e-7, num=3), #gives upper bound of 5e-7 and lower of 2e-10
         'sample_size':   [16],
         'length':        [1000000], # 1Mb ensures that low mutation rates ~2e-10 still have some variants
         'recombination_rate': [1e-8],
