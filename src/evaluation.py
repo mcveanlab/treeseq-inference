@@ -626,8 +626,10 @@ class InferenceRunner(object):
                             outfile, variant_positions, self.row.length, out)
         except ValueError as e:
             self.inferred_filenames = None
-            #catch argentum errors here
-            raise
+            if "argentum bug" in str(e):
+                logging.warning(str(e) + " aborting this replicate")
+            else:
+                raise
         return {
             save_stats['cpu']: time,
             save_stats['mem']: memory,

@@ -67,6 +67,10 @@ def argentum_out_to_nexus(argentum_out, variant_positions, seq_length, outfileha
                     buffered_tree = tree
                 site += 1
         #print out the last tree
+        if site != len(variant_positions):
+            raise ValueError("argentum bug hit: {} trees but {} sites"
+                .format(site, len(variant_positions)) + 
+                "(https://github.com/vlshchur/stable/issues/2)")
         if tree != '':
             print("TREE", str(seq_length), "=", tree, 
                 sep=" ",
