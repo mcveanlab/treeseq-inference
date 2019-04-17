@@ -1535,7 +1535,7 @@ class AllToolsDataset(Dataset):
     # to column names in the csv file. Values should all be arrays.
     between_sim_params = {
         'Ne': [5000],
-        'mutation_rate': geomspace_around(1e-8, 5e-7, num=3), #gives upper bound of 5e-7 and lower of 2e-10
+        'mutation_rate': geomspace_around(1e-8, 5e-7, num=7), #gives upper bound of 5e-7 and lower of 2e-10
         'sample_size':   [16],
         'length':        [1000000], # 1Mb ensures that low mutation rates ~2e-10 still have some variants
         'recombination_rate': [1e-8],
