@@ -30,13 +30,14 @@ def samples_to_RentPlus_in(sample_data, RentPlus_filehandle, infinite_sites=True
     """
     position = sample_data.sites_position[:] #decompress all in one go to avoid sequential unpacking
     if infinite_sites:
-        #normalize to between 0 and 1
         unique_positions = np.unique(position)
         assert unique_positions.shape[0] == sample_data.num_sites, \
             'If infinite sites is assumed, positions need to be unique, but there are dups'
-        print(" ".join([str(float(p)/sample_data.sequence_length) for p in unique_positions]))
+        # normalize to between 0 and 1, as required by RentPlus for non-integer positions
+        print(" ".join([str(float(p)/sample_data.sequence_length) for p in unique_positions]),
+            file=RentPlus_filehandle)
         for id, haplotype in sample_data.haplotypes():
-            print((genotypes + ord('0')).tobytes().decode(),file=RentPlus_filehandle)
+            print((haplotype + ord('0')).tobytes().decode(),file=RentPlus_filehandle)
     else:
         #compress runlengths of integers
         unique_positions = np.unique(np.ceil(position).astype(np.uint64))
@@ -68,30 +69,35 @@ def samples_to_RentPlus_in(sample_data, RentPlus_filehandle, infinite_sites=True
     
 def RentPlus_trees_to_nexus(trees_filename, outfilehandle, seq_length, num_tips):
     """
-    RentPlus outputs a tree for every position, so there is a lot of duplication. We can merge duplicate lines
-    in this file as long as we keep track of which variants correspond to which tree, and take the average 
-    of the variant positions in the file
+    RentPlus outputs a tree for every position, so there is a lot of duplication. 
+    We can merge duplicate lines in this file as long as we keep track of which 
+    variants correspond to which tree, and take the highest position in the file
     """
     with open(trees_filename, 'rt+') as RentPlusTrees:
         print("#NEXUS\nBEGIN TREES;", file = outfilehandle)
-        #RentPlus creates 1-based tip numbers from a set of sequences, so we convert back to 0-based
-        #by using the Nexus TRANSLATE functionality
+        # RentPlus creates 1-based tip numbers from a set of sequences, so we convert
+        # back to 0-based by using the Nexus TRANSLATE functionality
         print("TRANSLATE\n{};".format(",\n".join(["{} {}".format(i+1,i) for i in range(num_tips)])), 
             file = outfilehandle)
-        oldline = 0,''
+        buffered_tree = tree = ''
         for line in RentPlusTrees:
             pos, tree = line.rstrip().split(None, 1)
             if tree:
-                #RentPlus has many repeated tree lines. We only need to print out 1
-                if tree != oldline[1]:
-                    if oldline[1]:
-                        print("TREE", str((float(oldline[0])+float(pos))/2), "=", tree,
+                # RentPlus has many repeated tree lines. We only need to print out 1
+                if tree != buffered_tree:
+                    if buffered_tree:
+                        # Print the previous (buffered) tree with the new position 
+                        # marking where we switch *off* this tree into the next
+                        print("TREE", pos, "=", buffered_tree, 
                             sep=" ",
-                            end = "\n" if tree.endswith(';') else ";\n", 
+                            end = "\n" if buffered_tree.endswith(';') else ";\n", 
                             file = outfilehandle)
-                    oldline = pos, tree
-        if oldline[1]:
-            print("TREE", str(seq_length), "=", tree, end = "\n" if tree.endswith(';') else ";\n", 
+                    buffered_tree = tree
+        #print out the last tree
+        if tree:
+            print("TREE", str(seq_length), "=", tree, 
+                sep=" ",
+                end = "\n" if tree.endswith(';') else ";\n", 
                 file = outfilehandle)
         print("END;", file = outfilehandle)
     outfilehandle.flush()
