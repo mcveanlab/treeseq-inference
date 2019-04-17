@@ -392,6 +392,7 @@ class ToolsFigure(Figure):
         ("ARGweaver", {"mark":"*", "col":"#d62728"}),
         ("RentPlus",  {"mark":"d", "col":"#2ca02c"}),
         ("fastARG",   {"mark":"^", "col":"#ff7f0e"}),
+        ("argentum",  {"mark":"s", "col":"#9467bd"}),
         ("tsinfer",   {"mark":"o", "col":"#1f77b4"}),
     ])
 
