@@ -9,7 +9,7 @@ import logging
 
 import numpy as np
     
-def samples_to_argentum_in(sample_data, argentum_in_filehandle):
+def samples_to_argentum_in(sample_data, argentum_in_filehandle, positions_filehandle):
     """
     Takes a SampleData object, and outputs a file in .binary format, suitable for input 
     into argentum (see https://github.com/vlshchur/argentum)
@@ -23,27 +23,21 @@ def samples_to_argentum_in(sample_data, argentum_in_filehandle):
     for id, genotype in sample_data.genotypes(): 
         np.savetxt(argentum_in_filehandle, genotype, fmt="%i", delimiter="", newline="")
         argentum_in_filehandle.write("\n")
-    argentum_in_filehandle.write("\n")
-    np.savetxt(
-        argentum_in_filehandle, sample_data.sites_position[:], 
-        newline=" ", header="#argentum_input=sites:", delimiter="", comments="")
     argentum_in_filehandle.flush()
     argentum_in_filehandle.seek(0)
+    np.savetxt(
+        positions_filehandle, sample_data.sites_position[:], newline=" ", delimiter="")
+    positions_filehandle.flush()
+    positions_filehandle.seek(0)
         
-def variant_positions_from_argentum_in(argentum_in_filename):
-    """
-    Slightly hacky: go through the file until a line starting with a hash
-    """
-    with open(argentum_in_filename, "rt") as argentum_in_filehandle:
-        for line in argentum_in_filehandle:
-            if line.startswith("#"):
-                prefix, remainder = line.split(" ",1)
-                assert prefix == "#argentum_input=sites:"
-                try:
-                    positions = np.fromstring(remainder.rstrip(), sep=" ")
-                except:
-                    logging.warning("Could not convert the first line to a set of floating point values:\n {}".format(line))
-                return(positions)
+def variant_positions_from_fn(positions_filename):
+    with open(positions_filename, "rt") as positions_fh:
+        for line in positions_fh:
+            try:
+                positions = np.fromstring(line.rstrip(), sep=" ")
+            except:
+                logging.warning("Could not convert the first line to a set of floating point values:\n {}".format(line))
+            return(positions)
 
 
 def planar_order_to_newick(order_string, height_string, branch_lengths=True):

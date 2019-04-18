@@ -613,14 +613,15 @@ class InferenceRunner(object):
         self.inferred_filenames = [construct_argentum_name(self.sample_fn)]
         if skip_infer:
             return {}
-        infile = self.sample_fn + ".bin"
+        binfile = self.sample_fn + ".bin"
+        posfile = self.sample_fn + ".pos"
         time = memory = None
         logging.debug("reading: {} for argentum (tcPBWT) inference".format(infile))
         try:
             outfile, time, memory = self.run_argentum(
-                infile, self.row.length, self.row.sample_size)
+                binfile, self.row.length, self.row.sample_size)
             if len(self.metric_params):
-                variant_positions = ts_argentum.variant_positions_from_argentum_in(infile)
+                variant_positions = ts_argentum.variant_positions_from_fn(posfile)
                 for fn in self.inferred_filenames:
                     with open(fn + ".nex", "w+") as out:
                         ts_argentum.argentum_out_to_nexus(
@@ -1495,9 +1496,10 @@ class Dataset(object):
                 with open(fn+".hap", "w+") as file_in:
                     ts_fastARG.samples_to_fastARG_in(s, file_in)
             if ARGENTUM in self.tools_and_metrics:
-                logging.debug("writing samples to {}.bin for argentum (tcPBWT)".format(fn))
-                with open(fn+".bin", "w+") as file_in:
-                    ts_argentum.samples_to_argentum_in(s, file_in)
+                logging.debug(
+                    "writing samples to {0}.bin and {0}.pos for argentum".format(fn))
+                with open(fn+".bin", "w+") as file_in, open(fn+".pos", "w+") as pos_in:
+                    ts_argentum.samples_to_argentum_in(s, file_in, pos_in)
             if ARGWEAVER in self.tools_and_metrics:
                 logging.debug("writing samples to {}.sites for ARGweaver".format(fn))
                 with open(fn+".sites", "w+") as file_in:
@@ -1538,9 +1540,9 @@ class AllToolsDataset(Dataset):
     # to column names in the csv file. Values should all be arrays.
     between_sim_params = {
         'Ne': [5000],
-        'mutation_rate': geomspace_around(1e-8, 5e-7, num=7), #gives upper bound of 5e-7 and lower of 2e-10
+        'mutation_rate': geomspace_around(1e-8, 5e-7, num=2), #gives upper bound of 5e-7 and lower of 2e-10
         'sample_size':   [16],
-        'length':        [1000000], # 1Mb ensures that low mutation rates ~2e-10 still have some variants
+        'length':        [100000], # 1Mb ensures that low mutation rates ~2e-10 still have some variants
         'recombination_rate': [1e-8],
     }
     # Params that change WITHIN simulations. Keys should correspond
