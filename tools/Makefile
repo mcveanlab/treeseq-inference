@@ -1,4 +1,4 @@
-all: | fastARG argweaver RentPlus SLiM pbwt tcPBWT
+all: | fastARG argweaver RentPlus SLiM pbwt argentum
 	#the following tools require stand-alone compilation
 	make -C fastARG
 	make -C argweaver
@@ -35,6 +35,7 @@ htslib:
 	mv htslib-1.9 htslib
 	cd htslib && ./configure --enable-libcurl=no && make -j 8
 
-tcPBWT:
-	git clone https://github.com/vlshchur/stable tcPBWT
-	cd tcPBWT && c++ argentum.cpp -o argentum
+argentum:
+    # This is the tcPWBT implementation
+	git clone https://github.com/vlshchur/argentum
+	cd argentum && g++ -o argentum argentum.cpp ARG.cpp argIO.cpp -O3

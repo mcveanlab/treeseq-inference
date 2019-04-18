@@ -52,7 +52,7 @@ ARGweaver_executable = os.path.join('tools','argweaver','bin','arg-sample')
 smc2arg_executable = os.path.join('tools','argweaver','bin','smc2arg')
 RentPlus_executable = os.path.join('tools','RentPlus','RentPlus.jar')
 SLiM_executable = os.path.join('tools','SLiM','build','slim')
-argentum_executable = os.path.join('tools','tcPBWT', 'argentum')
+argentum_executable = os.path.join('tools','argentum', 'argentum')
 tsinfer_executable = os.path.join('src','run_tsinfer.py')
 
 #monkey-patch nexus saving/writing into msprime/tskit
@@ -617,7 +617,8 @@ class InferenceRunner(object):
         time = memory = None
         logging.debug("reading: {} for argentum (tcPBWT) inference".format(infile))
         try:
-            outfile, time, memory = self.run_argentum(infile, self.row.length)
+            outfile, time, memory = self.run_argentum(
+                infile, self.row.length, self.row.sample_size)
             if len(self.metric_params):
                 variant_positions = ts_argentum.variant_positions_from_argentum_in(infile)
                 for fn in self.inferred_filenames:
@@ -772,10 +773,10 @@ class InferenceRunner(object):
             return inferred_ts, cpu_time, memory_use
 
     @staticmethod
-    def run_argentum(file_name, seq_length):
+    def run_argentum(file_name, seq_length, n_samples):
         outfile = file_name + '.out'
         with open(outfile, "w+") as ag_out:
-            cmd = [argentum_executable, '-r', file_name]
+            cmd = [argentum_executable, file_name, str(n_samples)]
             cpu_time, memory_use = time_cmd(cmd, ag_out)
             logging.debug("ran argentum for seq length {} [{} s]: '{}'".format(seq_length, cpu_time, cmd))
         return outfile, cpu_time, memory_use
