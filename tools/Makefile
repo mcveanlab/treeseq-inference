@@ -21,7 +21,7 @@ RentPlus:
 
 SLiM:
 	#this is used for the file selective_sweep.py. We need at least 3.2.1
-	git clone https://github.com/MesserLab/SLiM -b v3.2.1
+	git clone https://github.com/MesserLab/SLiM
 	cd SLiM && mkdir build && cd build && cmake ../
 
 pbwt: htslib
