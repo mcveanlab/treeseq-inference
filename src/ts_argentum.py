@@ -38,7 +38,7 @@ def variant_positions_from_argentum_in(argentum_in_filename):
         for line in argentum_in_filehandle:
             if line.startswith("#"):
                 prefix, remainder = line.split(" ",1)
-                assert prefix = "#argentum_input=sites:"
+                assert prefix == "#argentum_input=sites:"
                 try:
                     positions = np.fromstring(remainder.rstrip(), sep=" ")
                 except:
