@@ -16,9 +16,6 @@ def samples_to_argentum_in(sample_data, argentum_in_filehandle, positions_fileha
     
     This simply has one line per site with 0 (ancestral) and 1 (derived) states for each
     sample concatenated on a line. 
-    
-    Anything after a blank line is ignored, so we place a blank line at the end and store
-    the site positions afterwards 
     """
     for id, genotype in sample_data.genotypes(): 
         np.savetxt(argentum_in_filehandle, genotype, fmt="%i", delimiter="", newline="")
@@ -42,7 +39,7 @@ def variant_positions_from_fn(positions_filename):
 
 def planar_order_to_newick(order_string, height_string, branch_lengths=True):
     orders = order_string.split(",")
-    heights = np.fromstring(height_string, sep=",")[1:]
+    heights = np.fromstring(height_string, sep=",")
     while len(heights):
         # cluster tips together, starting at the smallest height
         target_height = np.min(heights)
@@ -74,21 +71,20 @@ def argentum_out_to_nexus(argentum_out, variant_positions, seq_length, outfileha
     """
     with open(argentum_out, "rt") as argentum_out_fh:
         print("#NEXUS\nBEGIN TREES;", file = outfilehandle)
-        buffered_planar_order = ("","")
-        height = ''
+        buffered_planar_order = ("", "")
+        height = order = ''
         site = 0
         for order in argentum_out_fh:
+            if not order[0].isdigit():
+                continue # This is not a planar order line
             order = order.rstrip()
             height = next(argentum_out_fh).rstrip()
-            if order=='' or height=='':
-                break # an empty line marks the end of a file
-            
             if buffered_planar_order != (order, height):
                 # argentum has many repeated tree lines. We only need to print out 1
                 if buffered_planar_order[0] != '':
                     # Print the previous (buffered) tree with the new position 
                     # marking where we switch *off* this tree into the next
-                    newick_tree = planar_order_to_newick(buffered_planar_order)
+                    newick_tree = planar_order_to_newick(*buffered_planar_order)
                     print("TREE", variant_positions[site], "=", newick_tree, 
                         sep=" ",
                         end = "\n" if newick_tree.endswith(';') else ";\n", 
@@ -100,7 +96,7 @@ def argentum_out_to_nexus(argentum_out, variant_positions, seq_length, outfileha
             raise ValueError("argentum bug hit: {} trees but {} sites"
                 .format(site, len(variant_positions)))
         if height != '':
-            newick_tree = planar_order_to_newick((order, height))
+            newick_tree = planar_order_to_newick(*buffered_planar_order)
             print("TREE", str(seq_length), "=", newick_tree, 
                 sep=" ",
                 end = "\n" if newick_tree.endswith(';') else ";\n", 
