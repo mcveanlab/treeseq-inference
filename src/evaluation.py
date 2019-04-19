@@ -616,7 +616,7 @@ class InferenceRunner(object):
         binfile = self.sample_fn + ".bin"
         posfile = self.sample_fn + ".pos"
         time = memory = None
-        logging.debug("reading: {} for argentum (tcPBWT) inference".format(infile))
+        logging.debug("reading: {} for argentum (tcPBWT) inference".format(binfile))
         try:
             outfile, time, memory = self.run_argentum(
                 binfile, self.row.length, self.row.sample_size)
@@ -777,9 +777,11 @@ class InferenceRunner(object):
     def run_argentum(file_name, seq_length, n_samples):
         outfile = file_name + '.out'
         with open(outfile, "w+") as ag_out:
-            cmd = [argentum_executable, file_name, str(n_samples)]
+            # output distances not similarities (-d switch)
+            cmd = [argentum_executable, file_name, str(n_samples), "-d"]
             cpu_time, memory_use = time_cmd(cmd, ag_out)
-            logging.debug("ran argentum for seq length {} [{} s]: '{}'".format(seq_length, cpu_time, cmd))
+            logging.debug("ran argentum for seq length {} [{} s]: '{}'".format(
+                seq_length, cpu_time, cmd))
         return outfile, cpu_time, memory_use
 
     @staticmethod
@@ -1540,9 +1542,9 @@ class AllToolsDataset(Dataset):
     # to column names in the csv file. Values should all be arrays.
     between_sim_params = {
         'Ne': [5000],
-        'mutation_rate': geomspace_around(1e-8, 5e-7, num=2), #gives upper bound of 5e-7 and lower of 2e-10
+        'mutation_rate': geomspace_around(1e-8, 5e-7, num=7), #gives upper bound of 5e-7 and lower of 2e-10
         'sample_size':   [16],
-        'length':        [100000], # 1Mb ensures that low mutation rates ~2e-10 still have some variants
+        'length':        [1000000], # 1Mb ensures that low mutation rates ~2e-10 still have some variants
         'recombination_rate': [1e-8],
     }
     # Params that change WITHIN simulations. Keys should correspond
