@@ -1747,7 +1747,7 @@ class FastargTsinferComparisonDataset(AllToolsPerformanceDataset):
     name = "fastarg_tsinfer_comparison"
     default_replicates = 50
     default_seed = 1000
-    tools_and_metrics = {FASTARG:[], TSINFER:[]} # Everything else is too slow
+    tools_and_metrics = {FASTARG:[], TSINFER:[], ARGENTUM:[]} # Everything else is too slow
     fixed_sample_size = 10000
     fixed_length = 5 * 10**6
     num_points = 20
