@@ -504,13 +504,14 @@ class MemTimeFastargTsinferFigure(ToolsFigure):
             axes[i][0].get_yaxis().set_label_coords(-0.08,0.5)
             axes[i][0].set_ylabel(y_label)
 
-            tool = "tsinfer"
+            inset_tools = ["tsinfer", "argentum"]
             axins1 = inset_axes(axes[i][0], width="50%", height="40%", loc=2, borderpad=1)
-            axins1.errorbar(
-                df_inset.length, df_inset[plotted_column+"_mean"],
-                yerr=df_inset[plotted_column + "_se"], label=tool,
-                color=self.tools_format[tool]["col"], marker=self.tools_format[tool]['mark'],
-                linewidth=1, elinewidth=1, markersize=3)
+            for tool in inset_tools:
+                axins1.errorbar(
+                    df_inset.length, df_inset[plotted_column+"_mean"],
+                    yerr=df_inset[plotted_column + "_se"], label=tool,
+                    color=self.tools_format[tool]["col"], marker=self.tools_format[tool]['mark'],
+                    linewidth=1, elinewidth=1, markersize=3)
 
 
             df = self.data.query("length == @self.fixed_length")
@@ -527,13 +528,13 @@ class MemTimeFastargTsinferFigure(ToolsFigure):
                     marker=self.tools_format[tool]['mark'],
                     elinewidth=1)
 
-            tool = "tsinfer"
             axins2 = inset_axes(axes[i][1], width="50%", height="40%", loc=2, borderpad=1)
-            axins2.errorbar(
-                df_inset.sample_size, df_inset[plotted_column+"_mean"],
-                yerr=df_inset[plotted_column+"_se"], label=tool,
-                color=self.tools_format[tool]["col"], marker=self.tools_format[tool]['mark'],
-                linewidth=1, elinewidth=1, markersize=3)
+            for tool in inset_tools:
+                axins2.errorbar(
+                    df_inset.sample_size, df_inset[plotted_column+"_mean"],
+                    yerr=df_inset[plotted_column+"_se"], label=tool,
+                    color=self.tools_format[tool]["col"], marker=self.tools_format[tool]['mark'],
+                    linewidth=1, elinewidth=1, markersize=3)
 
             axins1.tick_params(axis='both', which='major', labelsize=7)
             axins1.set_ylim(-0.01, ylim_inset[i])
