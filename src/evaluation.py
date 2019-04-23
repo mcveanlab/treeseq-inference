@@ -2207,11 +2207,11 @@ class TreeMetricsSummary(Summary):
         #  Don't use the weighted RF metric (only valid for trees with branch lengths
         summary_df = summary_df.query("metric != 'wRF'")
         #  The Robinson-Foulds metric is not well behaved for trees with polytomies 
-        #  (only tsinfer produces such trees, though)
+        #  (only tsinfer and argentum produce such trees, though)
         summary_df = summary_df.query(
             "not ("
             "(polytomies == 'retained') and "
-            "(tool == 'tsinfer') and "
+            "(tool == 'tsinfer' or tool == 'argentum') and "
             "(metric == 'wRF' or metric == 'RF'))")
         return summary_df
 
