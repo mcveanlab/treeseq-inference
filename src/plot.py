@@ -488,7 +488,6 @@ class MemTimeFastargTsinferFigure(ToolsFigure):
         for i, (plotted_column, y_label) in enumerate(
                 zip(["cputime", "memory"], ["CPU time (hours)", "Memory (GiB)"])):
             df = self.data.query("sample_size == @self.fixed_sample_size")
-            df_inset = df.query("tool == 'tsinfer'")
 
             for tool in df.tool.unique():
                 line_data = df.query("tool == @tool")
@@ -507,6 +506,7 @@ class MemTimeFastargTsinferFigure(ToolsFigure):
             inset_tools = ["tsinfer", "argentum"]
             axins1 = inset_axes(axes[i][0], width="50%", height="40%", loc=2, borderpad=1)
             for tool in inset_tools:
+                df_inset = df.query("tool == @tool")
                 axins1.errorbar(
                     df_inset.length, df_inset[plotted_column+"_mean"],
                     yerr=df_inset[plotted_column + "_se"], label=tool,
@@ -530,6 +530,7 @@ class MemTimeFastargTsinferFigure(ToolsFigure):
 
             axins2 = inset_axes(axes[i][1], width="50%", height="40%", loc=2, borderpad=1)
             for tool in inset_tools:
+                df_inset = df.query("tool == @tool")
                 axins2.errorbar(
                     df_inset.sample_size, df_inset[plotted_column+"_mean"],
                     yerr=df_inset[plotted_column+"_se"], label=tool,
