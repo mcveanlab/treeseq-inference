@@ -52,7 +52,7 @@ ARGweaver_executable = os.path.join('tools','argweaver','bin','arg-sample')
 smc2arg_executable = os.path.join('tools','argweaver','bin','smc2arg')
 RentPlus_executable = os.path.join('tools','RentPlus','RentPlus.jar')
 SLiM_executable = os.path.join('tools','SLiM','build','slim')
-argentum_executable = os.path.join('tools','argentum', 'argentum')
+argentum_executable = os.path.join('tools','argentum', 'main')
 tsinfer_executable = os.path.join('src','run_tsinfer.py')
 
 #monkey-patch nexus saving/writing into msprime/tskit
@@ -623,9 +623,15 @@ class InferenceRunner(object):
             if len(self.metric_params):
                 variant_positions = ts_argentum.variant_positions_from_fn(posfile)
                 for fn in self.inferred_filenames:
-                    with open(fn + ".nex", "w+") as out:
-                        ts_argentum.argentum_out_to_nexus(
-                            outfile, variant_positions, self.row.length, out)
+                    with open(fn + ".nex", "w+") as nex:
+                        #ts_argentum.planar_to_nexus(outfile, variant_positions, self.row.length, nex)
+                        ts_argentum.newicks_to_nexus(
+                            outfile,
+                            variant_positions,
+                            self.row.length,
+                            self.row.sample_size,
+                            nex)
+                                
         except ValueError as e:
             self.inferred_filenames = None
             if "argentum bug" in str(e):
@@ -777,8 +783,13 @@ class InferenceRunner(object):
     def run_argentum(file_name, seq_length, n_samples):
         outfile = file_name + '.out'
         with open(outfile, "w+") as ag_out:
-            # output distances not similarities (-d switch)
-            cmd = [argentum_executable, file_name, str(n_samples), "-d"]
+            # argentum version from https://github.com/vlshchur/argentum 
+            # uses the -d switch to output distances not similarities
+            # cmd = [argentum_executable, file_name, str(n_samples), "-d"] #fast version
+
+            # argentum version from https://github.com/nvalimak/argentum 
+            # uses the --newick switch to output newick trees
+            cmd = [argentum_executable, "-S", "-i", file_name, "--no-prediction", "--newick"] # complete version
             cpu_time, memory_use = time_cmd(cmd, ag_out)
             logging.debug("ran argentum for seq length {} [{} s]: '{}'".format(
                 seq_length, cpu_time, cmd))

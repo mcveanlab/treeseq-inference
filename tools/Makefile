@@ -3,6 +3,7 @@ all: | fastARG argweaver RentPlus SLiM pbwt argentum
 	make -C fastARG
 	make -C argweaver
 	make -C SLiM/build
+	make -C argentum
 
 fastARG: 
 	git clone https://github.com/lh3/fastARG
@@ -37,5 +38,4 @@ htslib:
 
 argentum:
     # This is the tcPWBT implementation
-	git clone https://github.com/vlshchur/argentum
-	cd argentum && g++ -o argentum argentum.cpp ARG.cpp argIO.cpp -O3
+	git clone https://github.com/nvalimak/argentum
