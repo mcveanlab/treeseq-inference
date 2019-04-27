@@ -2259,6 +2259,14 @@ class MetricsAllToolsAccuracySummary(MetricsAllToolsSummary):
     name = "metrics_all_tools_accuracy"
 
 
+class MetricsAllToolsAccuracyManySamplesSummary(MetricsAllToolsSummary):
+    """
+    Show all metrics tending to 0 as mutation rate increases
+    """
+    datasetClass = AllToolsAccuracyManySamplesDataset
+    name = "metrics_all_tools_accuracy_many_samples"
+
+
 class MetricAllToolsSummary(TreeMetricsSummary):
     """
     Create data for figures that will display a single metric.
