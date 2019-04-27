@@ -1603,6 +1603,21 @@ class AllToolsAccuracyDataset(AllToolsDataset):
         SEQ_ERROR_COLNAME : ["0", AllToolsDataset.seq_error_filename],
     }
 
+class AllToolsAccuracyManySamplesDataset(AllToolsAccuracyDataset):
+    name = "all_tools_accuracy_many_samples"
+    between_sim_params = {
+        'Ne': [5000],
+        'mutation_rate': np.geomspace(0.5e-8, 3.5e-6, num=7),
+        'sample_size':   [200],
+        'length':        [100000],  #should be enough for ~ 50 trees
+        'recombination_rate': [1e-8],
+    }
+    tools_and_metrics = {
+        #tsinfer regularly produces polytomies, so need to check both methods here
+        ARGENTUM:   [METRICS_LOCATION_ALL | METRICS_POLYTOMIES_LEAVE, METRICS_LOCATION_ALL | METRICS_POLYTOMIES_BREAK],
+        TSINFER:    [METRICS_LOCATION_ALL | METRICS_POLYTOMIES_LEAVE, METRICS_LOCATION_ALL | METRICS_POLYTOMIES_BREAK]
+    }
+
 
 class AllToolsAccuracyBadAncestorsDataset(AllToolsDataset):
     """
