@@ -788,11 +788,11 @@ class MetricsAllToolsAccuracyFigure(MetricsAllToolsFigure):
     """
     name = "metrics_all_tools_accuracy"
 
-class MetricsAllToolsAccuracyFigure(MetricsAllToolsFigure):
+class MetricsFastToolsAccuracyManySamplesFigure(MetricsAllToolsFigure):
     """
     Show the metrics tending to 0 as mutation rate increases
     """
-    name = "metrics_all_tools_accuracy_many_samples"
+    name = "metrics_fast_tools_accuracy_many_samples"
 
 
 class MetricAllToolsFigure(TreeMetricsFigure):

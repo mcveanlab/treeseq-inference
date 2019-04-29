@@ -1603,8 +1603,8 @@ class AllToolsAccuracyDataset(AllToolsDataset):
         SEQ_ERROR_COLNAME : ["0", AllToolsDataset.seq_error_filename],
     }
 
-class AllToolsAccuracyManySamplesDataset(AllToolsAccuracyDataset):
-    name = "all_tools_accuracy_many_samples"
+class FastToolsAccuracyManySamplesDataset(AllToolsAccuracyDataset):
+    name = "fast_tools_accuracy_many_samples"
     between_sim_params = {
         'Ne': [5000],
         'mutation_rate': np.geomspace(0.5e-8, 3.5e-6, num=7),
@@ -2130,15 +2130,16 @@ class Summary(object):
         """
         raise NotImplementedError()
 
-    def summarize_cols_ending(self, colname_ending, return_mean_plus_sterr=True):
+    def summarize_cols_ending(
+        self, colname_ending, return_mean_plus_sterr=True, expect_error_free=True):
         """
         Used in simple subclasses to get a simple data summary.
         """
         toolnames = self.dataset.tools_and_metrics.keys()
         summary_df = self.dataset.data
         param_cols = getattr(self, 'param_cols', self.standard_param_cols)
-        # check these are without error
-        if SEQ_ERROR_COLNAME in self.dataset.data.columns:
+        # check these are without error if we are expecting it
+        if expect_error_free and SEQ_ERROR_COLNAME in self.dataset.data.columns:
             assert len(self.dataset.data[SEQ_ERROR_COLNAME].unique()) == 1
             assert int(self.dataset.data[SEQ_ERROR_COLNAME].unique()[0]) == 0
         # Remove unused columns (any not in param_cols, or target reponse columns)
@@ -2170,6 +2171,17 @@ class CputimeAllToolsBySampleSizeSummary(CputimeMemoryAllToolsSummary):
         summary_df = super().summarize_cols_ending("cputime", return_mean_plus_sterr)
         return summary_df.query("length == @fixed_length")
 
+class CputimeAllToolsBySampleSizeSummary(CputimeMemoryAllToolsSummary):
+    """
+    Show change in cpu time with sample size (easy to do a similar thing with length)
+    """
+    name = "cputime_fast_tools"
+    datasetClass = FastToolsAccuracyManySamplesDataset
+    param_cols = Summary.standard_param_cols
+
+    def summarize(self, return_mean_plus_sterr=True):
+        summary_df = super().summarize_cols_ending("cputime", return_mean_plus_sterr)
+        return summary_df.query("length == @fixed_length")
 
 class TreeMetricsSummary(Summary):
     """
@@ -2259,12 +2271,12 @@ class MetricsAllToolsAccuracySummary(MetricsAllToolsSummary):
     name = "metrics_all_tools_accuracy"
 
 
-class MetricsAllToolsAccuracyManySamplesSummary(MetricsAllToolsSummary):
+class MetricsFastToolsAccuracyManySamplesSummary(MetricsAllToolsSummary):
     """
     Show all metrics tending to 0 as mutation rate increases
     """
-    datasetClass = AllToolsAccuracyManySamplesDataset
-    name = "metrics_all_tools_accuracy_many_samples"
+    datasetClass = FastToolsAccuracyManySamplesDataset
+    name = "metrics_fast_tools_accuracy_many_samples"
 
 
 class MetricAllToolsSummary(TreeMetricsSummary):
