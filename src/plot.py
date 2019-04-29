@@ -740,6 +740,8 @@ class MetricsAllToolsFigure(TreeMetricsFigure):
         seq_error_params = self.data.error_param.unique()
         # y-direction is the permutations of metric + whether it is rooted
         metric_and_rooting = self.data.groupby(["metric", "rooting"]).groups
+        metric_and_rooting = collections.OrderedDict( # make a consistent order
+            sorted(metric_and_rooting.items(), key=lambda x: x[0]))
         # sort this so that metrics come out in a set order (TO DO)
         fig, axes = plt.subplots(len(metric_and_rooting), len(seq_error_params),
             squeeze=False, sharey='row', figsize=(6*len(seq_error_params), 15))
