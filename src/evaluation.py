@@ -2180,7 +2180,8 @@ class CputimeAllToolsBySampleSizeSummary(CputimeMemoryAllToolsSummary):
     param_cols = Summary.standard_param_cols
 
     def summarize(self, return_mean_plus_sterr=True):
-        summary_df = super().summarize_cols_ending("cputime", return_mean_plus_sterr)
+        summary_df = super().summarize_cols_ending("cputime", return_mean_plus_sterr,
+            expect_error_free=False) # small hack
         return summary_df.query("length == @fixed_length")
 
 class TreeMetricsSummary(Summary):
