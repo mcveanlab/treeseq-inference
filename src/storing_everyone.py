@@ -171,6 +171,7 @@ def convert_file_worker(k):
     # Convert to PBWT by piping in VCF. This avoids having the write the
     # ~10TB VCF to disk.
     pbwt_filename = os.path.join(data_prefix, "{}.pbwt".format(n))
+    pbwtgz_filename = pbwt_filename + ".gz"
     sites_filename = os.path.join(data_prefix, "{}.sites".format(n))
     cmd = "./tools/pbwt/pbwt -readVcfGT - -write {} -writeSites {}".format(
         pbwt_filename, sites_filename)
@@ -183,6 +184,9 @@ def convert_file_worker(k):
     proc.wait()
     if proc.returncode != 0:
         raise RuntimeError("pbwt failed with status:", proc.returncode)
+
+    subprocess.check_call(
+        "gzip -c {} > {}".format(pbwt_filename, pbwtgz_filename), shell=True)
 
     if k < 7:
         vcf_filename = os.path.join(data_prefix, "{}.vcf".format(n))
@@ -212,6 +216,7 @@ def run_make_data(args):
     vcf = np.zeros(sample_size.shape)
     vcfz = np.zeros(sample_size.shape)
     pbwt = np.zeros(sample_size.shape)
+    pbwtz = np.zeros(sample_size.shape)
 
     GB = 1024**3
     for j, n in enumerate(sample_size):
@@ -220,7 +225,8 @@ def run_make_data(args):
             (compressed, os.path.join(data_prefix, "{}.trees.zarr".format(n))),
             (vcf, os.path.join(data_prefix, "{}.vcf".format(n))),
             (vcfz, os.path.join(data_prefix, "{}.vcf.gz".format(n))),
-            (pbwt, os.path.join(data_prefix, "{}.pbwt".format(n)))]
+            (pbwt, os.path.join(data_prefix, "{}.pbwt".format(n))),
+            (pbwtz, os.path.join(data_prefix, "{}.pbwt.gz".format(n)))]
         for array, filename in files:
             if os.path.exists(filename):
                 array[j] = os.path.getsize(filename) / GB
@@ -259,12 +265,8 @@ def run_make_data(args):
         mulplicative_model, sample_size[index][:-1], vcfz[index][:-1])
     vcfz_fit = mulplicative_model(sample_size, *vcfz_fit_params)
 
-    # The fit for this model isn't great, but it's far better than a
-    # simple exponential. Should try to do better here.
-    pbwt_fit_params, _ = optimize.curve_fit(
-        additive_model, sample_size[index][:-1], pbwt[index][:-1])
-    pbwt_fit = additive_model(sample_size, *pbwt_fit_params)
-
+    # We don't try to fit PBWT because we don't have a model for how it
+    # grows.
     df = pd.DataFrame({
         "sample_size": sample_size,
         "compressed": compressed,
@@ -276,7 +278,8 @@ def run_make_data(args):
         "tsk_fit": tsk_fit,
         "tskz_fit": tskz_fit,
         "pbwt": pbwt,
-        "pbwt_fit": pbwt_fit})
+        "pbwtz": pbwtz,
+        })
     df.to_csv(datafile)
 
 

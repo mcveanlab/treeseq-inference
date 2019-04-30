@@ -118,7 +118,7 @@ class StoringEveryone(Figure):
         largest_n = np.array(df.sample_size)[-1]
 
         index = df.vcf > 0
-        line, = ax1.loglog(df.sample_size[index], df.vcf[index], "^", label="vcf")
+        line, = ax1.loglog(df.sample_size[index], df.vcf[index], "^", label="VCF")
         ax1.loglog(df.sample_size, df.vcf_fit, "--", color=line.get_color(), label="")
         largest_value = np.array(df.vcf_fit)[-1]
         ax1.annotate(
@@ -126,7 +126,7 @@ class StoringEveryone(Figure):
             textcoords="offset points", xytext=xytext,
             xy=(largest_n, largest_value), xycoords="data")
 
-        line, = ax1.loglog(df.sample_size[index], df.vcfz[index], "s", label="vcf.gz")
+        line, = ax1.loglog(df.sample_size[index], df.vcfz[index], "s", label="Compressed VCF")
         ax1.loglog(df.sample_size, df.vcfz_fit, "--", color=line.get_color(), label="")
         largest_value = np.array(df.vcfz_fit)[-1]
         ax1.annotate(
@@ -135,7 +135,7 @@ class StoringEveryone(Figure):
             xy=(largest_n, largest_value), xycoords="data")
 
         line, = ax1.loglog(
-            df.sample_size, df.uncompressed, "o", label="trees")
+            df.sample_size, df.uncompressed, "o", label="Trees")
         ax1.loglog(df.sample_size, df.tsk_fit, "--", color=line.get_color(), label="")
         largest_value = np.array(df.tsk_fit)[-1]
         ax1.annotate(
@@ -144,18 +144,9 @@ class StoringEveryone(Figure):
             xy=(largest_n, largest_value), xycoords="data")
 
         line, = ax1.loglog(
-            df.sample_size, df.compressed, "*", label="minimised trees")
+            df.sample_size, df.compressed, "*", label="Compressed trees")
         ax1.loglog(df.sample_size, df.tskz_fit, "--", color=line.get_color(), label="")
         largest_value = np.array(df.tskz_fit)[-1]
-        ax1.annotate(
-            humanize.naturalsize(largest_value * GB, binary=True, format="%d"),
-            textcoords="offset points", xytext=xytext,
-            xy=(largest_n, largest_value), xycoords="data")
-
-        line, = ax1.loglog(
-            df.sample_size, df.pbwt, "P", label="pbwt")
-        ax1.loglog(df.sample_size, df.pbwt_fit, "--", color=line.get_color(), label="")
-        largest_value = np.array(df.pbwt_fit)[-1]
         ax1.annotate(
             humanize.naturalsize(largest_value * GB, binary=True, format="%d"),
             textcoords="offset points", xytext=xytext,
@@ -166,6 +157,49 @@ class StoringEveryone(Figure):
         plt.legend()
         # plt.tight_layout()
         self.save()
+
+        plt.clf()
+        fig = plt.figure()
+        ax1 = fig.add_subplot(111)
+        largest_n = 10**7
+        index = df.sample_size <= largest_n
+        # Rescale to MiB
+        uncompressed = np.array(df.uncompressed[index] * 1024)
+        compressed = np.array(df.compressed[index] * 1024)
+        pbwt = np.array(df.pbwt[index] * 1024)
+        pbwtz = np.array(df.pbwtz[index] * 1024)
+        ax1.loglog(df.sample_size[index], uncompressed, "-*", label="trees")
+        largest_value = uncompressed[-1]
+        ax1.annotate(
+            humanize.naturalsize(largest_value * 1024**2, binary=True, format="%.1f"),
+            textcoords="offset points", xytext=xytext,
+            xy=(largest_n, largest_value), xycoords="data")
+
+        ax1.loglog(df.sample_size[index], compressed, "-^", label="Compressed trees")
+        largest_value = compressed[-1]
+        ax1.annotate(
+            humanize.naturalsize(largest_value * 1024**2, binary=True, format="%d"),
+            textcoords="offset points", xytext=xytext,
+            xy=(largest_n, largest_value - 10), xycoords="data")
+
+        ax1.loglog(df.sample_size[index], pbwt, "-s", label="pbwt")
+        largest_value = pbwt[-1]
+        ax1.annotate(
+            humanize.naturalsize(largest_value * 1024**2, binary=True, format="%d"),
+            textcoords="offset points", xytext=xytext,
+            xy=(largest_n, largest_value), xycoords="data")
+
+        ax1.loglog(df.sample_size[index], pbwtz, "-P", label="Compressed pbwt")
+        largest_value = pbwtz[-1]
+        ax1.annotate(
+            humanize.naturalsize(largest_value * 1024**2, binary=True, format="%d"),
+            textcoords="offset points", xytext=xytext,
+            xy=(largest_n, largest_value + 10), xycoords="data")
+
+        ax1.set_ylabel("File size (MiB)")
+        ax1.set_xlabel("Number of chromosomes")
+        plt.legend()
+        self.save("storing_everyone_pbwt")
 
 
 class SampleEdges(Figure):
