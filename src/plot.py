@@ -152,6 +152,11 @@ class StoringEveryone(Figure):
             textcoords="offset points", xytext=xytext,
             xy=(largest_n, largest_value), xycoords="data")
 
+        largest_n = 10**7
+        index = df.sample_size <= largest_n
+        line, = ax1.loglog(df.sample_size[index], df.pbwt[index], "-s", label="pbwt")
+        line, = ax1.loglog(df.sample_size[index], df.pbwtz[index], "-P", label="Compressed pbwt")
+
         ax1.set_xlabel("Number of chromosomes")
         ax1.set_ylabel("File size (GiB)")
         plt.legend()
