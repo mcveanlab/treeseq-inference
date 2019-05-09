@@ -14,12 +14,11 @@ import sys
 import numpy as np
 import msprime
 import tskit
+import tszip
 import scipy.optimize as optimize
 import pandas as pd
 import humanize
 import cyvcf2
-import zarr
-import numcodecs
 # Used for newick
 from Bio import Phylo
 
@@ -165,14 +164,16 @@ def convert_file_worker(k):
         raise ValueError("Missing simulation")
     ts = msprime.load(filename)
 
-    zarr_filename = filename + ".zarr"
-    ts_to_minified(ts, zarr_filename)
+    tsz_filename = filename + ".tsz"
+    tszip.compress(ts, tsz_filename, variants_only=True)
 
     # Convert to PBWT by piping in VCF. This avoids having the write the
     # ~10TB VCF to disk.
     pbwt_filename = os.path.join(data_prefix, "{}.pbwt".format(n))
     pbwtgz_filename = pbwt_filename + ".gz"
     sites_filename = os.path.join(data_prefix, "{}.sites".format(n))
+    sitesgz_filename = sites_filename + ".gz"
+
     cmd = "./tools/pbwt/pbwt -readVcfGT - -write {} -writeSites {}".format(
         pbwt_filename, sites_filename)
     read_fd, write_fd = os.pipe()
@@ -187,6 +188,9 @@ def convert_file_worker(k):
 
     subprocess.check_call(
         "gzip -c {} > {}".format(pbwt_filename, pbwtgz_filename), shell=True)
+
+    subprocess.check_call(
+        "gzip -c {} > {}".format(sites_filename, sitesgz_filename), shell=True)
 
     if k < 7:
         vcf_filename = os.path.join(data_prefix, "{}.vcf".format(n))
@@ -222,15 +226,21 @@ def run_make_data(args):
     for j, n in enumerate(sample_size):
         files = [
             (uncompressed, os.path.join(data_prefix, "{}.trees".format(n))),
-            (compressed, os.path.join(data_prefix, "{}.trees.zarr".format(n))),
+            (compressed, os.path.join(data_prefix, "{}.trees.tsz".format(n))),
             (vcf, os.path.join(data_prefix, "{}.vcf".format(n))),
-            (vcfz, os.path.join(data_prefix, "{}.vcf.gz".format(n))),
-            (pbwt, os.path.join(data_prefix, "{}.pbwt".format(n))),
-            (pbwtz, os.path.join(data_prefix, "{}.pbwt.gz".format(n)))]
+            (vcfz, os.path.join(data_prefix, "{}.vcf.gz".format(n)))]
+
         for array, filename in files:
             if os.path.exists(filename):
                 array[j] = os.path.getsize(filename) / GB
-
+        pbwt_file = os.path.join(data_prefix, "{}.pbwt".format(n))
+        sites_file = os.path.join(data_prefix, "{}.sites".format(n))
+        pbwtz_file = os.path.join(data_prefix, "{}.pbwt.gz".format(n))
+        sitesz_file = os.path.join(data_prefix, "{}.sites.gz".format(n))
+        if os.path.exists(pbwt_file):
+            pbwt[j] = (os.path.getsize(pbwt_file) + os.path.getsize(sites_file)) / GB
+            pbwtz[j] = (os.path.getsize(pbwtz_file) + os.path.getsize(sitesz_file)) / GB
+            print(j, pbwt[j], pbwtz[j])
     # Fit the model for the observed data.
     rho = 4 * Ne * recombination_rate * length
 
@@ -345,54 +355,6 @@ def ts_to_minified(ts, filename):
     root = zarr.group(store=store)
     return root
 
-def minified_to_ts(root):
-    """
-    Returns the tree sequence corresponding to the specified zarr array.
-    """
-
-    site = root["mutations/site"][:]
-    num_sites = site[-1] + 1
-    n = site.shape[0]
-    tables = tskit.TableCollection(num_sites)
-    tables.mutations.set_columns(
-        node=root["mutations/node"],
-        site=site,
-        derived_state=np.zeros(n, dtype=np.int8) + ord("1"),
-        derived_state_offset=np.arange(n + 1, dtype=np.uint32))
-    tables.sites.set_columns(
-        position=np.arange(num_sites),
-        ancestral_state=np.zeros(num_sites, dtype=np.int8) + ord("0"),
-        ancestral_state_offset=np.arange(num_sites + 1, dtype=np.uint32))
-    flags = root["nodes/flags"][:]
-    n = flags.shape[0]
-    tables.nodes.set_columns(
-        flags=flags.astype(np.uint32),
-        time=np.arange(n))
-    tables.edges.set_columns(
-        left=root["edges/left"],
-        right=root["edges/right"],
-        parent=root["edges/parent"],
-        child=root["edges/child"])
-    return tables.tree_sequence()
-
-def run_mini_ts(args):
-    # Minimise the argument tree sequence and check it's the same as the input.
-    ts = tskit.load(args.ts)
-    # ts = msprime.simulate(10, mutation_rate=2, recombination_rate=2)
-    zarr_file = "tmp.zarr"
-    minified = ts_to_minified(ts, zarr_file)
-    ts2 = minified_to_ts(minified)
-    G1 = ts.genotype_matrix()
-    G2 = ts2.genotype_matrix()
-    assert np.array_equal(G1, G2)
-    del minified
-
-    store = zarr.ZipStore(zarr_file, mode='r')
-    root = zarr.group(store=store)
-    ts2 = minified_to_ts(root)
-    G2 = ts2.genotype_matrix()
-    assert np.array_equal(G1, G2)
-
 if __name__ == "__main__":
 
 
@@ -413,10 +375,6 @@ if __name__ == "__main__":
 
     subparser = subparsers.add_parser("benchmark")
     subparser.set_defaults(func=run_benchmark)
-
-    subparser = subparsers.add_parser("mini-ts")
-    subparser.add_argument("ts")
-    subparser.set_defaults(func=run_mini_ts)
 
     args = parser.parse_args()
     args.func(args)
