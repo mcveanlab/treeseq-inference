@@ -134,9 +134,14 @@ def newicks_to_nexus(
                 if buffered_tree != '':
                     # Print the previous (buffered) tree with the new position 
                     # marking where we switch *off* this tree into the next
+                    if buffered_tree.endswith(';'):
+                        buffered_tree = buffered_tree[:-1]
+                    if buffered_tree.endswith(')'):
+                        #must have a root length otherwise this is treated as unrooted
+                        buffered_tree = buffered_tree + ":0"
                     print("TREE", variant_positions[site], "=", buffered_tree, 
                         sep=" ",
-                        end = "\n" if buffered_tree.endswith(';') else ";\n", 
+                        end = ";\n", 
                         file = outfilehandle)
                 buffered_tree = line[len(nwk_line_start):]
             site += 1
