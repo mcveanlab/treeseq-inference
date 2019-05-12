@@ -139,13 +139,17 @@ class StoringEveryone(Figure):
             textcoords="offset points", xytext=xytext,
             xy=(largest_n, largest_value), xycoords="data")
 
+        index = df.pbwt > 0
         line, = ax1.loglog(
-            df.sample_size[index], df.pbwt[index], "s", label="pbwt", color="tab:orange")
-        ax1.loglog(df.sample_size[index], df.pbwt[index], "-", color=line.get_color(), label="")
+            df.sample_size[index], df.pbwt[index], "-", color="tab:orange", label="")
+        ax1.loglog(
+            df.sample_size[index], df.pbwt[index], "s", label="pbwt",
+            color=line.get_color())
         line, = ax1.loglog(
+            df.sample_size[index], df.pbwtz[index], ":", label="", color=line.get_color())
+        ax1.loglog(
             df.sample_size[index], df.pbwtz[index], "s", label="Compressed pbwt",
             color=line.get_color(), markerfacecolor='w')
-        ax1.loglog(df.sample_size[index], df.pbwtz[index], ":", color=line.get_color(), label="")
 
         line, = ax1.loglog(
             df.sample_size, df.uncompressed, "o", label="Trees", color="b")
@@ -166,8 +170,6 @@ class StoringEveryone(Figure):
             textcoords="offset points", xytext=xytext,
             xy=(largest_n, largest_value), xycoords="data")
 
-        largest_n = 10**7
-        index = df.sample_size <= largest_n
 
         ax1.set_xlabel("Number of chromosomes")
         ax1.set_ylabel("File size (GiB)")
