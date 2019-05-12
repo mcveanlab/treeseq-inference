@@ -118,16 +118,21 @@ class StoringEveryone(Figure):
         largest_n = np.array(df.sample_size)[-1]
 
         index = df.vcf > 0
-        line, = ax1.loglog(df.sample_size[index], df.vcf[index], "^", label="VCF")
-        ax1.loglog(df.sample_size, df.vcf_fit, "--", color=line.get_color(), label="")
+        line, = ax1.loglog(df.sample_size, df.vcf_fit, "-", color="tab:pink", label="")
+        ax1.loglog(
+            df.sample_size[index], df.vcf[index], "d", label="VCF", 
+            color=line.get_color())
         largest_value = np.array(df.vcf_fit)[-1]
         ax1.annotate(
             humanize.naturalsize(largest_value * GB, binary=True, format="%d"),
             textcoords="offset points", xytext=xytext,
             xy=(largest_n, largest_value), xycoords="data")
 
-        line, = ax1.loglog(df.sample_size[index], df.vcfz[index], "s", label="Compressed VCF")
-        ax1.loglog(df.sample_size, df.vcfz_fit, "--", color=line.get_color(), label="")
+        line, = ax1.loglog(
+            df.sample_size, df.vcfz_fit, ":", label="", color=line.get_color())
+        ax1.loglog(
+            df.sample_size[index], df.vcfz[index], "d", label="Compressed VCF", 
+            color=line.get_color(), markerfacecolor='w')
         largest_value = np.array(df.vcfz_fit)[-1]
         ax1.annotate(
             humanize.naturalsize(largest_value * GB, binary=True, format="%d"),
@@ -135,8 +140,16 @@ class StoringEveryone(Figure):
             xy=(largest_n, largest_value), xycoords="data")
 
         line, = ax1.loglog(
-            df.sample_size, df.uncompressed, "o", label="Trees")
-        ax1.loglog(df.sample_size, df.tsk_fit, "--", color=line.get_color(), label="")
+            df.sample_size[index], df.pbwt[index], "s", label="pbwt", color="tab:orange")
+        ax1.loglog(df.sample_size[index], df.pbwt[index], "-", color=line.get_color(), label="")
+        line, = ax1.loglog(
+            df.sample_size[index], df.pbwtz[index], "s", label="Compressed pbwt",
+            color=line.get_color(), markerfacecolor='w')
+        ax1.loglog(df.sample_size[index], df.pbwtz[index], ":", color=line.get_color(), label="")
+
+        line, = ax1.loglog(
+            df.sample_size, df.uncompressed, "o", label="Trees", color="b")
+        ax1.loglog(df.sample_size, df.tsk_fit, "-", color=line.get_color(), label="")
         largest_value = np.array(df.tsk_fit)[-1]
         ax1.annotate(
             humanize.naturalsize(largest_value * GB, binary=True, format="%d"),
@@ -144,8 +157,9 @@ class StoringEveryone(Figure):
             xy=(largest_n, largest_value), xycoords="data")
 
         line, = ax1.loglog(
-            df.sample_size, df.compressed, "*", label="Compressed trees")
-        ax1.loglog(df.sample_size, df.tskz_fit, "--", color=line.get_color(), label="")
+            df.sample_size, df.tskz_fit, ":", label="", color=line.get_color())
+        ax1.loglog(df.sample_size, df.compressed, "o", label="Compressed trees", 
+            color=line.get_color(), markerfacecolor='w')
         largest_value = np.array(df.tskz_fit)[-1]
         ax1.annotate(
             humanize.naturalsize(largest_value * GB, binary=True, format="%d"),
@@ -154,8 +168,6 @@ class StoringEveryone(Figure):
 
         largest_n = 10**7
         index = df.sample_size <= largest_n
-        line, = ax1.loglog(df.sample_size[index], df.pbwt[index], "-s", label="pbwt")
-        line, = ax1.loglog(df.sample_size[index], df.pbwtz[index], "-P", label="Compressed pbwt")
 
         ax1.set_xlabel("Number of chromosomes")
         ax1.set_ylabel("File size (GiB)")
@@ -173,14 +185,14 @@ class StoringEveryone(Figure):
         compressed = np.array(df.compressed[index] * 1024)
         pbwt = np.array(df.pbwt[index] * 1024)
         pbwtz = np.array(df.pbwtz[index] * 1024)
-        ax1.loglog(df.sample_size[index], uncompressed, "-*", label="trees")
+        ax1.loglog(df.sample_size[index], uncompressed, "-o", label="trees")
         largest_value = uncompressed[-1]
         ax1.annotate(
             humanize.naturalsize(largest_value * 1024**2, binary=True, format="%.1f"),
             textcoords="offset points", xytext=xytext,
             xy=(largest_n, largest_value), xycoords="data")
 
-        ax1.loglog(df.sample_size[index], compressed, "-^", label="Compressed trees")
+        ax1.loglog(df.sample_size[index], compressed, "-o", label="Compressed trees")
         largest_value = compressed[-1]
         ax1.annotate(
             humanize.naturalsize(largest_value * 1024**2, binary=True, format="%d"),
@@ -194,7 +206,7 @@ class StoringEveryone(Figure):
             textcoords="offset points", xytext=xytext,
             xy=(largest_n, largest_value), xycoords="data")
 
-        ax1.loglog(df.sample_size[index], pbwtz, "-P", label="Compressed pbwt")
+        ax1.loglog(df.sample_size[index], pbwtz, "-s", label="Compressed pbwt")
         largest_value = pbwtz[-1]
         ax1.annotate(
             humanize.naturalsize(largest_value * 1024**2, binary=True, format="%d"),
