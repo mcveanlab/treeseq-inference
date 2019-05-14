@@ -47,6 +47,9 @@ simplebgen: setup.py simplebgenmodule.c
 %.trees.gz: %.trees
 	gzip -c $^ > $@
 
+%.trees.tsz: %.trees
+	tszip -k $^ 
+
 %.trees.bcf: %.trees
 	msp vcf -P 2 $^ | bcftools view - -O b -o $@
 
