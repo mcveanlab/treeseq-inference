@@ -12,10 +12,7 @@ import csv
 import itertools
 import os.path
 
-# FIXME!!! Not GNN not yet merged to msprime.
-sys.path.insert(0, "/gpfs1/well/mcvean/ukbb12788/jk/msprime")
-
-import msprime
+import tskit
 import tsinfer
 import daiquiri
 import numpy as np
@@ -26,7 +23,7 @@ import cyvcf2
 
 
 def run_simplify(args):
-    ts = msprime.load(args.input)
+    ts = tskit.load(args.input)
     ts = ts.simplify()
     ts.dump(args.output)
 
@@ -51,7 +48,7 @@ def run_sequential_augment(args):
 
     sample_data = tsinfer.load(args.input)
     num_samples = sample_data.num_samples
-    ancestors_ts = msprime.load(base + ".ancestors.trees")
+    ancestors_ts = tskit.load(base + ".ancestors.trees")
 
     # Compute the total samples required.
     n = 2
@@ -84,7 +81,7 @@ def run_sequential_augment(args):
 def run_benchmark_tskit(args):
 
     before = time.perf_counter()
-    ts = msprime.load(args.input)
+    ts = tskit.load(args.input)
     duration = time.perf_counter() - before
     print("Loaded in {:.2f}s".format(duration))
 
@@ -137,7 +134,7 @@ def run_combine_ukbb_1kg(args):
     samples_file = "1kg_ukbb_{}.samples".format(args.chromosome)
 
     ukbb_samples = tsinfer.load(ukbb_samples_file)
-    tg_ancestors_ts = msprime.load(tg_ancestors_ts_file)
+    tg_ancestors_ts = tskit.load(tg_ancestors_ts_file)
     print("Loaded ts:", tg_ancestors_ts.num_nodes, tg_ancestors_ts.num_edges)
 
     # Subset the sites down to the UKBB sites.
@@ -240,7 +237,7 @@ def run_combine_ukbb_1kg(args):
 
 
 def run_compute_1kg_ukbb_gnn(args):
-    ts = msprime.load(args.input)
+    ts = tskit.load(args.input)
     tables = ts.tables
     reference_sets = []
     population_names = []
@@ -291,7 +288,7 @@ def get_augmented_samples(tables):
  
 
 def run_compute_ukbb_gnn(args):
-    ts = msprime.load(args.input)
+    ts = tskit.load(args.input)
     tables = ts.tables
     before = time.time()
     augmented_samples = set(get_augmented_samples(tables))
@@ -334,7 +331,7 @@ def run_compute_ukbb_gnn(args):
      
  
 def run_compute_1kg_gnn(args):
-    ts = msprime.load(args.input)
+    ts = tskit.load(args.input)
 
     population_name = []
     region_name = []
@@ -372,7 +369,7 @@ def run_compute_1kg_gnn(args):
    
  
 def run_compute_sgdp_gnn(args):
-    ts = msprime.load(args.input)
+    ts = tskit.load(args.input)
 
     population_name = []
     region_name = []
@@ -419,7 +416,7 @@ def run_snip_centromere(args):
                 break
         else:
             raise ValueError("Did not find row")
-    ts = msprime.load(args.input)
+    ts = tskit.load(args.input)
     position = ts.tables.sites.position
     s_index = np.searchsorted(position, start)
     e_index = np.searchsorted(position, end)
