@@ -1272,20 +1272,20 @@ class GlobalStructureFigure(Figure):
         self.save("1kg_gnn_pel")
 
         for j in range(2):
-            df = pd.read_csv("data/HG01933_parent_ancestry_{}.csv".format((j + 1) % 2))
-            left = df.left
-            width = df.right - left
+            df = pd.read_csv("HG01933_local_gnn_{}.csv".format((j + 1) % 2), index_col = 0)
+            keep_cols = ~(df.diff(axis=1)==0).all()
+            left = np.array(df.loc[:,keep_cols].columns, dtype = float)
+            width = np.diff(np.append(left,ts.get_sequence_length()))
             total = np.zeros_like(width)
             fig, ax = plt.subplots(1, 1, figsize=(17, 1.5))
-            for region in regions:
+            for region in region_order:
                 ax.bar(
-                    left, df[region].values, bottom=total, width=width, align="edge",
+                    left, df.loc[region][keep_cols], bottom=total, width=width, align="edge",
                     label=region, color=colours[region])
-                total += df[region].values
-            # ax.set_title("HG01933 haplotype ({})".format(j + 1))
+                total += df.loc[region][keep_cols]
             ax.set_xticks([])
             ax.set_yticks([])
-            ax.set_xlim(0, df.right.max())
+            ax.set_xlim(0, ts.get_sequence_length())
             ax.set_ylim(0, 1)
             ax.axis('off')
             self.save("1kg_gnn_HG01933_{}".format(j))
