@@ -144,7 +144,6 @@ def process_hg01933_local_gnn():
         region_sample_set_map[region].extend(list(ts.samples(population=population.id)))
     regions = list(region_sample_set_map.keys())
     region_sample_sets = [region_sample_set_map[k] for k in regions]
-    region_key = {key: value for value, key in enumerate(regions)}
 
     def local_gnn(ts, focal, reference_sets):
         reference_set_map = np.zeros(ts.num_nodes, dtype=int) - 1
@@ -155,9 +154,10 @@ def process_hg01933_local_gnn():
                 reference_set_map[u] = k
 
         K = len(reference_sets)
-        A = np.zeros((len(focal), K, ts.num_trees))
+        A = np.zeros((len(focal), ts.num_trees, K))
         L = np.zeros((len(focal), ts.num_trees))
-        lefts = np.zeros(ts.num_trees)
+        lefts = np.zeros(ts.num_trees, dtype=float)
+        rights = np.zeros(ts.num_trees, dtype=float)
         parent = np.zeros(ts.num_nodes, dtype=int) - 1
         sample_count = np.zeros((ts.num_nodes, K), dtype=int)
 
@@ -184,6 +184,7 @@ def process_hg01933_local_gnn():
                 focal_reference_set = reference_set_map[u]
                 p = parent[u]
                 lefts[t] = left
+                rights[t] = right
                 while p != tskit.NULL:
                     total = np.sum(sample_count[p])
                     if total > 1:
@@ -193,15 +194,21 @@ def process_hg01933_local_gnn():
                     scale = 1 / (total - int(focal_reference_set != -1))
                     for k, reference_set in enumerate(reference_sets):
                         n = sample_count[p, k] - int(focal_reference_set == k)
-                        A[j, k, t] = n * scale
-        return (A, lefts)
+                        A[j, t, k] = n * scale
+        return (A, lefts, rights)
 
+    
     for ind in ts.individuals():
         md = json.loads(ind.metadata.decode())
         if md["individual_id"] == "HG01933":
             for j, node in enumerate(ind.nodes):
-                A, lefts = local_gnn(ts, [node], region_sample_sets)
-                df = pd.DataFrame(data = A[0], columns=lefts, index=regions)
+                A, left, right = local_gnn(ts, [node], region_sample_sets)
+                df = pd.DataFrame(data=A[0], columns=regions)
+                df["left"] = left
+                df["right"] = right
+                # Remove rows with no difference in GNN to next row
+                keep_rows = ~(df.iloc[:,0:5].diff(axis=0) == 0).all(axis=1)
+                df = df[keep_rows]
                 df.to_csv("HG01933_local_GNN_{}.csv".format(j))
 
 

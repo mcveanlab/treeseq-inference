@@ -1273,23 +1273,22 @@ class GlobalStructureFigure(Figure):
 
         for j in range(2):
             df = pd.read_csv("HG01933_local_gnn_{}.csv".format((j + 1) % 2), index_col = 0)
-            keep_cols = ~(df.diff(axis=1)==0).all()
-            left = np.array(df.loc[:,keep_cols].columns, dtype = float)
-            width = np.diff(np.append(left,ts.get_sequence_length()))
+            left = df["left"]
+            width = np.diff(np.append(left,df.right.max()))
             total = np.zeros_like(width)
             fig, ax = plt.subplots(1, 1, figsize=(17, 1.5))
             for region in region_order:
                 ax.bar(
-                    left, df.loc[region][keep_cols], bottom=total, width=width, align="edge",
+                    left, df[region], bottom=total, width=width, align="edge",
                     label=region, color=colours[region])
-                total += df.loc[region][keep_cols]
+                total += df[region]
             ax.set_xticks([])
             ax.set_yticks([])
-            ax.set_xlim(0, ts.get_sequence_length())
+            ax.set_xlim(0, df.right.max())
             ax.set_ylim(0, 1)
             ax.axis('off')
             self.save("1kg_gnn_HG01933_{}".format(j))
-
+    
 
     def plot(self):
         self.plot_pel_population()
