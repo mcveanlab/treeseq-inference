@@ -133,7 +133,7 @@ def get_1kg_sample_edges():
     return df
 
 
-def process_hg01933_parent_ancestry():
+def process_hg01933_local_gnn():
     filename = os.path.join(data_prefix, "1kg_chr20.snipped.trees")
     ts = tskit.load(filename)
     tables = ts.tables
@@ -145,30 +145,71 @@ def process_hg01933_parent_ancestry():
     regions = list(region_sample_set_map.keys())
     region_sample_sets = [region_sample_set_map[k] for k in regions]
 
-    D = ts.mean_descendants(region_sample_sets)   
+    def local_gnn(ts, focal, reference_sets):
+        reference_set_map = np.zeros(ts.num_nodes, dtype=int) - 1
+        for k, reference_set in enumerate(reference_sets):
+            for u in reference_set:
+                if reference_set_map[u] != -1:
+                    raise ValueError("Duplicate value in reference sets")
+                reference_set_map[u] = k
 
-    def parent_gnn(sample_id):
-        index = tables.edges.child == sample_id
-        left = tables.edges.left[index]
-        right = tables.edges.right[index]
-        parent = tables.edges.parent[index]
-        k = parent.shape[0]
-        length = (right - left).reshape((k, 1))
-        D_parent = D[parent]
-        total = np.sum(D_parent, axis=1).reshape(k, 1)
-        P_gnn = D_parent / total
-        df = pd.DataFrame({region: P_gnn[:,j] for j, region in enumerate(regions)})
-        df["left"] = left
-        df["right"] = right
-        df = df.sort_values("left")
-        return df.set_index("left")
+        K = len(reference_sets)
+        A = np.zeros((len(focal), ts.num_trees, K))
+        L = np.zeros((len(focal), ts.num_trees))
+        lefts = np.zeros(ts.num_trees, dtype=float)
+        rights = np.zeros(ts.num_trees, dtype=float)
+        parent = np.zeros(ts.num_nodes, dtype=int) - 1
+        sample_count = np.zeros((ts.num_nodes, K), dtype=int)
 
+        # Set the intitial conditions.
+        for j in range(K):
+            sample_count[reference_sets[j], j] = 1
+
+        for t, ((left, right), edges_out, edges_in) in enumerate(ts.edge_diffs()):
+            for edge in edges_out:
+                parent[edge.child] = -1
+                v = edge.parent
+                while v != -1:
+                    sample_count[v] -= sample_count[edge.child]
+                    v = parent[v]
+            for edge in edges_in:
+                parent[edge.child] = edge.parent
+                v = edge.parent
+                while v != -1:
+                    sample_count[v] += sample_count[edge.child]
+                    v = parent[v]
+
+            # Process this tree.
+            for j, u in enumerate(focal):
+                focal_reference_set = reference_set_map[u]
+                p = parent[u]
+                lefts[t] = left
+                rights[t] = right
+                while p != tskit.NULL:
+                    total = np.sum(sample_count[p])
+                    if total > 1:
+                        break
+                    p = parent[p]
+                if p != tskit.NULL:
+                    scale = 1 / (total - int(focal_reference_set != -1))
+                    for k, reference_set in enumerate(reference_sets):
+                        n = sample_count[p, k] - int(focal_reference_set == k)
+                        A[j, t, k] = n * scale
+        return (A, lefts, rights)
+
+    
     for ind in ts.individuals():
         md = json.loads(ind.metadata.decode())
         if md["individual_id"] == "HG01933":
             for j, node in enumerate(ind.nodes):
-                df = parent_gnn(node)
-                df.to_csv("data/HG01933_parent_ancestry_{}.csv".format(j))
+                A, left, right = local_gnn(ts, [node], region_sample_sets)
+                df = pd.DataFrame(data=A[0], columns=regions)
+                df["left"] = left
+                df["right"] = right
+                # Remove rows with no difference in GNN to next row
+                keep_rows = ~(df.iloc[:,0:5].diff(axis=0) == 0).all(axis=1)
+                df = df[keep_rows]
+                df.to_csv("HG01933_local_GNN_{}.csv".format(j))
 
 
 def process_sample_edges():
