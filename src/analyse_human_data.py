@@ -11,10 +11,8 @@ import numpy as np
 import pandas as pd
 
 import sys
-# FIXME!!! mean_descendants not yet merged to msprime.
-sys.path.insert(0, "/gpfs1/well/mcvean/ukbb12788/jk/msprime")
 
-import msprime
+import tskit
 import tqdm
 
 data_prefix = "human-data"
@@ -54,7 +52,7 @@ def print_sample_edge_stats(ts):
 def get_sgdp_sample_edges():
     filename = os.path.join(data_prefix, "sgdp_chr20.nosimplify.trees")
 
-    ts = msprime.load(filename)
+    ts = tskit.load(filename)
     print("SGDP")
     print_sample_edge_stats(ts)
     population_name = []
@@ -96,7 +94,7 @@ def get_sgdp_sample_edges():
 def get_1kg_sample_edges():
     filename = os.path.join(data_prefix, "1kg_chr20.nosimplify.trees")
 
-    ts = msprime.load(filename)
+    ts = tskit.load(filename)
     print("TGP")
     print_sample_edge_stats(ts)
     population_name = []
@@ -137,7 +135,7 @@ def get_1kg_sample_edges():
 
 def process_hg01933_parent_ancestry():
     filename = os.path.join(data_prefix, "1kg_chr20.snipped.trees")
-    ts = msprime.load(filename)
+    ts = tskit.load(filename)
     tables = ts.tables
     region_sample_set_map = collections.defaultdict(list)
     for population in ts.populations():
@@ -190,7 +188,7 @@ def process_sample_edge_outliers():
     Runs the analysis for finding the sample edge outliers.
     """
     filename = os.path.join(data_prefix, "1kg_chr20.nosimplify.trees")
-    ts = msprime.load(filename)
+    ts = tskit.load(filename)
 
     # construct the dictionary mapping individual names to their metadata
     tables = ts.tables
@@ -260,7 +258,7 @@ def process_ukbb_ukbb_gnn():
 
 def process_ukbb_1kg_duplicates():
     source_file = os.path.join(data_prefix, "1kg_ukbb_chr20.nosimplify.trees")
-    ts = msprime.load(source_file)
+    ts = tskit.load(source_file)
     print("loaded")
     tables = ts.tables
     child_counts = np.bincount(tables.edges.child)
