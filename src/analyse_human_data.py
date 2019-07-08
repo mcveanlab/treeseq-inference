@@ -136,12 +136,12 @@ def get_1kg_sample_edges():
 def process_hg01933_local_gnn():
     filename = os.path.join(data_prefix, "1kg_chr20.snipped.trees")
     ts = tskit.load(filename)
-    tables = ts.tables
     region_sample_set_map = collections.defaultdict(list)
     for population in ts.populations():
         md = json.loads(population.metadata.decode())
         region = md["super_population"]
-        region_sample_set_map[region].extend(list(ts.samples(population=population.id)))
+        region_sample_set_map[region].extend(list(ts.samples(
+            population=population.id)))
     regions = list(region_sample_set_map.keys())
     region_sample_sets = [region_sample_set_map[k] for k in regions]
 
@@ -155,7 +155,6 @@ def process_hg01933_local_gnn():
 
         K = len(reference_sets)
         A = np.zeros((len(focal), ts.num_trees, K))
-        L = np.zeros((len(focal), ts.num_trees))
         lefts = np.zeros(ts.num_trees, dtype=float)
         rights = np.zeros(ts.num_trees, dtype=float)
         parent = np.zeros(ts.num_nodes, dtype=int) - 1
@@ -165,7 +164,7 @@ def process_hg01933_local_gnn():
         for j in range(K):
             sample_count[reference_sets[j], j] = 1
 
-        for t, ((left, right), edges_out, edges_in) in enumerate(ts.edge_diffs()):
+        for t, ((left, right),edges_out, edges_in) in enumerate(ts.edge_diffs()):
             for edge in edges_out:
                 parent[edge.child] = -1
                 v = edge.parent
@@ -197,7 +196,6 @@ def process_hg01933_local_gnn():
                         A[j, t, k] = n * scale
         return (A, lefts, rights)
 
-    
     for ind in ts.individuals():
         md = json.loads(ind.metadata.decode())
         if md["individual_id"] == "HG01933":
@@ -207,9 +205,9 @@ def process_hg01933_local_gnn():
                 df["left"] = left
                 df["right"] = right
                 # Remove rows with no difference in GNN to next row
-                keep_rows = ~(df.iloc[:,0:5].diff(axis=0) == 0).all(axis=1)
+                keep_rows = ~(df.iloc[:, 0:5].diff(axis=0) == 0).all(axis=1)
                 df = df[keep_rows]
-                df.to_csv("HG01933_local_GNN_{}.csv".format(j))
+                df.to_csv("data/HG01933_local_gnn_{}.csv".format(j))
 
 
 def process_sample_edges():
@@ -345,7 +343,7 @@ def main():
         "sample_edge_outliers": process_sample_edge_outliers,
         "1kg_ukbb_gnn": process_1kg_ukbb_gnn,
         "ukbb_ukbb_gnn": process_ukbb_ukbb_gnn,
-        "hg01933_parent_ancestry": process_hg01933_parent_ancestry,
+        "hg01933_local_gnn": process_hg01933_local_gnn,
         "ukbb_1kg_duplicates": process_ukbb_1kg_duplicates,
     }
 

@@ -1240,6 +1240,7 @@ class GlobalStructureFigure(Figure):
         # Same as plot_composite but we don't include the fancy annotations.
 
         colours = get_tgp_region_colours()
+        region_order = ['EUR', 'EAS', 'SAS', 'AFR', 'AMR']
         full_df = pd.read_csv("data/1kg_gnn.csv")
         df = full_df[full_df.population == "PEL"].reset_index()
         A = np.zeros((len(tgp_region_pop), len(df)))
@@ -1262,8 +1263,8 @@ class GlobalStructureFigure(Figure):
         x = np.arange(len(df))
         for j, region in enumerate(regions):
             ax.bar(
-                x, A[j], bottom=np.sum(A[:j, :], axis=0), label=region, width=1,
-                color=colours[region], align="edge")
+                x, A[j], bottom=np.sum(A[:j, :], axis=0), label=region,
+                width=1, color=colours[region], align="edge")
         ax.set_xlim(0, len(df) - 1)
         ax.set_ylim(0, 1)
         ax.set_xticks([])
@@ -1272,9 +1273,9 @@ class GlobalStructureFigure(Figure):
         self.save("1kg_gnn_pel")
 
         for j in range(2):
-            df = pd.read_csv("HG01933_local_gnn_{}.csv".format((j + 1) % 2), index_col = 0)
+            df = pd.read_csv("data/HG01933_local_gnn_{}.csv".format((j + 1) % 2), index_col = 0)
             left = df["left"]
-            width = np.diff(np.append(left,df.right.max()))
+            width = np.diff(np.append(left, df.right.max()))
             total = np.zeros_like(width)
             fig, ax = plt.subplots(1, 1, figsize=(17, 1.5))
             for region in region_order:
@@ -1288,7 +1289,6 @@ class GlobalStructureFigure(Figure):
             ax.set_ylim(0, 1)
             ax.axis('off')
             self.save("1kg_gnn_HG01933_{}".format(j))
-    
 
     def plot(self):
         self.plot_pel_population()
@@ -1343,7 +1343,7 @@ class GlobalStructureFigure(Figure):
         ax_left = plt.subplot(gs[1, 0])
         ax_right = plt.subplot(gs[1, 1])
         for j, ax in enumerate([ax_left, ax_right]):
-            df = pd.read_csv("data/HG01933_parent_ancestry_{}.csv".format((j + 1) % 2))
+            df = pd.read_csv("data/HG01933_local_gnn_{}.csv".format((j + 1) % 2))
             left = df.left
             width = df.right - left
             total = np.zeros_like(width)
