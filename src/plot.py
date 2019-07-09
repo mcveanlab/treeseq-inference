@@ -120,7 +120,7 @@ class StoringEveryone(Figure):
         index = df.vcf > 0
         line, = ax1.loglog(df.sample_size, df.vcf_fit, "-", color="tab:pink", label="")
         ax1.loglog(
-            df.sample_size[index], df.vcf[index], "d", label="VCF", 
+            df.sample_size[index], df.vcf[index], "d", label="VCF",
             color=line.get_color())
         largest_value = np.array(df.vcf_fit)[-1]
         ax1.annotate(
@@ -131,7 +131,7 @@ class StoringEveryone(Figure):
         line, = ax1.loglog(
             df.sample_size, df.vcfz_fit, ":", label="", color=line.get_color())
         ax1.loglog(
-            df.sample_size[index], df.vcfz[index], "d", label="Compressed VCF", 
+            df.sample_size[index], df.vcfz[index], "d", label="Compressed VCF",
             color=line.get_color(), markerfacecolor='w')
         largest_value = np.array(df.vcfz_fit)[-1]
         ax1.annotate(
@@ -162,7 +162,7 @@ class StoringEveryone(Figure):
 
         line, = ax1.loglog(
             df.sample_size, df.tskz_fit, ":", label="", color=line.get_color())
-        ax1.loglog(df.sample_size, df.compressed, "o", label="Compressed trees", 
+        ax1.loglog(df.sample_size, df.compressed, "o", label="Compressed trees",
             color=line.get_color(), markerfacecolor='w')
         largest_value = np.array(df.tskz_fit)[-1]
         ax1.annotate(
@@ -794,7 +794,8 @@ class MetricsAllToolsFigure(TreeMetricsFigure):
             sorted(metric_and_rooting.items(), key=lambda x: x[0]))
         # sort this so that metrics come out in a set order (TO DO)
         fig, axes = plt.subplots(len(metric_and_rooting), len(seq_error_params),
-            squeeze=False, sharey='row', figsize=(6*len(seq_error_params), 15))
+            squeeze=False, sharey='row',
+            figsize=(6*len(seq_error_params), 15))
         for j, ((metric, root), rows) in enumerate(metric_and_rooting.items()):
             for k, error in enumerate(seq_error_params):
                 # we are in the j,k th subplot
@@ -880,6 +881,8 @@ class MetricAllToolsFigure(TreeMetricsFigure):
             fig, axes = plt.subplots(len(aa_error_params), len(seq_error_params),
                 squeeze=False, sharey=True,
                 figsize=getattr(self,'figsize',(6*len(seq_error_params), self.plot_height)))
+                # Used for final version of Figure 3.
+                # figsize=(7, 3.5))
             for j, aa_error in enumerate(aa_error_params):
                 for k, seq_error in enumerate(seq_error_params):
                     ax = axes[j][k]
