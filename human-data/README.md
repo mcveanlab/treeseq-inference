@@ -58,3 +58,5 @@ $ make sgdp_chr20.trees
 The pipeline for UKBB can be run in a similar way, but because it is not a public
 dataset the input data cannot be downloaded automatically. See the Makefile for 
 the details of the required files and paths.
+
+The code for generating visual representations of the tree sequence characterisation of the UK Biobank is in the notebook `UKB_plot.ipynb`. This is the code used to plot Figure 5 of the paper. The execution of this code also requires the following files: `UK_NUTS_Level_2_January_2018_Names_and_Countries.csv` and `UK_NUTS_Level_3_January_2018_Names_and_Countries.csv`.
