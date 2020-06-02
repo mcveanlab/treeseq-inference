@@ -524,7 +524,7 @@ class InferenceRunner(object):
                 if len(self.metric_params):
                     with open(construct_tsinfer_name(self.sample_fn, None) + ".nex", "w+") as out:
                         tree_labels_between_variants=(True if subsample_size is None else False)
-                        inferred_ts.write_nexus_trees(
+                        inferred_ts.simplify().write_nexus_trees(
                             out, tree_labels_between_variants=tree_labels_between_variants)
                 inferred_ts = inferred_ts.simplify(list(range(restrict_sample_size_comparison)))
                 
@@ -538,7 +538,7 @@ class InferenceRunner(object):
                     #between two adjacent variants, so we cannot reposition breakpoints
                     #between the nearest left and right variant positions
                     tree_labels_between_variants=(True if subsample_size is None else False)
-                    inferred_ts.write_nexus_trees(
+                    inferred_ts.simplify().write_nexus_trees(
                         out, tree_labels_between_variants=tree_labels_between_variants)
             unique, counts = np.unique(np.array([e.parent for e in inferred_ts.edges()], dtype="u8"), return_counts=True)
         except ValueError as e:
@@ -576,7 +576,7 @@ class InferenceRunner(object):
             if len(self.metric_params):
                 for fn in self.inferred_filenames:
                     with open(fn + ".nex", "w+") as out:
-                        inferred_ts.write_nexus_trees(out)
+                        inferred_ts.simplify().write_nexus_trees(out)
         except ValueError as e:
             if "0 samples;" in str(e):
                 logging.warning("No samples in {}. Skipping".format(infile))
@@ -1037,7 +1037,7 @@ class Dataset(object):
                 if small_ts.num_sites:
                     generate_samples(small_ts, cmp_fn) # no error
             else:
-                ts.save_nexus_trees(base_fn +".nex")
+                ts.simplify().save_nexus_trees(base_fn +".nex")
         return_value = {}
         for params in itertools.product(*iterate_over_dict.values()):
             #may be iterating here over error rates
@@ -1761,7 +1761,7 @@ class SubsamplingDataset(Dataset):
                 logging.warning(e)
         return_data = {}
         # it's worth saving the full tree file for other analysis
-        base_ts.save_nexus_trees(fn + ".nex")
+        base_ts.simplify().save_nexus_trees(fn + ".nex")
         # loop over the subsamples and errors, saving samples files for inference
         return_data = self.save_within_sim_data(base_row_id, base_ts, fn, sim_params)
         return return_data
